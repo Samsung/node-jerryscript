@@ -1525,7 +1525,7 @@ void InitFs(Local<Object> target,
 
   env->SetMethod(target, "getStatValues", GetStatValues);
 
-  StatWatcher::Initialize(env, target);
+  //StatWatcher::Initialize(env, target);
 
   // Create FunctionTemplate for FSReqWrap
   Local<FunctionTemplate> fst =

@@ -86,19 +86,19 @@ struct sockaddr;
     V(buffer)                                                                 \
     V(cares_wrap)                                                             \
     V(config)                                                                 \
-    V(contextify)                                                             \
+    /*V(contextify)*/                                                             \
     V(fs)                                                                     \
     V(fs_event_wrap)                                                          \
-    V(http2)                                                                  \
+    /*V(http2)*/                                                                  \
     V(http_parser)                                                            \
-    V(inspector)                                                              \
+    /*V(inspector)*/                                                              \
     V(js_stream)                                                              \
     V(module_wrap)                                                            \
     V(os)                                                                     \
     V(performance)                                                            \
     V(pipe_wrap)                                                              \
     V(process_wrap)                                                           \
-    V(serdes)                                                                 \
+    /*V(serdes)*/                                                                 \
     V(signal_wrap)                                                            \
     V(spawn_sync)                                                             \
     V(stream_wrap)                                                            \
@@ -110,7 +110,7 @@ struct sockaddr;
     V(url)                                                                    \
     V(util)                                                                   \
     V(uv)                                                                     \
-    V(v8)                                                                     \
+    /*V(v8)*/                                                                     \
     V(zlib)
 
 #define NODE_BUILTIN_MODULES(V)                                               \
