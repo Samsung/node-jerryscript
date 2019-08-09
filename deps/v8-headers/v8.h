@@ -306,7 +306,18 @@ class Local {
   friend class MaybeLocal;
   template<class F> friend class FunctionCallbackInfo;
   template<class F> friend class PropertyCallbackInfo;
+
+  // TODO: figure out a way to remove these friends
   friend class String;
+  friend class Array;
+  friend class Map;
+  friend class Integer;
+  friend class Value;
+  friend class FunctionTemplate;
+  friend class ObjectTemplate;
+  friend class Function;
+  // ^^
+
   friend class Object;
   friend class Context;
   friend class Private;
@@ -9382,7 +9393,9 @@ void ReturnValue<T>::Set(const Persistent<S>& handle) {
   if (V8_UNLIKELY(handle.IsEmpty())) {
     *value_ = GetDefaultValue();
   } else {
-    *value_ = *reinterpret_cast<internal::Object**>(*handle);
+    // TODO: Revert to original if possible:
+    // *value_ = *reinterpret_cast<internal::Object**>(*handle);
+    *value_ = reinterpret_cast<internal::Object*>(*handle);
   }
 }
 
@@ -9393,7 +9406,9 @@ void ReturnValue<T>::Set(const Global<S>& handle) {
   if (V8_UNLIKELY(handle.IsEmpty())) {
     *value_ = GetDefaultValue();
   } else {
-    *value_ = *reinterpret_cast<internal::Object**>(*handle);
+    // TODO: Revert to original if possible:
+    // *value_ = *reinterpret_cast<internal::Object**>(*handle);
+    *value_ = reinterpret_cast<internal::Object*>(*handle);
   }
 }
 
@@ -9404,7 +9419,9 @@ void ReturnValue<T>::Set(const Local<S> handle) {
   if (V8_UNLIKELY(handle.IsEmpty())) {
     *value_ = GetDefaultValue();
   } else {
-    *value_ = *reinterpret_cast<internal::Object**>(*handle);
+    // TODO: Revert to original if possible:
+    // *value_ = *reinterpret_cast<internal::Object**>(*handle);
+    *value_ = reinterpret_cast<internal::Object*>(*handle);
   }
 }
 
@@ -9507,7 +9524,9 @@ FunctionCallbackInfo<T>::FunctionCallbackInfo(internal::Object** implicit_args,
 template<typename T>
 Local<Value> FunctionCallbackInfo<T>::operator[](int i) const {
   if (i < 0 || length_ <= i) return Local<Value>(*Undefined(GetIsolate()));
-  return Local<Value>(reinterpret_cast<Value*>(values_ - i));
+  // TODO: revert to original:
+  //return Local<Value>(reinterpret_cast<Value*>(values_ - i));
+  return Local<Value>(*reinterpret_cast<Value**>(values_ - i));
 }
 
 
@@ -9520,7 +9539,9 @@ Local<Function> FunctionCallbackInfo<T>::Callee() const {
 
 template<typename T>
 Local<Object> FunctionCallbackInfo<T>::This() const {
-  return Local<Object>(reinterpret_cast<Object*>(values_ + 1));
+  // TODO: revert to original:
+  //return Local<Object>(reinterpret_cast<Object*>(values_ + 1));
+  return Local<Object>(*reinterpret_cast<Object**>(values_ + 1));
 }
 
 

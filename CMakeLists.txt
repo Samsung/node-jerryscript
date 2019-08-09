@@ -3,6 +3,8 @@ project(v8jerry C CXX)
 
 set(CMAKE_BUILD_TYPE Debug)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -DDEBUG")
+
 add_library(jerry STATIC
     deps/jerry/jerryscript.c
     deps/jerry/jerryscript-config.h
