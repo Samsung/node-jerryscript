@@ -93,7 +93,7 @@ struct sockaddr;
     V(http_parser)                                                            \
     /*V(inspector)*/                                                              \
     V(js_stream)                                                              \
-    V(module_wrap)                                                            \
+    /*V(module_wrap)*/                                                            \
     V(os)                                                                     \
     V(performance)                                                            \
     V(pipe_wrap)                                                              \

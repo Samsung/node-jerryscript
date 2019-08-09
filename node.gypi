@@ -55,6 +55,10 @@
       'defines': [ '__POSIX__' ],
     }],
 
+    [ 'node_use_jerry=="true"', {
+      'dependencies': [ 'deps/jerry-v8/v8.gyp:v8' ],
+    }],
+
     [ 'node_enable_d8=="true"', {
       'dependencies': [ 'deps/v8/src/d8.gyp:d8' ],
     }],

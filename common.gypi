@@ -1,5 +1,7 @@
 {
   'variables': {
+    'node_use_jerry%': 'false',
+
     'asan%': 0,
     'werror': '',                     # Turn off -Werror in V8 build.
     'visibility%': 'hidden',          # V8's visibility setting

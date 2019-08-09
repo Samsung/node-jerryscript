@@ -607,7 +607,7 @@ class Environment {
   // List of id's that have been destroyed and need the destroy() cb called.
   inline std::vector<double>* destroy_async_id_list();
 
-  std::unordered_multimap<int, loader::ModuleWrap*> module_map;
+  //std::unordered_multimap<int, loader::ModuleWrap*> module_map;
 
   inline double* heap_statistics_buffer() const;
   inline void set_heap_statistics_buffer(double* pointer);

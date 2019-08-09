@@ -226,6 +226,7 @@ void Environment::CleanupHandles() {
 }
 
 void Environment::StartProfilerIdleNotifier() {
+/* Disable CPU profiler
   uv_prepare_start(&idle_prepare_handle_, [](uv_prepare_t* handle) {
     Environment* env = ContainerOf(&Environment::idle_prepare_handle_, handle);
     env->isolate()->GetCpuProfiler()->SetIdle(true);
@@ -235,6 +236,7 @@ void Environment::StartProfilerIdleNotifier() {
     Environment* env = ContainerOf(&Environment::idle_check_handle_, handle);
     env->isolate()->GetCpuProfiler()->SetIdle(false);
   });
+*/
 }
 
 void Environment::StopProfilerIdleNotifier() {
