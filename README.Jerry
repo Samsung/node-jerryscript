@@ -1,0 +1,25 @@
+
+# Build with Jerry   
+
+1. Clone the `jerry-v8` library to the `deps/jerry-v8` directory.
+2. Run the following configure command.
+
+```sh
+$ ./configure --without-dtrace --without-etw --without-perfctr \
+    --without-ssl --without-inspector --without-intl --without-snapshot \
+    --dest-cpu x86 --without-bundled-v8
+```
+
+The `--without-bundled-v8` option was highjacked to force build Node with JerryScript.
+
+3. Run `make` .
+
+
+
+# Useful scripts
+
+1. To get a list of undefined references and the number of how often that method is used use the following command:
+
+```sh
+$ make -j4 2>&1 | grep -o "undefined .*" | sort | uniq -c | sort -n
+```
