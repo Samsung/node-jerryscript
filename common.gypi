@@ -48,6 +48,11 @@
          'obj_dir%': '<(PRODUCT_DIR)/obj.target',
          'v8_base%': '<(PRODUCT_DIR)/obj.target/deps/v8/src/libv8_base.a',
       }],
+
+      ['node_use_jerry=="true"', {
+        'v8_base': '<(PRODUCT_DIR)/deps/jerry/libjerry.a',
+      }],
+
       ['OS == "win"', {
         'os_posix': 0,
         'v8_postmortem_support%': 'false',
