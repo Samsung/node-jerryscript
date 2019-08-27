@@ -91,6 +91,33 @@ private:
     jerry_value_t m_value;
 };
 
+class JerryFunctionTemplate : public JerryHandle {
+public:
+    JerryFunctionTemplate()
+        : JerryHandle(FunctionTemplate)
+    {
+    }
+
+    void SetCallback(v8::FunctionCallback callback) { m_callback = callback; }
+
+    v8::FunctionCallback callback(void) const { return m_callback; }
+private:
+    v8::FunctionCallback m_callback;
+};
+
+struct JerryV8FunctionHandlerData {
+    v8::FunctionCallback v8callback;
+};
+
+static void JerryV8FunctionHandlerDataFree(void* data) {
+    delete reinterpret_cast<JerryV8FunctionHandlerData*>(data);
+}
+
+static jerry_object_native_info_t JerryV8FunctionHandlerTypeInfo = {
+    .free_cb = JerryV8FunctionHandlerDataFree,
+};
+
+
 class JerryPlatform : public v8::Platform {
 public:
     virtual void CallOnBackgroundThread(v8::Task*, v8::Platform::ExpectedRuntime) {}
@@ -139,6 +166,8 @@ public:
         }
     }
 
+    ~JerryIsolate() {}
+
     const JerryValue& HelperMapNew(void) const { return *m_fn_map_new; }
     const JerryValue& HelperMapSet(void) const { return *m_fn_map_set; }
 
@@ -154,6 +183,11 @@ public:
         delete m_fn_map_new;
         delete m_fn_map_set;
         jerry_cleanup();
+
+        // Warning!... Do not use the JerryIsolate after this!
+        // If you do: dragons will spawn from the depths of the earth and tear everything apart!
+        // You have been warned!
+        delete this;
     }
 
     void PushHandleScope(void* ptr) {
@@ -251,6 +285,8 @@ JerryHandleScope::~JerryHandleScope(void) {
         switch (jhandle->type()) {
             case JerryHandle::Value: delete reinterpret_cast<JerryValue*>(jhandle); break;
             case JerryHandle::Context: delete reinterpret_cast<JerryContext*>(jhandle); break;
+            case JerryHandle::FunctionTemplate: delete reinterpret_cast<JerryFunctionTemplate*>(jhandle); break;
+            default: fprintf(stderr, "~JerryHandleScope::Unknown handle type\n"); break;
         }
     }
 }
@@ -581,32 +617,6 @@ MaybeLocal<Value> Script::Run(v8::Local<v8::Context> context) {
 }
 
 /* Function Template */
-class JerryFunctionTemplate : public JerryHandle {
-public:
-    JerryFunctionTemplate()
-        : JerryHandle(FunctionTemplate)
-    {
-    }
-
-    void SetCallback(FunctionCallback callback) { m_callback = callback; }
-
-    FunctionCallback callback(void) const { return m_callback; }
-private:
-    FunctionCallback m_callback;
-};
-
-struct JerryV8FunctionHandlerData {
-    FunctionCallback v8callback;
-};
-
-void JerryV8FunctionHandlerDataFree(void* data) {
-    delete reinterpret_cast<JerryV8FunctionHandlerData*>(data);
-}
-
-static jerry_object_native_info_t JerryV8FunctionHandlerTypeInfo = {
-    .free_cb = JerryV8FunctionHandlerDataFree,
-};
-
 template<typename T>
 class JerryFunctionCallbackInfo : public FunctionCallbackInfo<T> {
 /* Form parent:
@@ -633,10 +643,14 @@ public:
     {}
 
     ~JerryFunctionCallbackInfo() {
-        JerryHandle **implicit_args = reinterpret_cast<JerryHandle**>(this->implicit_args_);
-
-        delete [] implicit_args;
+        const int args_count = this->Length() + 1; /* +1 is the js 'this' */
+        for (int idx = 0; idx < args_count; idx++) {
+            delete m_values[idx];
+        }
         delete [] m_values;
+
+        JerryHandle **implicit_args = reinterpret_cast<JerryHandle**>(this->implicit_args_);
+        delete [] implicit_args;
     }
 
 private:
