@@ -309,9 +309,12 @@ class Local {
 
   // TODO: figure out a way to remove these friends
   friend class String;
+  friend class Symbol;
   friend class Array;
+  friend class ArrayBuffer;
   friend class Map;
   friend class Integer;
+  friend class Number;
   friend class Value;
   friend class FunctionTemplate;
   friend class ObjectTemplate;

@@ -75,9 +75,43 @@ public:
         return isOk;
     }
 
-    bool IsString() { return jerry_value_is_string(m_value); }
+    bool IsString() const { return jerry_value_is_string(m_value); }
+    bool IsBoolean() const { return jerry_value_is_boolean(m_value); }
+    bool IsFalse() const { return jerry_value_is_boolean(m_value) && !jerry_get_boolean_value(m_value); }
+    bool IsTrue() const { return jerry_value_is_boolean(m_value) && jerry_get_boolean_value(m_value); }
+    bool IsPromise() const { return jerry_value_is_promise(m_value); }
+    bool IsArray() const { return jerry_value_is_array(m_value); }
+    bool IsNumber() const {
+        return jerry_value_is_number(m_value) && ((int) jerry_get_number_value(m_value) != jerry_get_number_value(m_value));
+    }
+    bool IsUint32() const { return jerry_value_is_number(m_value); } /* Todo: fix it. */
+    bool IsInt32() const { return jerry_value_is_number(m_value); } /* Todo: fix it. */
+    bool IsFunction() const { return jerry_value_is_function(m_value); }
+    bool IsObject() const { return jerry_value_is_object(m_value); }
+    bool IsSymbol() const { return jerry_value_is_symbol(m_value); }
+    bool IsTypedArray() const { return jerry_value_is_typedarray(m_value); }
+    bool IsArrayBuffer() const { return jerry_value_is_arraybuffer(m_value); }
+    bool IsProxy() const { return false; }
+    bool IsMap() const { return false; }
+    bool IsMapIterator() const { return false; }
+    bool IsSet() const { return false; }
+    bool IsSetIterator() const { return false; }
+    bool IsDate() const { return false; }
+    bool IsRegExp() const { return false; }
+    bool IsSharedArrayBuffer() const { return false; }
+    bool IsAsyncFunction() const { return false; }
+    bool IsNativeError() const { return false; }
+    bool IsArrayBufferView() const { return false; }
+    bool IsFloat64Array() const { return false; }
+    bool IsUint8Array() const { return false; }
+    bool IsDataView() const { return false; }
+    bool IsExternal() const { return false; }
 
+    double GetNumberValue(void) const { return jerry_get_number_value(m_value); }
+    uint32_t GetUInt32Value(void) const { return (uint32_t)jerry_get_number_value(m_value); }
+    int32_t GetInt32Value(void) const { return (int32_t)jerry_get_number_value(m_value); }
     int64_t GetInt64Value(void) const { return (int64_t)jerry_get_number_value(m_value); }
+    bool GetBooleanValue(void) const { return jerry_get_boolean_value(m_value); }
 
     int GetStringLength(void) const { return jerry_get_string_size(m_value); }
     int GetStringUtf8Length(void) const { return jerry_get_utf8_string_size(m_value); }
@@ -85,6 +119,16 @@ public:
     JerryValue* ToString(void) const {
         // TODO: error handling?
         return new JerryValue(jerry_value_to_string(m_value));
+    }
+
+    JerryValue* ToInteger(void) const {
+        // TODO: error handling?
+        return new JerryValue(jerry_value_to_number(m_value));
+    }
+
+    JerryValue* ToObject(void) const {
+        // TODO: error handling?
+        return new JerryValue(jerry_value_to_object(m_value));
     }
 
 private:
@@ -323,6 +367,11 @@ public:
 };
 
 } // namespace base
+
+const char* V8::GetVersion() {
+    return "JerryScript v2.0";
+}
+
 /* V8 statics */
 bool V8::InitializeICUDefaultLocation(const char* exec_path, const char* icu_data_file) {
     return true;
@@ -347,6 +396,39 @@ void V8::FromJustIsNothing() { }
 void V8::ShutdownPlatform() { }
 
 /* ArrayBuffer & Allocator */
+Local<ArrayBuffer> ArrayBuffer::New(Isolate* isolate, void* data, size_t byte_length, ArrayBufferCreationMode mode) {
+    jerry_value_t buffer;
+
+    if (mode == ArrayBufferCreationMode::kInternalized) {
+        buffer = jerry_create_arraybuffer(byte_length);
+        jerry_arraybuffer_write(buffer, 0, (uint8_t*)data, byte_length);
+    } else {
+        buffer = jerry_create_arraybuffer_external(byte_length, (uint8_t*)data, nullptr);
+    }
+
+    RETURN_HANDLE(ArrayBuffer, isolate, new JerryValue(buffer));
+}
+
+ArrayBuffer::Contents ArrayBuffer::GetContents() {
+    JerryValue* jbuffer = reinterpret_cast<JerryValue*> (this);
+    jerry_value_t buffer = jbuffer->value();
+
+    ArrayBuffer::Contents contents;
+    contents.data_ = (void*) jerry_get_arraybuffer_pointer (buffer);
+    contents.byte_length_ = (size_t) jerry_get_arraybuffer_byte_length (buffer);
+
+    return contents;
+}
+
+size_t ArrayBuffer::ByteLength() const {
+    const JerryValue* jbuffer = reinterpret_cast<const JerryValue*> (this);
+
+    return (size_t) jerry_get_arraybuffer_byte_length (jbuffer->value());
+}
+
+void ArrayBuffer::Neuter() {
+}
+
 void ArrayBuffer::Allocator::SetProtection(void* data, size_t length, Protection protection) { }
 
 void* ArrayBuffer::Allocator::Reserve(size_t length) {
@@ -438,6 +520,38 @@ int32_t Value::Int32Value() const {
     return (int32_t)reinterpret_cast<const JerryValue*>(this)->GetInt64Value();
 }
 
+Maybe<uint32_t> Value::Uint32Value(Local<Context> context) const {
+    return Just((uint32_t)reinterpret_cast<const JerryValue*>(this)->GetUInt32Value());
+}
+
+uint32_t Value::Uint32Value() const {
+    return reinterpret_cast<const JerryValue*> (this)->GetUInt32Value();
+}
+
+Maybe<bool> Value::BooleanValue(Local<Context> context) const {
+    return Just((bool)reinterpret_cast<const JerryValue*>(this)->GetBooleanValue());
+}
+
+bool Value::BooleanValue() const {
+    return (bool)reinterpret_cast<const JerryValue*>(this)->GetBooleanValue();
+}
+
+Maybe<double> Value::NumberValue(Local<Context> context) const {
+    return Just((double)reinterpret_cast<const JerryValue*>(this)->GetNumberValue());
+}
+
+double Value::NumberValue() const {
+    return (double)reinterpret_cast<const JerryValue*>(this)->GetNumberValue();
+}
+
+int64_t Value::IntegerValue() const {
+    return (int64_t)reinterpret_cast<const JerryValue*>(this)->GetInt64Value();
+}
+
+Maybe<int64_t> Value::IntegerValue(Local<Context> context) const {
+    return Just((int64_t)reinterpret_cast<const JerryValue*>(this)->GetInt64Value());
+}
+
 MaybeLocal<String> Value::ToString(Local<Context> context) const {
     JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToString();
     RETURN_HANDLE(String, context->GetIsolate(), result);
@@ -446,6 +560,133 @@ MaybeLocal<String> Value::ToString(Local<Context> context) const {
 Local<String> Value::ToString(Isolate* isolate) const {
     JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToString();
     RETURN_HANDLE(String, isolate, result);
+}
+
+Local<Integer> Value::ToInteger(Isolate* isolate) const {
+    JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+    RETURN_HANDLE(Integer, isolate, result);
+}
+
+MaybeLocal<Object> Value::ToObject(Local<Context> context) const {
+    JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToObject();
+    RETURN_HANDLE(Object, Isolate::GetCurrent(), result);
+}
+
+Local<Object> Value::ToObject(Isolate* isolate) const {
+    JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToObject();
+    RETURN_HANDLE(Object, isolate, result);
+}
+
+bool Value::IsBoolean() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsBoolean();
+}
+
+bool Value::IsFalse() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsFalse();
+}
+
+bool Value::IsTrue() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsTrue();
+}
+
+bool Value::IsPromise() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsPromise();
+}
+
+bool Value::IsArray() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsArray();
+}
+
+bool Value::IsObject() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsObject();
+}
+
+bool Value::IsNumber() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsNumber();
+}
+
+bool Value::IsUint32() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsUint32();
+}
+
+bool Value::IsInt32() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsInt32();
+}
+
+bool Value::IsFunction() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsFunction();
+}
+
+bool Value::IsSymbol() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsSymbol();
+}
+
+bool Value::IsTypedArray() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsTypedArray();
+}
+
+bool Value::IsArrayBuffer() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsArrayBuffer();
+}
+
+bool Value::IsProxy() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsProxy();
+}
+
+bool Value::IsMap() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsMap();
+}
+
+bool Value::IsMapIterator() const {
+     return reinterpret_cast<const JerryValue*> (this)->IsMapIterator();
+ }
+
+bool Value::IsSet() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsSet();
+}
+
+bool Value::IsSetIterator() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsSetIterator();
+}
+
+bool Value::IsDate() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsDate();
+}
+
+bool Value::IsRegExp() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsRegExp();
+}
+
+bool Value::IsSharedArrayBuffer() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsSharedArrayBuffer();
+}
+
+bool Value::IsAsyncFunction() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsAsyncFunction();
+}
+
+bool Value::IsNativeError() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsNativeError();
+}
+
+bool Value::IsArrayBufferView() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsArrayBufferView();
+}
+
+bool Value::IsFloat64Array() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsFloat64Array();
+}
+
+bool Value::IsUint8Array() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsUint8Array();
+}
+
+bool Value::IsDataView() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsDataView();
+}
+
+bool Value::IsExternal() const {
+    return reinterpret_cast<const JerryValue*> (this)->IsExternal();
 }
 
 /* Integer */
@@ -463,8 +704,38 @@ int64_t Integer::Value() const {
     return reinterpret_cast<const JerryValue*>(this)->GetInt64Value();
 }
 
+/* Number */
+Local<Number> Number::New(Isolate* isolate, double value) {
+    jerry_value_t result = jerry_create_number(value);
+    RETURN_HANDLE(Number, isolate, new JerryValue(result));
+}
+
+double Number::Value() const {
+    return reinterpret_cast<const JerryValue*>(this)->GetNumberValue();
+}
+
+/* UInt32 */
+uint32_t Uint32::Value() const {
+    return reinterpret_cast<const JerryValue*>(this)->GetUInt32Value();
+}
+
+/* Int32 */
+int32_t Int32::Value() const {
+    return reinterpret_cast<const JerryValue*>(this)->GetInt32Value();
+}
+
+/* Boolean */
+bool Boolean::Value() const {
+    return reinterpret_cast<const JerryValue*>(this)->GetBooleanValue();
+}
 
 /* Object */
+Local<Object> Object::New(Isolate* isolate) {
+    jerry_value_t obj = jerry_create_object();
+
+    RETURN_HANDLE(Object, isolate, new JerryValue(obj));
+}
+
 Maybe<bool> Object::Set(Local<Context> context, Local<Value> key, Local<Value> value) {
     return Just(reinterpret_cast<JerryValue*>(this)->SetProperty(
                     reinterpret_cast<JerryValue*>(*key),
@@ -481,6 +752,10 @@ bool Object::Set(uint32_t index, Local<Value> value) {
     return reinterpret_cast<JerryValue*> (this)->SetPropertyIdx(index, reinterpret_cast<JerryValue*>(*value));
 }
 
+Isolate* Object::GetIsolate() {
+    return Isolate::GetCurrent();
+}
+
 /* Array */
 Local<Array> Array::New(Isolate* isolate, int length) {
     if (length < 0) {
@@ -489,6 +764,12 @@ Local<Array> Array::New(Isolate* isolate, int length) {
 
     jerry_value_t array_value = jerry_create_array(length);
     RETURN_HANDLE(Array, isolate, new JerryValue(array_value));
+}
+
+uint32_t Array::Length() const {
+    const JerryValue* array = reinterpret_cast<const JerryValue*>(this);
+
+    return jerry_get_array_length(array->value());
 }
 
 /* Map */
@@ -514,6 +795,46 @@ MaybeLocal<Map> Map::Set(Local<Context> context, Local<Value> key, Local<Value> 
 
     return Local<Map>(this);
 }
+
+Local<Private> Private::New(Isolate* isolate, Local<String> name) {
+    RETURN_HANDLE(Private ,isolate, reinterpret_cast<JerryValue*>(*name));
+}
+
+/* Symbol */
+Local<Symbol> Symbol::New(Isolate* isolate, Local<String> name) {
+    JerryValue* jname = reinterpret_cast<JerryValue*>(*name);
+
+    jerry_value_t symbol_name = jerry_create_symbol (jname->value());
+    jerry_release_value (symbol_name);
+
+    RETURN_HANDLE(Symbol, isolate, new JerryValue(symbol_name));
+}
+
+/* Message */
+Maybe<int> Message::GetStartColumn(v8::Local<v8::Context> context) const {
+    return Just(0);
+}
+
+Maybe<int> Message::GetEndColumn(v8::Local<v8::Context> context) const {
+    return Just(0);
+}
+
+int Message::GetLineNumber() const {
+    return 0;
+}
+
+Local<Value> Message::GetScriptResourceName() const {
+    return Local<Value>();
+}
+
+Local<String> Message::GetSourceLine() const {
+    return Local<String>();
+}
+
+ScriptOrigin Message::GetScriptOrigin() const {
+    return ScriptOrigin(Local<Value>());
+}
+
 
 /* String */
 MaybeLocal<String> String::NewFromOneByte(
@@ -566,6 +887,8 @@ int String::Utf8Length() const {
     return reinterpret_cast<const JerryValue*>(this)->GetStringUtf8Length();
 }
 
+String::Utf8Value::Utf8Value(Local<v8::Value> obj) : Utf8Value(Isolate::GetCurrent(), obj) { }
+
 String::Utf8Value::Utf8Value(Isolate* isolate, Local<v8::Value> v8Value)
     : str_(nullptr)
     , length_(0)
@@ -596,6 +919,27 @@ String::Utf8Value::~Utf8Value() {
     delete [] str_;
 }
 
+String::Value::~Value() {
+    delete [] str_;
+}
+
+Local<String> String::Concat(Local<String> left, Local<String> right) {
+    JerryValue* lhs = reinterpret_cast<JerryValue*>(*left);
+    JerryValue* rhs = reinterpret_cast<JerryValue*>(*right);
+
+    jerry_size_t lsize = jerry_get_string_size (lhs->value());
+    jerry_size_t rsize = jerry_get_string_size (rhs->value());
+
+    char* buffer = new char[lsize + rsize];
+
+    jerry_string_to_char_buffer (lhs->value(), (jerry_char_t*) buffer, lsize);
+    jerry_string_to_char_buffer (lhs->value(), (jerry_char_t*) buffer + lsize, rsize);
+
+    jerry_value_t value = jerry_create_string_sz ((jerry_char_t*)buffer, lsize + rsize);
+
+    RETURN_HANDLE(String, Isolate::GetCurrent(), new JerryValue(value));
+}
+
 /* Script */
 MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source, ScriptOrigin* origin /* = nullptr */) {
     jerry_char_t* sourceString = new jerry_char_t[source->Utf8Length() + 1];
@@ -614,6 +958,14 @@ MaybeLocal<Value> Script::Run(v8::Local<v8::Context> context) {
     jerry_value_t result = jerry_run(jvalue->value());
 
     RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(result));
+}
+
+Local<Value> Script::Run() {
+    JerryValue* jvalue = reinterpret_cast<JerryValue*>(this);
+
+    jerry_value_t result = jerry_run(jvalue->value());
+
+    RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(result));
 }
 
 /* Function Template */
@@ -749,6 +1101,34 @@ Local<Function> FunctionTemplate::GetFunction() {
     RETURN_HANDLE(Function, Isolate::GetCurrent(), new JerryValue(jfunction));
 }
 
+/* Stackframe */
+int StackFrame::GetColumn() const {
+    return 5;
+}
+
+int StackFrame::GetScriptId() const {
+    return 0;
+}
+
+bool StackFrame::IsEval() const {
+    return true;
+}
+
+int StackTrace::GetFrameCount() const {
+    return 0;
+}
+
+Local<String> StackFrame::GetFunctionName() const {
+    return Local<String>();
+}
+
+int StackFrame::GetLineNumber() const {
+    return 0;
+}
+
+Local<String> StackFrame::GetScriptName() const {
+    return Local<String>();
+}
 
 /* Dummy tracing */
 namespace platform {
