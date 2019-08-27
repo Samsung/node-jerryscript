@@ -24,3 +24,23 @@ target_link_libraries(v8jerry jerry)
 
 add_executable(demo test_hello.cpp)
 target_link_libraries(demo v8jerry)
+
+
+if(USE_V8)
+
+# It is possible that not all of these are required, but for now it's ok
+set(V8_LIBS
+    ${USE_V8_LIB_DIR}/libv8_base.a
+    ${USE_V8_LIB_DIR}/libv8_libsampler.a
+    ${USE_V8_LIB_DIR}/libv8_builtins_setup.a
+    ${USE_V8_LIB_DIR}/libv8_libplatform.a
+    ${USE_V8_LIB_DIR}/libv8_nosnapshot.a
+    ${USE_V8_LIB_DIR}/libv8_builtins_generators.a
+    ${USE_V8_LIB_DIR}/libv8_libbase.a
+)
+
+add_executable(v8_demo test_hello.cpp)
+target_include_directories(v8_demo PUBLIC ${USE_V8_HEADER_DIR})
+target_link_libraries(v8_demo ${V8_LIBS} pthread)
+
+endif()

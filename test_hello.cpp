@@ -42,18 +42,19 @@ int main(int argc, char* argv[]) {
     v8::HandleScope handle_scope(isolate);
     // Create a new context.
     v8::Local<v8::Context> context = v8::Context::New(isolate);
+
     // Enter the context for compiling and running the hello world script.
+    // This must be before setting any context related global properties!
+    v8::Context::Scope context_scope(context);
 
     context->Global()->Set(
-        v8::String::NewFromUtf8(isolate, "DATA", v8::NewStringType::kNormal).ToLocalChecked(),
+        v8::String::NewFromUtf8(isolate, "DATA"/*, v8::NewStringType::kNormal*/)/*.ToLocalChecked()*/,
         v8::Integer::New(isolate, 33));
 
     context->Global()->Set(
         v8::String::NewFromUtf8(isolate, "DEMO", v8::NewStringType::kNormal).ToLocalChecked(),
         v8::FunctionTemplate::New(isolate, method_demo)->GetFunction());
 
-
-    v8::Context::Scope context_scope(context);
     // Create a string containing the JavaScript source code.
     v8::Local<v8::String> source =
         v8::String::NewFromUtf8(isolate, "'Hello' + ', World!' + DATA + DEMO(33, 44, 'txt')",
@@ -68,6 +69,7 @@ int main(int argc, char* argv[]) {
     v8::String::Utf8Value utf8(isolate, result);
     printf("%s\n", *utf8);
   }
+
   // Dispose the isolate and tear down V8.
   isolate->Dispose();
   v8::V8::Dispose();
