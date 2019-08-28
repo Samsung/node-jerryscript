@@ -6,6 +6,9 @@
 
 void method_demo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     printf("Called with: %d\n", info.Length());
+    v8::Local<v8::Value> data = info.Data();
+    printf("Data is obj: %d\n", data->IsObject());
+    printf("Data is external: %d\n", data->IsExternal());
 
     v8::Local<v8::Value> arg = info[0];
 
@@ -20,6 +23,10 @@ void method_demo(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
     v8::ReturnValue<v8::Value> retVal = info.GetReturnValue();
     retVal.Set(txt);
+}
+
+void method_constr(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    printf("Construct\n");
 }
 
 int main(int argc, char* argv[]) {
@@ -47,20 +54,37 @@ int main(int argc, char* argv[]) {
     // This must be before setting any context related global properties!
     v8::Context::Scope context_scope(context);
 
+    v8::Local<v8::External> external = v8::External::New(isolate, (void*)22);
+
+    printf("IsExt: %d\n", external->IsExternal());
+    printf("IsObj: %d\n", external->IsObject());
+
     context->Global()->Set(
         v8::String::NewFromUtf8(isolate, "DATA"/*, v8::NewStringType::kNormal*/)/*.ToLocalChecked()*/,
         v8::Integer::New(isolate, 33));
 
+    v8::Local<v8::FunctionTemplate> functemp = v8::FunctionTemplate::New(isolate, method_demo, external);
+    functemp->Set(isolate, "test", v8::Integer::New(isolate, 38));
+
     context->Global()->Set(
         v8::String::NewFromUtf8(isolate, "DEMO", v8::NewStringType::kNormal).ToLocalChecked(),
-        v8::FunctionTemplate::New(isolate, method_demo)->GetFunction());
+        functemp->GetFunction());
+
+    v8::Local<v8::FunctionTemplate> functemp2 = v8::FunctionTemplate::New(isolate, method_constr);
+    v8::Local<v8::ObjectTemplate> objt = functemp2->InstanceTemplate();
+    objt->Set(isolate, "test", v8::Integer::New(isolate, 35));
+
+    context->Global()->Set(
+        v8::String::NewFromUtf8(isolate, "CONSTR", v8::NewStringType::kNormal).ToLocalChecked(),
+        functemp2->GetFunction());
 
     // Create a string containing the JavaScript source code.
     v8::Local<v8::String> source =
-        v8::String::NewFromUtf8(isolate, "'Hello' + ', World!' + DATA + DEMO(33, 44, 'txt')",
+        v8::String::NewFromUtf8(isolate, "'Hello' + ', World!' + DATA + DEMO(33, 44, 'txt') + DEMO.test + (new CONSTR()).test",
                                 v8::NewStringType::kNormal)
             .ToLocalChecked();
     // Compile the source code.
+    //v8::TryCatch tc;
     v8::Local<v8::Script> script =
         v8::Script::Compile(context, source).ToLocalChecked();
     // Run the script to get the result.

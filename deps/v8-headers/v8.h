@@ -319,6 +319,7 @@ class Local {
   friend class FunctionTemplate;
   friend class ObjectTemplate;
   friend class Function;
+  friend class External;
   // ^^
 
   friend class Object;
@@ -9550,8 +9551,11 @@ Local<Object> FunctionCallbackInfo<T>::This() const {
 
 template<typename T>
 Local<Object> FunctionCallbackInfo<T>::Holder() const {
+  // TODO: revert to original:
+  //return Local<Object>(reinterpret_cast<Object*>(
+  //    &implicit_args_[kHolderIndex]));
   return Local<Object>(reinterpret_cast<Object*>(
-      &implicit_args_[kHolderIndex]));
+      implicit_args_[kHolderIndex]));
 }
 
 template <typename T>
@@ -9562,7 +9566,9 @@ Local<Value> FunctionCallbackInfo<T>::NewTarget() const {
 
 template <typename T>
 Local<Value> FunctionCallbackInfo<T>::Data() const {
-  return Local<Value>(reinterpret_cast<Value*>(&implicit_args_[kDataIndex]));
+  // TODO: revert to original:
+  //return Local<Value>(reinterpret_cast<Value*>(&implicit_args_[kDataIndex]));
+  return Local<Value>(reinterpret_cast<Value*>(implicit_args_[kDataIndex]));
 }
 
 
