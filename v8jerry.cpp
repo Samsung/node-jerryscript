@@ -93,6 +93,14 @@ public:
         return isOk;
     }
 
+    JerryValue* GetProperty(JerryValue* key) {
+        return new JerryValue(jerry_get_property(m_value, key->value()));
+    }
+
+    JerryValue* GetPropertyIdx(uint32_t idx) {
+        return new JerryValue(jerry_get_property_by_index(m_value, idx));
+    }
+
     bool IsString() const { return jerry_value_is_string(m_value); }
     bool IsBoolean() const { return jerry_value_is_boolean(m_value); }
     bool IsFalse() const { return jerry_value_is_boolean(m_value) && !jerry_get_boolean_value(m_value); }
@@ -277,7 +285,6 @@ static void JerryV8FunctionHandlerDataFree(void* data) {
 static jerry_object_native_info_t JerryV8FunctionHandlerTypeInfo = {
     .free_cb = JerryV8FunctionHandlerDataFree,
 };
-
 
 class JerryPlatform : public v8::Platform {
 public:
@@ -871,8 +878,78 @@ bool Object::Set(Local<Value> key, Local<Value> value) {
                 reinterpret_cast<JerryValue*>(*value));
 }
 
+Maybe<bool> Object::Set(Local<Context> context, uint32_t index, Local<Value> value) {
+    return Just(reinterpret_cast<JerryValue*> (this)->SetPropertyIdx(index, reinterpret_cast<JerryValue*>(*value)));
+}
+
 bool Object::Set(uint32_t index, Local<Value> value) {
     return reinterpret_cast<JerryValue*> (this)->SetPropertyIdx(index, reinterpret_cast<JerryValue*>(*value));
+}
+
+Local<Value> Object::Get(uint32_t index) {
+    RETURN_HANDLE(Value, Isolate::GetCurrent(), reinterpret_cast<JerryValue*> (this)->GetPropertyIdx(index));
+}
+
+MaybeLocal<Value> Object::Get(Local<Context> context, uint32_t index) {
+    RETURN_HANDLE(Value, context->GetIsolate(), reinterpret_cast<JerryValue*> (this)->GetPropertyIdx(index));
+}
+
+Local<Value> Object::Get(Local<Value> key) {
+    JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+    RETURN_HANDLE(Value, Isolate::GetCurrent(), reinterpret_cast<JerryValue*> (this)->GetProperty(jkey));
+}
+
+MaybeLocal<Value> Object::Get(Local<Context> context, Local<Value> key) {
+    JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+    RETURN_HANDLE(Value, context->GetIsolate(), reinterpret_cast<JerryValue*> (this)->GetProperty(jkey));
+}
+
+Maybe<bool> Object::Delete(Local<Context> context, Local<Value> key) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
+    JerryValue* jkey = reinterpret_cast<JerryValue*> (*key);
+
+    bool result = jerry_delete_property (jobj->value(), jkey->value());
+    bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+
+    return Just(isOk);
+}
+
+Maybe<bool> Object::Has(Local<Context> context, Local<Value> key) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
+    JerryValue* jkey = reinterpret_cast<JerryValue*> (*key);
+
+    jerry_value_t has_prop_js = jerry_has_property (jobj->value(), jkey->value());
+    bool has_prop = jerry_get_boolean_value (has_prop_js);
+    jerry_release_value (has_prop_js);
+
+    return Just(has_prop);
+}
+
+Maybe<bool> Object::DefineOwnProperty(Local<Context> context, Local<Name> key, Local<Value> value, PropertyAttribute attributes) {
+    JerryValue* obj = reinterpret_cast<JerryValue*> (this);
+    JerryValue* prop_name = reinterpret_cast<JerryValue*> (*key);
+    JerryValue* prop_value = reinterpret_cast<JerryValue*> (*value);
+
+    jerry_property_descriptor_t prop_desc = {
+        .is_value_defined = true,
+        .is_get_defined = false,
+        .is_set_defined = false,
+        .is_writable_defined = true,
+        .is_writable = attributes && !PropertyAttribute::ReadOnly,
+        .is_enumerable_defined = true,
+        .is_enumerable = attributes && !PropertyAttribute::DontEnum,
+        .is_configurable_defined = true,
+        .is_configurable = attributes && !PropertyAttribute::DontDelete,
+        .value = prop_value->value()
+    };
+
+    jerry_value_t result = jerry_define_own_property (obj->value(), prop_name->value(), &prop_desc);
+    bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+    jerry_release_value(result);
+
+    return Just(isOk);
 }
 
 Isolate* Object::GetIsolate() {
