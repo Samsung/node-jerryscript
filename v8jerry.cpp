@@ -1843,6 +1843,20 @@ MaybeLocal<Object> Function::NewInstance(Local<Context> context, int argc, Local
     return NewInstance(argc, argv);
 }
 
+Local<Value> Function::Call(Local<Value> recv, int argc, Local<Value> argv[]) {
+    const JerryValue* jfunc = reinterpret_cast<const JerryValue*>(this);
+    const JerryValue* jthis = reinterpret_cast<const JerryValue*>(*recv);
+
+    std::vector<jerry_value_t> arguments;
+    arguments.resize(argc);
+    for (int idx = 0; idx < argc; idx++) {
+        arguments[idx] = reinterpret_cast<JerryValue*>(*argv[idx])->value();
+    }
+
+    jerry_value_t result = jerry_call_function(jfunc->value(), jthis->value(), &arguments[0], argc);
+    RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(result));
+}
+
 /* Function Template */
 void FunctionTemplate::SetCallHandler(FunctionCallback callback,
                                       v8::Local<Value> data) {

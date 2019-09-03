@@ -127,6 +127,10 @@ int main(int argc, char* argv[]) {
     // Convert the result to an UTF8 string and print it.
     v8::String::Utf8Value utf8(isolate, result);
     printf("%s\n", *utf8);
+
+
+    functemp2->GetFunction()->Call(v8::Undefined(isolate), 0, NULL);
+
   }
 
   // Dispose the isolate and tear down V8.
