@@ -25,10 +25,12 @@ static jerry_value_t BuildHelperMethod(const char* fn_args, const char* fn_body)
 }
 
 /* Jerry <-> V8 binding classes */
-class JerryIsolate;
-class JerryHandleScope;
-class JerryValue;
 class JerryContext;
+class JerryFunctionTemplate;
+class JerryHandleScope;
+class JerryIsolate;
+class JerryObjectTemplate;
+class JerryValue;
 
 class JerryHandle {
 public:
@@ -50,6 +52,8 @@ public:
 private:
     Type m_type;
 };
+
+template class std::vector<JerryHandle*>;
 
 static jerry_object_native_info_t JerryV8ExternalTypeInfo = {
     .free_cb = NULL,
@@ -184,23 +188,97 @@ public:
         return has_data;
     }
 
+    JerryValue* Copy() const {
+        return new JerryValue(jerry_acquire_value(m_value));
+    }
+
+    JerryValue(JerryValue& that) = delete;
+
 private:
+
     jerry_value_t m_value;
 };
 
 struct PropertyEntry {
+    enum Type {
+        Value,
+        GetterSetter,
+    };
+
+    Type type;
     JerryValue* key;
     JerryValue* value;
+    JerryValue* setter;
     v8::PropertyAttribute attribute;
+
+
+    ~PropertyEntry() {
+        delete key;
+
+        if (value != NULL) {
+            delete value;
+        }
+
+        if (setter != NULL) {
+            delete setter;
+        }
+    }
 };
 
 class JerryTemplate : public JerryHandle {
 public:
     void Set(JerryValue* key, JerryValue* value,  v8::PropertyAttribute attribute) {
-        m_properties.push_back(new PropertyEntry{key, value, attribute});
+        m_properties.push_back(new PropertyEntry{PropertyEntry::Value, key, value, NULL, attribute});
     }
 
+    void SetAccessorProperty(JerryValue* key,
+                             JerryValue* getter,
+                             JerryValue* setter,
+                             v8::PropertyAttribute attribute) {
+        m_properties.push_back(new PropertyEntry{PropertyEntry::GetterSetter, key, getter, setter, attribute});
+    }
+
+
     const std::vector<PropertyEntry*>& properties(void) const { return m_properties; }
+
+    void InstallProperties(const jerry_value_t target) {
+        for (PropertyEntry* prop : m_properties) {
+            // TODO: do not ignore the prop->attributes
+            jerry_value_t result = jerry_create_undefined();
+
+            switch (prop->type) {
+                case PropertyEntry::Value: {
+                    result = jerry_set_property(target, prop->key->value(), prop->value->value());
+                    break;
+                }
+                case PropertyEntry::GetterSetter: {
+                    jerry_property_descriptor_t desc;
+                    jerry_init_property_descriptor_fields(&desc);
+
+                    // add getter
+                    if (prop->value != NULL) {
+                        desc.is_get_defined = true;
+                        desc.getter = jerry_acquire_value(prop->value->value());
+                    }
+
+                    // add setter
+                    if (prop->setter != NULL) {
+                        desc.is_set_defined = true;
+                        desc.setter = jerry_acquire_value(prop->setter->value());
+                    }
+
+                    result = jerry_define_own_property(target, prop->key->value(), &desc);
+
+                    jerry_free_property_descriptor_fields(&desc);
+                    break;
+                }
+            }
+
+            bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+            /* TODO: check isOK? */
+            jerry_release_value(result);
+        }
+    }
 
 protected:
     JerryTemplate(JerryHandle::Type type)
@@ -208,17 +286,163 @@ protected:
     {
     }
 
+    void ReleaseProperties(void) {
+        for (PropertyEntry* prop : m_properties) {
+            delete prop;
+        }
+    }
+
     std::vector<PropertyEntry*> m_properties;
+};
+
+
+static jerry_value_t JerryV8GetterSetterHandler(
+    const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt);
+
+/* Getter/setter call types & methods */
+struct JerryV8GetterSetterHandlerData {
+    bool is_setter;
+    union {
+        v8::AccessorGetterCallback getter;
+        v8::AccessorSetterCallback setter;
+    } v8;
+    jerry_value_t external;
+};
+
+static void JerryV8GetterSetterHandlerDataFree(void *data_p) {
+    JerryV8GetterSetterHandlerData* data = reinterpret_cast<JerryV8GetterSetterHandlerData*>(data_p);
+
+    if (data->is_setter == false && data->external) {
+        jerry_release_value(data->external);
+    }
+
+    delete data;
+}
+
+static jerry_object_native_info_t JerryV8GetterSetterHandlerTypeInfo = {
+    .free_cb = JerryV8GetterSetterHandlerDataFree,
+};
+
+struct AccessorEntry {
+    JerryValue* name;
+    v8::AccessorGetterCallback getter;
+    v8::AccessorSetterCallback setter;
+    JerryValue* data;   // Can be NULL
+    v8::AccessControl settings;
+    v8::PropertyAttribute attribute;
+
+    ~AccessorEntry() {
+        delete name;
+        if (data != NULL) {
+            delete data;
+        }
+    }
 };
 
 class JerryObjectTemplate : public JerryTemplate {
 public:
     JerryObjectTemplate()
         : JerryTemplate(ObjectTemplate)
+        , m_function_template(NULL)
     {
     }
 
+    ~JerryObjectTemplate(void) {
+        ReleaseProperties();
+    }
+
+    void SetConstructor(JerryFunctionTemplate* function_template) { m_function_template = function_template; }
+
+    JerryFunctionTemplate* FunctionTemplate(void) { return m_function_template; }
+
+    void SetAccessor(JerryValue* name,
+                     v8::AccessorGetterCallback getter,
+                     v8::AccessorSetterCallback setter,
+                     JerryValue* data,
+                     v8::AccessControl settings,
+                     v8::PropertyAttribute attribute) {
+        m_accessors.push_back(new AccessorEntry{name, getter, setter, data, settings, attribute});
+    }
+
+    void InstallProperties(const jerry_value_t target) {
+        JerryTemplate::InstallProperties(target);
+
+        for (AccessorEntry* entry : m_accessors) {
+            jerry_property_descriptor_t prop_desc;
+            jerry_init_property_descriptor_fields (&prop_desc);
+
+            // TODO: is there always a getter?
+            prop_desc.is_get_defined = true;
+            prop_desc.getter = jerry_create_external_function(JerryV8GetterSetterHandler);
+
+            {
+                JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
+                data->v8.getter = entry->getter;
+                data->external = NULL; // TODO
+                data->is_setter = false;
+
+                jerry_set_object_native_pointer(prop_desc.getter, data, &JerryV8GetterSetterHandlerTypeInfo);
+            }
+
+            prop_desc.is_set_defined = (entry->setter != NULL);
+            if (prop_desc.is_set_defined) {
+                prop_desc.setter = jerry_create_external_function(JerryV8GetterSetterHandler); // TODO: connect setter callback;
+
+                JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
+                data->v8.setter = entry->setter;
+                data->external = NULL; // TODO
+                data->is_setter = true;
+
+                jerry_set_object_native_pointer(prop_desc.setter, data, &JerryV8GetterSetterHandlerTypeInfo);
+            }
+
+            // TODO: handle settings and attributes
+            jerry_value_t result = jerry_define_own_property(target, entry->name->value(), &prop_desc);
+            // TODO: check error;
+            jerry_release_value(result);
+
+            jerry_free_property_descriptor_fields(&prop_desc);
+        }
+    }
+
+    void ReleaseProperties(void) {
+        JerryTemplate::ReleaseProperties();
+
+        for (AccessorEntry* entry : m_accessors) {
+            delete entry;
+        }
+    }
+
+private:
+    // If the m_function_template is null then this is not bound to a function
+    // it must be released "manually"
+    JerryFunctionTemplate* m_function_template;
+    std::vector<AccessorEntry*> m_accessors;
 };
+
+/* Simple function call types & methods */
+struct JerryV8FunctionHandlerData {
+    JerryFunctionTemplate* function_template;
+    v8::FunctionCallback v8callback;
+};
+
+static void JerryV8FunctionHandlerDataFree(void* data) {
+    delete reinterpret_cast<JerryV8FunctionHandlerData*>(data);
+}
+
+static jerry_object_native_info_t JerryV8FunctionHandlerTypeInfo = {
+    .free_cb = JerryV8FunctionHandlerDataFree,
+};
+
+static jerry_object_native_info_t JerryV8ObjectConstructed = {
+    .free_cb = NULL,
+};
+
+static jerry_value_t JerryV8FunctionHandler(
+    const jerry_value_t function_obj,
+    const jerry_value_t this_val,
+    const jerry_value_t args_p[],
+    const jerry_length_t args_cnt);
 
 class JerryFunctionTemplate : public JerryTemplate {
 public:
@@ -227,6 +451,7 @@ public:
         , m_prototype_template(NULL)
         , m_instance_template(NULL)
         , m_external(jerry_create_undefined())
+        , m_function(NULL)
     {
     }
 
@@ -239,7 +464,10 @@ public:
             delete m_instance_template;
         }
 
+        ReleaseProperties();
         jerry_release_value(m_external);
+
+        delete m_function;
     }
 
     JerryObjectTemplate* PrototypeTemplate(void) {
@@ -266,24 +494,31 @@ public:
     v8::FunctionCallback callback(void) const { return m_callback; }
     jerry_value_t external(void) const { return m_external; }
 
+    JerryValue* GetFunction(void) {
+        if (m_function == NULL) {
+            // TODO: have function per context
+            jerry_value_t jfunction = jerry_create_external_function(JerryV8FunctionHandler);
+
+            JerryV8FunctionHandlerData* data = new JerryV8FunctionHandlerData();
+            data->function_template = this; // Required so we can do instance checks.
+            data->v8callback = m_callback;
+
+            jerry_set_object_native_pointer(jfunction, data, &JerryV8FunctionHandlerTypeInfo);
+
+            InstallProperties(jfunction);
+
+            m_function = new JerryValue(jfunction);
+        }
+
+        return m_function;
+    }
+
 private:
     JerryObjectTemplate* m_prototype_template;
     JerryObjectTemplate* m_instance_template;
     v8::FunctionCallback m_callback;
     jerry_value_t m_external;
-};
-
-struct JerryV8FunctionHandlerData {
-    JerryFunctionTemplate* function_template;
-    v8::FunctionCallback v8callback;
-};
-
-static void JerryV8FunctionHandlerDataFree(void* data) {
-    delete reinterpret_cast<JerryV8FunctionHandlerData*>(data);
-}
-
-static jerry_object_native_info_t JerryV8FunctionHandlerTypeInfo = {
-    .free_cb = JerryV8FunctionHandlerDataFree,
+    JerryValue* m_function;
 };
 
 class JerryPlatform : public v8::Platform {
@@ -332,6 +567,8 @@ public:
 
             m_fn_map_set = new JerryValue(BuildHelperMethod(fn_args, fn_body));
         }
+
+        InitalizeSlots();
     }
 
     ~JerryIsolate() {}
@@ -348,8 +585,39 @@ public:
     }
 
     void Dispose(void) {
+        for (std::vector<JerryTemplate*>::reverse_iterator it = m_templates.rbegin();
+            it != m_templates.rend();
+            it++) {
+            JerryHandle* jhandle = *it;
+            switch (jhandle->type()) {
+                case JerryHandle::FunctionTemplate: delete reinterpret_cast<JerryFunctionTemplate*>(jhandle); break;
+                case JerryHandle::ObjectTemplate: {
+                    // TODO: for now it is assumed that the functiontemplate will release the object template
+                    JerryObjectTemplate* tmplt = reinterpret_cast<JerryObjectTemplate*>(jhandle);
+                    if (tmplt->FunctionTemplate() != NULL) {
+                        delete reinterpret_cast<JerryObjectTemplate*>(jhandle);
+                    }
+                    break;
+                }
+                default:
+                    fprintf(stderr, "Isolate::Dispose unsupported type (%d)\n", jhandle->type());
+                    break;
+            }
+        }
+
         delete m_fn_map_new;
         delete m_fn_map_set;
+
+        // Release slots
+        {
+            int root_offset = v8::internal::Internals::kIsolateRootsOffset / v8::internal::kApiPointerSize;
+            delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex]);
+            delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kNullValueRootIndex]);
+            delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kTrueValueRootIndex]);
+            delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kFalseValueRootIndex]);
+            delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kEmptyStringRootIndex]);
+        }
+
         jerry_cleanup();
 
         // Warning!... Do not use the JerryIsolate after this!
@@ -377,6 +645,9 @@ public:
         m_handleScopes.top()->AddHandle(jvalue);
     }
 
+    void AddTemplate(JerryTemplate* handle) {
+        m_templates.push_back(handle);
+    }
 
     static v8::Isolate* toV8(JerryIsolate* iso) {
         return reinterpret_cast<v8::Isolate*>(iso);
@@ -395,11 +666,40 @@ public:
     }
 
 private:
-    static JerryIsolate* s_currentIsolate;
+    void InitalizeSlots(void) {
+        ::memset(m_slot, 0, sizeof(m_slot));
+
+        int root_offset = v8::internal::Internals::kIsolateRootsOffset / v8::internal::kApiPointerSize;
+        m_slot[v8::internal::Internals::kExternalMemoryOffset / v8::internal::kApiPointerSize] = (void*) 0;
+        m_slot[v8::internal::Internals::kExternalMemoryLimitOffset / v8::internal::kApiPointerSize] = (void*) (1024*1024);
+                    // v8::internal::kExternalAllocationSoftLimit
+
+        // Undefined
+        m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex] = new JerryValue(jerry_create_undefined());
+        // Null
+        m_slot[root_offset + v8::internal::Internals::kNullValueRootIndex] = new JerryValue(jerry_create_null());
+        // Boolean True
+        m_slot[root_offset + v8::internal::Internals::kTrueValueRootIndex] = new JerryValue(jerry_create_boolean(true));
+        // Boolean False
+        m_slot[root_offset + v8::internal::Internals::kFalseValueRootIndex] = new JerryValue(jerry_create_boolean(false));
+        // Empty string
+        m_slot[root_offset + v8::internal::Internals::kEmptyStringRootIndex] = new JerryValue(jerry_create_string_sz((const jerry_char_t*)"", 0));
+        // TODO: do we need these?
+        //m_slot[root_offset + v8::internal::Internals::kInt32ReturnValuePlaceholderIndex] =
+        //m_slot[root_offset + v8::internal::Internals::kUint32ReturnValuePlaceholderIndex] =
+        //m_slot[root_offset + v8::internal::Internals::kDoubleReturnValuePlaceholderIndex] =
+    }
+
+    // Slots accessed by v8::Isolate::Get/SetData
+    // They must be the first field of GraalIsolate
+    void* m_slot[22] = {};
 
     std::stack<JerryHandleScope*> m_handleScopes;
+    std::vector<JerryTemplate*> m_templates;
     JerryValue* m_fn_map_new;
     JerryValue* m_fn_map_set;
+
+    static JerryIsolate* s_currentIsolate;
 };
 
 JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
@@ -436,8 +736,266 @@ private:
     JerryIsolate* m_isolate;
 };
 
+
+template<typename T>
+class JerryPropertyCallbackInfo : public v8::PropertyCallbackInfo<T> {
+/* From parent:
+  static const int kShouldThrowOnErrorIndex = 0;
+  static const int kHolderIndex = 1;
+  static const int kIsolateIndex = 2;
+  static const int kReturnValueDefaultValueIndex = 3;
+  static const int kReturnValueIndex = 4;
+  static const int kDataIndex = 5;
+  static const int kThisIndex = 6;
+  static const int kArgsLength = 7;
+
+*/
+public:
+    static const int kImplicitArgsSize = v8::FunctionCallbackInfo<T>::kArgsLength + 1;
+
+    JerryPropertyCallbackInfo(
+        const jerry_value_t function_obj,
+        const jerry_value_t this_val,
+        const jerry_value_t args_p[],
+        const jerry_length_t args_cnt,
+        const JerryV8GetterSetterHandlerData* data)
+        : v8::PropertyCallbackInfo<T>(reinterpret_cast<v8::internal::Object**>(BuildArgs(this_val, data)))
+        , m_args(reinterpret_cast<JerryHandle**>(this->args_))
+    {
+    }
+
+    ~JerryPropertyCallbackInfo() {
+        delete [] m_args;
+    }
+
+private:
+    static JerryHandle** BuildArgs(const jerry_value_t this_val, const JerryV8GetterSetterHandlerData* data) {
+        JerryHandle **values = new JerryHandle*[kImplicitArgsSize];
+
+        values[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = 0; // TODO: fix this
+        values[v8::PropertyCallbackInfo<T>::kHolderIndex] = new JerryValue(jerry_acquire_value(this_val)); // TODO: 'this' object is not correct
+        // TODO: correctly fill the arguments:
+        values[v8::PropertyCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(v8::Isolate::GetCurrent()); /* isolate; */
+        //values[v8::PropertyCallbackInfo<T>::kReturnValueDefaultValueIndex] = new JerryValue(jerry_create_undefined()); // TODO
+        values[v8::PropertyCallbackInfo<T>::kReturnValueIndex] = new JerryValue(jerry_create_undefined());
+
+        values[v8::PropertyCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(data->external)); /* data; */
+        values[v8::PropertyCallbackInfo<T>::kThisIndex] = new JerryValue(jerry_acquire_value(this_val));
+        values[v8::PropertyCallbackInfo<T>::kArgsLength] = 0; // TODO
+
+        // HandleScope will do the cleanup for us at a later stage
+        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kHolderIndex]);
+        //JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kReturnValueDefaultValueIndex]);
+        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kReturnValueIndex]);
+        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kDataIndex]);
+        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kThisIndex]);
+
+        return values;
+    }
+
+    JerryHandle** m_args;
+};
+
+static jerry_value_t JerryV8GetterSetterHandler(
+    const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
+    // TODO: extract the native pointer extraction to a method
+    void *native_p;
+    bool has_data = jerry_get_object_native_pointer(function_obj, &native_p, &JerryV8GetterSetterHandlerTypeInfo);
+
+    if (!has_data) {
+        fprintf(stderr, "ERRR.... should not be here!(%s:%d)\n", __FILE__, __LINE__);
+        abort();
+        return jerry_create_error(JERRY_ERROR_REFERENCE, (const jerry_char_t*)"BAD!!");
+    }
+    JerryV8GetterSetterHandlerData* data = reinterpret_cast<JerryV8GetterSetterHandlerData*>(native_p);
+
+    // Make sure that Localy allocated vars will be freed upon exit.
+    v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
+
+    jerry_value_t jret = jerry_create_undefined();
+
+    if (data->is_setter) {
+        JerryPropertyCallbackInfo<void> info(function_obj, this_val, args_p, args_cnt, data);
+
+        // TODO: assert on args[0]?
+        JerryValue new_value(jerry_acquire_value(args_p[0]));
+        data->v8.setter(v8::Local<v8::String>(), *reinterpret_cast<v8::Local<v8::Value>*>(&new_value), info);
+    } else {
+        JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data);
+        data->v8.getter(v8::Local<v8::String>(), info);
+
+        v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+
+        // Again: dragons!
+        JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+
+        jret = jerry_acquire_value(retVal->value());
+    }
+
+
+    // No need to delete the JerryValue here, the HandleScope will take (should) care of it!
+    //delete retVal;
+
+    return jret;
+}
+
+
+
+/* Function callback handler */
+template<typename T>
+class JerryFunctionCallbackInfo : public v8::FunctionCallbackInfo<T> {
+/* Form parent:
+  static const int kHolderIndex = 0;
+  static const int kIsolateIndex = 1;
+  static const int kReturnValueDefaultValueIndex = 2;
+  static const int kReturnValueIndex = 3;
+  static const int kDataIndex = 4;
+  static const int kCalleeIndex = 5;
+  static const int kContextSaveIndex = 6;
+static const int kNewTargetIndex = 7;
+*/
+public:
+    static const int kImplicitArgsSize = v8::FunctionCallbackInfo<T>::kNewTargetIndex + 1;
+
+    JerryFunctionCallbackInfo(
+        const jerry_value_t function_obj,
+        const jerry_value_t this_val,
+        const jerry_value_t args_p[],
+        const jerry_length_t args_cnt,
+        const JerryV8FunctionHandlerData* handlerData)
+        // Please note there is a "Hack"/"Fix" in the v8.h file where the FunctionCallbackInfo's "values_" member is accessed!
+        : v8::FunctionCallbackInfo<T>(reinterpret_cast<v8::internal::Object**>(BuildImplicitArgs(function_obj, this_val, handlerData)),
+                                      reinterpret_cast<v8::internal::Object**>(BuildArgs(this_val, args_p, args_cnt) + args_cnt - 1),
+                                      args_cnt)
+        // Beware of magic: !!!
+        , m_values(reinterpret_cast<JerryHandle**>(this->values_) - args_cnt + 1)
+    {}
+
+    ~JerryFunctionCallbackInfo() {
+        const int args_count = this->Length() + 1; /* +1 is the js 'this' */
+        for (int idx = 0; idx < args_count; idx++) {
+            delete m_values[idx];
+        }
+        delete [] m_values;
+
+        JerryHandle **implicit_args = reinterpret_cast<JerryHandle**>(this->implicit_args_);
+        delete [] implicit_args;
+    }
+
+private:
+    static JerryHandle** BuildArgs(
+        const jerry_value_t this_val,
+        const jerry_value_t args_p[],
+        const jerry_length_t args_cnt) {
+
+        JerryHandle **values = new JerryHandle*[args_cnt + 1 /* this */];
+        /* this should be at 'values - 1' */
+
+        /* args_p[0]  is at 'values - 0' */
+        /* args_p[1]  is at 'values - 1' */
+        /* args_p[2]  is at 'values - 2' */
+        for (jerry_length_t idx = 0; idx < args_cnt; idx++) {
+            values[args_cnt - idx - 1] = new JerryValue(args_p[idx]);
+        }
+        values[args_cnt] = new JerryValue(this_val);
+
+        return values;
+    }
+
+    static JerryHandle** BuildImplicitArgs(const jerry_value_t function_obj,
+                                           const jerry_value_t this_val,
+                                           const JerryV8FunctionHandlerData* handlerData) {
+        JerryHandle **values = new JerryHandle*[kImplicitArgsSize];
+        /* TODO: From the docs:
+         * If the callback was created without a Signature, this is the same
+         * value as This(). If there is a signature, and the signature didn't match
+         * This() but one of its hidden prototypes, this will be the respective
+         * hidden prototype.
+         */
+        values[v8::FunctionCallbackInfo<T>::kHolderIndex] = new JerryValue(jerry_acquire_value(this_val));
+        // TODO: correctly fill the arguments:
+        values[v8::FunctionCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(v8::Isolate::GetCurrent()); /* isolate; */
+        values[v8::FunctionCallbackInfo<T>::kReturnValueIndex] = new JerryValue(jerry_create_undefined()); /* construct_call ? this : nullptr;*/
+
+        values[v8::FunctionCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(handlerData->function_template->external())); /* data; */
+        values[v8::FunctionCallbackInfo<T>::kCalleeIndex] = NULL; /* callee; */
+        values[v8::FunctionCallbackInfo<T>::kNewTargetIndex] = NULL; /* new_target; */
+
+        // HandleScope will do the cleanup for us at a later stage
+        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kHolderIndex]);
+        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kReturnValueIndex]);
+        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kDataIndex]);
+
+        return values;
+    }
+
+    JerryHandle** m_values;
+};
+
+static jerry_value_t JerryV8FunctionHandler(
+    const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
+
+    // TODO: extract the native pointer extraction to a method
+    void *native_p;
+    bool has_data = jerry_get_object_native_pointer(function_obj, &native_p, &JerryV8FunctionHandlerTypeInfo);
+
+    if (!has_data) {
+        fprintf(stderr, "ERRR.... should not be here!(%s:%d)\n", __FILE__, __LINE__);
+        abort();
+        return jerry_create_error(JERRY_ERROR_REFERENCE, (const jerry_char_t*)"BAD!!");
+    }
+    JerryV8FunctionHandlerData* data = reinterpret_cast<JerryV8FunctionHandlerData*>(native_p);
+
+    // Make sure that Localy allocated vars will be freed upon exit.
+    v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
+
+    // If this is a constructor call do a few extra things
+    // TODO: this should be really checked correcty
+    if (jerry_value_is_object(this_val)) {
+
+        // TODO: remove this "constructor" call check.
+        if (!jerry_get_object_native_pointer(this_val, NULL, &JerryV8ObjectConstructed)) {
+            // Add reference to the function template
+            // TODO: really do a correct is constructor call check and only set the constructor function template on the new instance.
+            //jerry_set_object_native_pointer(this_val, data, &JerryV8FunctionHandlerTypeInfo);
+
+            if (data->function_template->HasInstanceTemplate()) {
+                JerryObjectTemplate* tmplt = data->function_template->InstanceTemplate();
+                tmplt->InstallProperties(this_val);
+            }
+
+            // The method was called with a "this" object and there was no "JerryV8ObjectConstructed" set
+            // assume that this is a constructo call.
+            // TODO: this is not always correct logic. Propert constructor call check is needed.
+            jerry_set_object_native_pointer(this_val, data, &JerryV8ObjectConstructed);
+        }
+    }
+
+    jerry_value_t jret = jerry_create_undefined();
+
+    if (data->v8callback != NULL) {
+        JerryFunctionCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data);
+
+        data->v8callback(info);
+
+        v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+
+        // Again: dragons!
+        JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+
+        jret = jerry_acquire_value(retVal->value());
+    }
+
+    // No need to delete the JerryValue here, the HandleScope will take (should) care of it!
+    //delete retVal;
+
+    return jret;
+}
+
+
+/**/
+
 JerryHandleScope::~JerryHandleScope(void) {
-    //for (JerryHandle* jhandle : m_handles) {
     for (std::vector<JerryHandle*>::reverse_iterator it = m_handles.rbegin();
         it != m_handles.rend();
         it++) {
@@ -445,12 +1003,8 @@ JerryHandleScope::~JerryHandleScope(void) {
         switch (jhandle->type()) {
             case JerryHandle::Value: delete reinterpret_cast<JerryValue*>(jhandle); break;
             case JerryHandle::Context: delete reinterpret_cast<JerryContext*>(jhandle); break;
-            case JerryHandle::FunctionTemplate: delete reinterpret_cast<JerryFunctionTemplate*>(jhandle); break;
-            case JerryHandle::ObjectTemplate:
-                // TODO: for now it is assumed that the functiontemplate will release the object template
-                //delete reinterpret_cast<JerryObjectTemplate*>(jhandle);
-                break;
-            default: fprintf(stderr, "~JerryHandleScope::Unknown handle type (%d)\n", jhandle->type()); break;
+            // FunctionTemplate and ObjectTemplates are now Isolate level items.
+            default: fprintf(stderr, "~JerryHandleScope::Unsupported handle type (%d)\n", jhandle->type()); break;
         }
     }
 }
@@ -627,7 +1181,15 @@ HandleScope::~HandleScope(void) {
 
 internal::Object** HandleScope::CreateHandle(internal::Isolate* isolate, internal::Object* value) {
     JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(value);
-    reinterpret_cast<JerryIsolate*>(isolate)->AddToHandleScope(jhandle);
+    switch (jhandle->type()) {
+        case JerryHandle::FunctionTemplate:
+        case JerryHandle::ObjectTemplate:
+            reinterpret_cast<JerryIsolate*>(isolate)->AddTemplate(reinterpret_cast<JerryTemplate*>(jhandle));
+            break;
+        default:
+            reinterpret_cast<JerryIsolate*>(isolate)->AddToHandleScope(jhandle);
+            break;
+    }
     return reinterpret_cast<internal::Object**>(jhandle);
 }
 
@@ -1189,140 +1751,6 @@ MaybeLocal<Object> Function::NewInstance(Local<Context> context, int argc, Local
 }
 
 /* Function Template */
-template<typename T>
-class JerryFunctionCallbackInfo : public FunctionCallbackInfo<T> {
-/* Form parent:
-  static const int kHolderIndex = 0;
-  static const int kIsolateIndex = 1;
-  static const int kReturnValueDefaultValueIndex = 2;
-  static const int kReturnValueIndex = 3;
-  static const int kDataIndex = 4;
-  static const int kCalleeIndex = 5;
-  static const int kContextSaveIndex = 6;
-static const int kNewTargetIndex = 7;
-*/
-public:
-    static const int kImplicitArgsSize = FunctionCallbackInfo<T>::kNewTargetIndex + 1;
-
-    JerryFunctionCallbackInfo(
-        const jerry_value_t function_obj,
-        const jerry_value_t this_val,
-        const jerry_value_t args_p[],
-        const jerry_length_t args_cnt,
-        const JerryV8FunctionHandlerData* handlerData)
-        // Please note there is a "Hack"/"Fix" in the v8.h file where the FunctionCallbackInfo's "values_" member is accessed!
-        : FunctionCallbackInfo<T>(reinterpret_cast<internal::Object**>(BuildImplicitArgs(function_obj, this_val, handlerData)),
-                                reinterpret_cast<internal::Object**>(BuildArgs(this_val, args_p, args_cnt) + args_cnt - 1),
-                                args_cnt)
-        // Beware of magic: !!!
-        , m_values(reinterpret_cast<JerryHandle**>(this->values_) - args_cnt + 1)
-    {}
-
-    ~JerryFunctionCallbackInfo() {
-        const int args_count = this->Length() + 1; /* +1 is the js 'this' */
-        for (int idx = 0; idx < args_count; idx++) {
-            delete m_values[idx];
-        }
-        delete [] m_values;
-
-        JerryHandle **implicit_args = reinterpret_cast<JerryHandle**>(this->implicit_args_);
-        delete [] implicit_args;
-    }
-
-private:
-    static JerryHandle** BuildArgs(
-        const jerry_value_t this_val,
-        const jerry_value_t args_p[],
-        const jerry_length_t args_cnt) {
-
-        JerryHandle **values = new JerryHandle*[args_cnt + 1 /* this */];
-        /* this should be at 'values - 1' */
-
-        /* args_p[0]  is at 'values - 0' */
-        /* args_p[1]  is at 'values - 1' */
-        /* args_p[2]  is at 'values - 2' */
-        for (jerry_length_t idx = 0; idx < args_cnt; idx++) {
-            values[args_cnt - idx - 1] = new JerryValue(args_p[idx]);
-        }
-        values[args_cnt] = new JerryValue(this_val);
-
-        return values;
-    }
-
-    static JerryHandle** BuildImplicitArgs(const jerry_value_t function_obj,
-                                           const jerry_value_t this_val,
-                                           const JerryV8FunctionHandlerData* handlerData) {
-
-        JerryHandle **values = new JerryHandle*[kImplicitArgsSize];
-        values[FunctionCallbackInfo<T>::kHolderIndex] = new JerryValue(jerry_acquire_value(this_val));
-        // TODO: correctly fill the arguments:
-        values[FunctionCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(Isolate::GetCurrent()); /* isolate; */
-        values[FunctionCallbackInfo<T>::kReturnValueIndex] = new JerryValue(jerry_create_undefined()); /*construct_call ? this : nullptr;*/
-        values[FunctionCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(handlerData->function_template->external())); /* data; */
-        values[FunctionCallbackInfo<T>::kCalleeIndex] = NULL; /* callee; */
-        values[FunctionCallbackInfo<T>::kNewTargetIndex] = NULL; /* new_target; */
-
-        // HandleScope will do the cleanup for us at a later stage
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[FunctionCallbackInfo<T>::kHolderIndex]);
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[FunctionCallbackInfo<T>::kReturnValueIndex]);
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[FunctionCallbackInfo<T>::kDataIndex]);
-
-        return values;
-    }
-
-    JerryHandle** m_values;
-};
-
-static jerry_value_t JerryV8FunctionHandler(
-    const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
-
-    // TODO: extract the native pointer extraction to a method
-    void *native_p;
-    bool has_data = jerry_get_object_native_pointer(function_obj, &native_p, &JerryV8FunctionHandlerTypeInfo);
-
-    if (!has_data) {
-        fprintf(stderr, "ERRR.... should not be here!(%s:%d)\n", __FILE__, __LINE__);
-        abort();
-        return jerry_create_error(JERRY_ERROR_REFERENCE, (const jerry_char_t*)"BAD!!");
-    }
-    JerryV8FunctionHandlerData* data = reinterpret_cast<JerryV8FunctionHandlerData*>(native_p);
-
-    // Make sure that Localy allocated vars will be freed upon exit.
-    v8::HandleScope handle_scope(Isolate::GetCurrent());
-
-    if (jerry_value_is_object(this_val)) {
-        JerryValue* object = new JerryValue(jerry_acquire_value(this_val));
-
-        if (data->function_template->HasInstanceTemplate()) {
-            JerryObjectTemplate* tmplt = data->function_template->InstanceTemplate();
-
-            // TODO: move to a general place (see FunctionTemplate::GetFunction)
-            for(PropertyEntry* prop : tmplt->properties()) {
-                // TODO: do not ignore the prop->attributes
-                object->SetProperty(prop->key, prop->value);
-            }
-        }
-        delete object;
-    }
-
-
-    JerryFunctionCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data);
-
-    data->v8callback(info);
-
-    v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
-
-    // Again: dragons!
-    JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-
-    jerry_value_t jret = jerry_acquire_value(retVal->value());
-
-    // No need to delete the JerryValue here, the HandleScope will take (should) care of it!
-    //delete retVal;
-
-    return jret;
-}
-
 void FunctionTemplate::SetCallHandler(FunctionCallback callback,
                                       v8::Local<Value> data) {
     JerryFunctionTemplate* func = reinterpret_cast<JerryFunctionTemplate*>(this);
@@ -1347,22 +1775,7 @@ Local<FunctionTemplate> FunctionTemplate::New(
 
 Local<Function> FunctionTemplate::GetFunction() {
     JerryFunctionTemplate* tmplt = reinterpret_cast<JerryFunctionTemplate*>(this);
-
-    jerry_value_t jfunction = jerry_create_external_function(JerryV8FunctionHandler);
-
-    JerryV8FunctionHandlerData* data = new JerryV8FunctionHandlerData();
-    data->function_template = tmplt; // Required so we can do instance checks.
-    data->v8callback = tmplt->callback();
-
-    jerry_set_object_native_pointer(jfunction, data, &JerryV8FunctionHandlerTypeInfo);
-
-    JerryValue* func = new JerryValue(jfunction);
-
-    // TODO: move to a general place (see Function::NewInstance)
-    for(PropertyEntry* prop : tmplt->properties()) {
-        // TODO: do not ignore the prop->attributes
-        func->SetProperty(prop->key, prop->value);
-    }
+    JerryValue *func = tmplt->GetFunction()->Copy();
 
     RETURN_HANDLE(Function, Isolate::GetCurrent(), func);
 }
@@ -1374,13 +1787,13 @@ void FunctionTemplate::SetClassName(Local<String> name) {
 bool FunctionTemplate::HasInstance(Local<Value> object) {
     JerryValue* value = reinterpret_cast<JerryValue*>(*object);
 
-    if (!value->IsFunction()) {
+    if (!value->IsObject() || value->IsFunction()) {
         return false;
     }
 
     // TODO: extract the native pointer extraction to a method
     void *native_p;
-    bool has_data = jerry_get_object_native_pointer(value->value(), &native_p, &JerryV8FunctionHandlerTypeInfo);
+    bool has_data = jerry_get_object_native_pointer(value->value(), &native_p, &JerryV8ObjectConstructed);
 
     if (!has_data) {
         return false;
@@ -1406,15 +1819,97 @@ Local<ObjectTemplate> FunctionTemplate::InstanceTemplate() {
     RETURN_HANDLE(ObjectTemplate, Isolate::GetCurrent(), obj_template);
 }
 
-/*  ObjectTemplate */
+/*  Template */
 void Template::Set(v8::Local<v8::Name> name, v8::Local<v8::Data> data, v8::PropertyAttribute attributes) {
     JerryTemplate* templt = reinterpret_cast<JerryTemplate*>(this);
 
-    JerryValue* key = reinterpret_cast<JerryValue*>(*name);
+    // Here we copy the values as the template's internl elements will do a release on them
+    JerryValue* key = reinterpret_cast<JerryValue*>(*name)->Copy();
     // TODO: maybe this should not be a JerryValue?
-    JerryValue* value = reinterpret_cast<JerryValue*>(*data);
+    JerryValue* value = reinterpret_cast<JerryValue*>(*data)->Copy();
 
     templt->Set(key, value, attributes);
+}
+
+void Template::SetAccessorProperty(
+    Local<Name> name,
+    Local<FunctionTemplate> getter /* = Local<FunctionTemplate>()*/,
+    Local<FunctionTemplate> setter /* = Local<FunctionTemplate>()*/,
+    PropertyAttribute attribute /* = None */,
+    AccessControl settings /*= DEFAULT */) {
+
+    JerryValue* key = reinterpret_cast<JerryValue*>(*name)->Copy();
+    // TODO: maybe this should not be a JerryValue?
+
+    JerryValue* jgetter = NULL;
+    JerryValue* jsetter = NULL;
+    if (!getter.IsEmpty()) {
+
+        jgetter = reinterpret_cast<JerryFunctionTemplate*>(*getter)->GetFunction()->Copy();
+    }
+
+    if (!setter.IsEmpty()) {
+        jgetter = reinterpret_cast<JerryFunctionTemplate*>(*setter)->GetFunction()->Copy();
+    }
+    // TODO: handle attributes and settings
+
+    JerryTemplate* templt = reinterpret_cast<JerryTemplate*>(this);
+    templt->SetAccessorProperty(key, jgetter, jsetter, attribute);
+}
+
+/* ObjectTemplate */
+Local<ObjectTemplate> ObjectTemplate::New(Isolate* isolate, Local<FunctionTemplate> constructor /* = Local<FunctionTemplate>() */) {
+    JerryObjectTemplate* obj_template = new JerryObjectTemplate();
+
+    if (!constructor.IsEmpty()) {
+        // TODO: check if this is correct
+        JerryFunctionTemplate* function_template = reinterpret_cast<JerryFunctionTemplate*>(*constructor);
+        obj_template->SetConstructor(function_template);
+    }
+
+    RETURN_HANDLE(ObjectTemplate, isolate, obj_template);
+}
+
+MaybeLocal<Object> ObjectTemplate::NewInstance(Local<Context> context) {
+    JerryObjectTemplate* object_template = reinterpret_cast<JerryObjectTemplate*>(this);
+
+    // TODO: the function template's method should be set as the object's constructor
+    JerryValue* new_instance = new JerryValue(jerry_create_object());
+    object_template->InstallProperties(new_instance->value());
+
+    RETURN_HANDLE(Object, context->GetIsolate(), new_instance);
+}
+
+void ObjectTemplate::SetHandler(v8::NamedPropertyHandlerConfiguration const& handler) {
+    // TODO: JerryScript: Add support for "interceptors"
+}
+
+/** SetAccessor: { value: 1556,
+  writable: true,
+  enumerable: true,
+  configurable: true }
+*/
+void ObjectTemplate::SetAccessor(Local<String> name,
+                                 AccessorGetterCallback getter,
+                                 AccessorSetterCallback setter /* = 0 */,
+                                 Local<Value> data /* = Local<Value>() */,
+                                 AccessControl settings /* = DEFAULT */,
+                                 PropertyAttribute attribute /* = None */,
+                                 Local<AccessorSignature> signature /* = Local<AccessorSignature>() */) {
+    JerryObjectTemplate* tmplt = reinterpret_cast<JerryObjectTemplate*>(this);
+
+    JerryValue* jname = reinterpret_cast<JerryValue*>(*name)->Copy();
+    JerryValue* jdata = NULL;
+    if (!data.IsEmpty()) {
+        jdata = reinterpret_cast<JerryValue*>(*data)->Copy();
+    }
+
+    tmplt->SetAccessor(jname, getter, setter, jdata, settings, attribute);
+}
+
+/* Signature */
+Local<Signature> Signature::New(Isolate* isolate, Local<FunctionTemplate> receiver) {
+    return Local<Signature>(reinterpret_cast<Signature*>(*receiver));
 }
 
 /* Stackframe */

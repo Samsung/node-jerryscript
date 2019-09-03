@@ -29,6 +29,11 @@ void method_constr(const v8::FunctionCallbackInfo<v8::Value>& info) {
     printf("Construct\n");
 }
 
+void method_getter(const v8::Local<v8::String> propname, const v8::PropertyCallbackInfo<v8::Value>& info) {
+    printf("Accessed\n");
+    info.GetReturnValue().Set(v8::String::NewFromUtf8(info.GetIsolate(), "ACCESSED", v8::NewStringType::kNormal).ToLocalChecked());
+}
+
 int main(int argc, char* argv[]) {
   // Initialize V8.
   v8::V8::InitializeICUDefaultLocation(argv[0]);
@@ -66,13 +71,43 @@ int main(int argc, char* argv[]) {
     v8::Local<v8::FunctionTemplate> functemp = v8::FunctionTemplate::New(isolate, method_demo, external);
     functemp->Set(isolate, "test", v8::Integer::New(isolate, 38));
 
+    v8::Local<v8::Function> funci = functemp->GetFunction();
     context->Global()->Set(
         v8::String::NewFromUtf8(isolate, "DEMO", v8::NewStringType::kNormal).ToLocalChecked(),
-        functemp->GetFunction());
+        funci);
 
-    v8::Local<v8::FunctionTemplate> functemp2 = v8::FunctionTemplate::New(isolate, method_constr);
+    printf("HasInstance: %d\n", functemp->HasInstance(funci)); // Should be 0
+    printf("HasInstance: %d\n", functemp->HasInstance(funci->NewInstance(0, NULL))); // Should be 1
+
+    v8::Local<v8::FunctionTemplate> functemp2;
+    //v8::Local<v8::FunctionTemplate> functemp2 = v8::FunctionTemplate::New(isolate, method_constr);
+    functemp2 = v8::FunctionTemplate::New(isolate, method_constr);
+
+    v8::Local<v8::FunctionTemplate> functemp3;
+    { v8::HandleScope handle_scope(isolate);
+    functemp3 = v8::FunctionTemplate::New(isolate, method_constr);
+
+    functemp2->SetAccessorProperty(
+        v8::String::NewFromUtf8(isolate, "DD", v8::NewStringType::kNormal).ToLocalChecked(),
+        functemp3);
+    }
     v8::Local<v8::ObjectTemplate> objt = functemp2->InstanceTemplate();
     objt->Set(isolate, "test", v8::Integer::New(isolate, 35));
+    objt->SetAccessor(v8::String::NewFromUtf8(isolate, "getprop", v8::NewStringType::kNormal).ToLocalChecked(),
+                      method_getter);
+
+    context->Global()->Set(
+        v8::String::NewFromUtf8(isolate, "CONSTR2", v8::NewStringType::kNormal).ToLocalChecked(),
+        functemp2->GetFunction());
+
+    context->Global()->Set(
+        v8::String::NewFromUtf8(isolate, "obj", v8::NewStringType::kNormal).ToLocalChecked(),
+        objt->NewInstance(context).ToLocalChecked());
+
+    v8::Local<v8::ObjectTemplate> objt2 = v8::ObjectTemplate::New(isolate, functemp2);
+    context->Global()->Set(
+        v8::String::NewFromUtf8(isolate, "obj2", v8::NewStringType::kNormal).ToLocalChecked(),
+        objt2->NewInstance(context).ToLocalChecked());
 
     context->Global()->Set(
         v8::String::NewFromUtf8(isolate, "CONSTR", v8::NewStringType::kNormal).ToLocalChecked(),
@@ -80,7 +115,7 @@ int main(int argc, char* argv[]) {
 
     // Create a string containing the JavaScript source code.
     v8::Local<v8::String> source =
-        v8::String::NewFromUtf8(isolate, "'Hello' + ', World!' + DATA + DEMO(33, 44, 'txt') + DEMO.test + (new CONSTR()).test",
+        v8::String::NewFromUtf8(isolate, "'Hello' + ', World!' + DATA + DEMO(33, 44, 'txt') + DEMO.test + (new CONSTR()).test + obj.test + CONSTR2.DD + obj.getprop",
                                 v8::NewStringType::kNormal)
             .ToLocalChecked();
     // Compile the source code.

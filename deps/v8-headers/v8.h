@@ -320,6 +320,7 @@ class Local {
   friend class ObjectTemplate;
   friend class Function;
   friend class External;
+  friend class Signature;
   // ^^
 
   friend class Object;
@@ -9157,7 +9158,9 @@ class Internals {
   V8_INLINE static internal::Object** GetRoot(v8::Isolate* isolate,
                                               int index) {
     uint8_t* addr = reinterpret_cast<uint8_t*>(isolate) + kIsolateRootsOffset;
-    return reinterpret_cast<internal::Object**>(addr + index * kApiPointerSize);
+    // TODO: revert to original
+    //return reinterpret_cast<internal::Object**>(addr + index * kApiPointerSize);
+    return *reinterpret_cast<internal::Object***>(addr + index * kApiPointerSize);
   }
 
   template <typename T>
@@ -10200,19 +10203,25 @@ Isolate* PropertyCallbackInfo<T>::GetIsolate() const {
 
 template<typename T>
 Local<Value> PropertyCallbackInfo<T>::Data() const {
-  return Local<Value>(reinterpret_cast<Value*>(&args_[kDataIndex]));
+  // TODO: revert to original
+  //return Local<Value>(reinterpret_cast<Value*>(&args_[kDataIndex]));
+  return Local<Value>(reinterpret_cast<Value*>(args_[kDataIndex]));
 }
 
 
 template<typename T>
 Local<Object> PropertyCallbackInfo<T>::This() const {
+  // TODO: revert to original
+  //return Local<Object>(reinterpret_cast<Object*>(args_[kThisIndex]));
   return Local<Object>(reinterpret_cast<Object*>(&args_[kThisIndex]));
 }
 
 
 template<typename T>
 Local<Object> PropertyCallbackInfo<T>::Holder() const {
-  return Local<Object>(reinterpret_cast<Object*>(&args_[kHolderIndex]));
+  // TODO: revert to original
+  //return Local<Object>(reinterpret_cast<Object*>(&args_[kHolderIndex]));
+  return Local<Object>(reinterpret_cast<Object*>(args_[kHolderIndex]));
 }
 
 
