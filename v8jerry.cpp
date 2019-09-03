@@ -1,5 +1,5 @@
 #include <v8.h>
-
+#include <v8-debug.h>
 #include <libplatform/libplatform.h>
 
 #include <cstring>
@@ -1582,6 +1582,10 @@ Maybe<bool> Object::DefineOwnProperty(Local<Context> context, Local<Name> key, L
     return Just(isOk);
 }
 
+Maybe<bool> Object::SetPrototype(Local<Context> context, Local<v8::Value> prototype) {
+    return Just(SetPrototype(prototype));
+}
+
 bool Object::SetPrototype(Local<Value> prototype) {
     JerryValue* obj = reinterpret_cast<JerryValue*> (this);
     JerryValue* proto = reinterpret_cast<JerryValue*> (*prototype);
@@ -1811,6 +1815,16 @@ Local<Value> Script::Run() {
 }
 
 /* Function */
+MaybeLocal<Function> Function::New(Local<Context> context,
+                                   FunctionCallback callback,
+                                   Local<Value> data, /* = Local<Value>() */
+                                   int length, /* = 0 */
+                                   ConstructorBehavior behavior /* = ConstructorBehavior::kAllow */) {
+    // TODO: maybe don't use function template?
+    Local<FunctionTemplate> tmplt = FunctionTemplate::New(context->GetIsolate(), callback, data, Local<Signature>(), length, behavior);
+    return tmplt->GetFunction();
+}
+
 Local<Object> Function::NewInstance(int argc, Local<Value> argv[]) const {
     const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
 
@@ -1842,9 +1856,12 @@ void FunctionTemplate::SetCallHandler(FunctionCallback callback,
     }
 }
 
-Local<FunctionTemplate> FunctionTemplate::New(
-    Isolate* isolate, FunctionCallback callback /*= 0*/, Local<Value> data /*= Local<Value>()*/,
-    Local<Signature> signature /* = Local<Signature>() */, int length /* = 0 */, ConstructorBehavior behavior /* = ConstructorBehavior::kAllow */) {
+Local<FunctionTemplate> FunctionTemplate::New(Isolate* isolate,
+                                              FunctionCallback callback /*= 0*/,
+                                              Local<Value> data /*= Local<Value>()*/,
+                                              Local<Signature> signature /* = Local<Signature>() */,
+                                              int length /* = 0 */,
+                                              ConstructorBehavior behavior /* = ConstructorBehavior::kAllow */) {
     // TODO: handle the other args
     JerryFunctionTemplate* func = new JerryFunctionTemplate();
     reinterpret_cast<FunctionTemplate*>(func)->SetCallHandler(callback, data);
@@ -2067,5 +2084,10 @@ void TracingController::RemoveTraceStateObserver(v8::TracingController::TraceSta
 } // namespace tracing
 } // namespace platform
 /* Dummy tracing END*/
+
+/* DebugBreak */
+void Debug::DebugBreak(Isolate*) {
+    // TODO: add trace
+}
 
 } // namespace v8
