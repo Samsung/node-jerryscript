@@ -34,6 +34,11 @@ void method_getter(const v8::Local<v8::String> propname, const v8::PropertyCallb
     info.GetReturnValue().Set(v8::String::NewFromUtf8(info.GetIsolate(), "ACCESSED", v8::NewStringType::kNormal).ToLocalChecked());
 }
 
+void method_named_getter(const v8::Local<v8::Name> propname, const v8::PropertyCallbackInfo<v8::Value>& info) {
+    printf("Accessed named\n");
+    info.GetReturnValue().Set(v8::String::NewFromUtf8(info.GetIsolate(), "ACCESSED", v8::NewStringType::kNormal).ToLocalChecked());
+}
+
 int main(int argc, char* argv[]) {
   // Initialize V8.
   v8::V8::InitializeICUDefaultLocation(argv[0]);
@@ -105,19 +110,27 @@ int main(int argc, char* argv[]) {
         objt->NewInstance(context).ToLocalChecked());
 
     v8::Local<v8::ObjectTemplate> objt2 = v8::ObjectTemplate::New(isolate, functemp2);
+    objt2->SetAccessor(v8::String::NewFromUtf8(isolate, "getprop", v8::NewStringType::kNormal).ToLocalChecked(),
+                      method_getter);
+
+    v8::Local<v8::Object> object_2 = objt2->NewInstance(context).ToLocalChecked();
+    object_2->SetAccessor(context, v8::String::NewFromUtf8(isolate, "getprop2", v8::NewStringType::kNormal).ToLocalChecked().As<v8::Name>(),
+                      method_named_getter);
+
     context->Global()->Set(
         v8::String::NewFromUtf8(isolate, "obj2", v8::NewStringType::kNormal).ToLocalChecked(),
-        objt2->NewInstance(context).ToLocalChecked());
+        object_2);
 
     context->Global()->Set(
         v8::String::NewFromUtf8(isolate, "CONSTR", v8::NewStringType::kNormal).ToLocalChecked(),
         functemp2->GetFunction());
 
     // Create a string containing the JavaScript source code.
-    v8::Local<v8::String> source =
-        v8::String::NewFromUtf8(isolate, "'Hello' + ', World!' + DATA + DEMO(33, 44, 'txt') + DEMO.test + (new CONSTR()).test + obj.test + CONSTR2.DD + obj.getprop",
-                                v8::NewStringType::kNormal)
-            .ToLocalChecked();
+    v8::Local<v8::String> source = v8::String::NewFromUtf8(isolate, R"(
+        ('Hello' + ', World!' + DATA + DEMO(33, 44, 'txt') + DEMO.test + (new CONSTR()).test +
+         obj.test + CONSTR2.DD + obj2.getprop + obj2.getprop2)
+        )", v8::NewStringType::kNormal).ToLocalChecked();
+
     // Compile the source code.
     //v8::TryCatch tc;
     v8::Local<v8::Script> script =

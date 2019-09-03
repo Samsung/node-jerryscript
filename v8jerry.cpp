@@ -298,11 +298,22 @@ static jerry_value_t JerryV8GetterSetterHandler(
     const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt);
 
 /* Getter/setter call types & methods */
+union AccessorEntryGetter {
+    v8::AccessorGetterCallback stringed;
+    v8::AccessorNameGetterCallback named;
+};
+
+union AccessorEntrySetter {
+    v8::AccessorSetterCallback stringed;
+    v8::AccessorNameSetterCallback named;
+};
+
 struct JerryV8GetterSetterHandlerData {
     bool is_setter;
+    bool is_named;
     union {
-        v8::AccessorGetterCallback getter;
-        v8::AccessorSetterCallback setter;
+        AccessorEntryGetter getter;
+        AccessorEntrySetter setter;
     } v8;
     jerry_value_t external;
 };
@@ -323,11 +334,45 @@ static jerry_object_native_info_t JerryV8GetterSetterHandlerTypeInfo = {
 
 struct AccessorEntry {
     JerryValue* name;
-    v8::AccessorGetterCallback getter;
-    v8::AccessorSetterCallback setter;
+    AccessorEntryGetter getter;
+    AccessorEntrySetter setter;
+    bool is_named; // true if  the Named variants should be used
+
     JerryValue* data;   // Can be NULL
     v8::AccessControl settings;
     v8::PropertyAttribute attribute;
+
+    AccessorEntry(JerryValue* name,
+                  v8::AccessorGetterCallback getter,
+                  v8::AccessorSetterCallback setter,
+                  JerryValue* data,
+                  v8::AccessControl settings,
+                  v8::PropertyAttribute attribute)
+        : name(name)
+        , data(data)
+        , settings(settings)
+        , attribute(attribute)
+        , is_named(false)
+    {
+        this->getter.stringed = getter;
+        this->setter.stringed = setter;
+    }
+
+    AccessorEntry(JerryValue* name,
+                  v8::AccessorNameGetterCallback getter,
+                  v8::AccessorNameSetterCallback setter,
+                  JerryValue* data,
+                  v8::AccessControl settings,
+                  v8::PropertyAttribute attribute)
+        : name(name)
+        , data(data)
+        , settings(settings)
+        , attribute(attribute)
+        , is_named(true)
+    {
+        this->getter.named = getter;
+        this->setter.named = setter;
+    }
 
     ~AccessorEntry() {
         delete name;
@@ -359,47 +404,53 @@ public:
                      JerryValue* data,
                      v8::AccessControl settings,
                      v8::PropertyAttribute attribute) {
-        m_accessors.push_back(new AccessorEntry{name, getter, setter, data, settings, attribute});
+        m_accessors.push_back(new AccessorEntry(name, getter, setter, data, settings, attribute));
+    }
+
+    static bool SetAccessor(const jerry_value_t target, AccessorEntry& entry) {
+        jerry_property_descriptor_t prop_desc;
+        jerry_init_property_descriptor_fields (&prop_desc);
+
+        // TODO: is there always a getter?
+        prop_desc.is_get_defined = true;
+        prop_desc.getter = jerry_create_external_function(JerryV8GetterSetterHandler);
+
+        {
+            JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
+            data->v8.getter = entry.getter;
+            data->external = NULL; // TODO
+            data->is_setter = false;
+
+            jerry_set_object_native_pointer(prop_desc.getter, data, &JerryV8GetterSetterHandlerTypeInfo);
+        }
+
+        prop_desc.is_set_defined = (entry.setter.stringed != NULL);
+        if (prop_desc.is_set_defined) {
+            prop_desc.setter = jerry_create_external_function(JerryV8GetterSetterHandler); // TODO: connect setter callback;
+
+            JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
+            data->v8.setter = entry.setter;
+            data->external = NULL; // TODO
+            data->is_setter = true;
+
+            jerry_set_object_native_pointer(prop_desc.setter, data, &JerryV8GetterSetterHandlerTypeInfo);
+        }
+
+        // TODO: handle settings and attributes
+        jerry_value_t define_result = jerry_define_own_property(target, entry.name->value(), &prop_desc);
+        bool isOk = !jerry_value_is_error(define_result) && jerry_get_boolean_value(define_result);
+        jerry_release_value(define_result);
+
+        jerry_free_property_descriptor_fields(&prop_desc);
+
+        return isOk;
     }
 
     void InstallProperties(const jerry_value_t target) {
         JerryTemplate::InstallProperties(target);
 
         for (AccessorEntry* entry : m_accessors) {
-            jerry_property_descriptor_t prop_desc;
-            jerry_init_property_descriptor_fields (&prop_desc);
-
-            // TODO: is there always a getter?
-            prop_desc.is_get_defined = true;
-            prop_desc.getter = jerry_create_external_function(JerryV8GetterSetterHandler);
-
-            {
-                JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
-                data->v8.getter = entry->getter;
-                data->external = NULL; // TODO
-                data->is_setter = false;
-
-                jerry_set_object_native_pointer(prop_desc.getter, data, &JerryV8GetterSetterHandlerTypeInfo);
-            }
-
-            prop_desc.is_set_defined = (entry->setter != NULL);
-            if (prop_desc.is_set_defined) {
-                prop_desc.setter = jerry_create_external_function(JerryV8GetterSetterHandler); // TODO: connect setter callback;
-
-                JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
-                data->v8.setter = entry->setter;
-                data->external = NULL; // TODO
-                data->is_setter = true;
-
-                jerry_set_object_native_pointer(prop_desc.setter, data, &JerryV8GetterSetterHandlerTypeInfo);
-            }
-
-            // TODO: handle settings and attributes
-            jerry_value_t result = jerry_define_own_property(target, entry->name->value(), &prop_desc);
-            // TODO: check error;
-            jerry_release_value(result);
-
-            jerry_free_property_descriptor_fields(&prop_desc);
+            JerryObjectTemplate::SetAccessor(target, *entry);
         }
     }
 
@@ -817,10 +868,18 @@ static jerry_value_t JerryV8GetterSetterHandler(
 
         // TODO: assert on args[0]?
         JerryValue new_value(jerry_acquire_value(args_p[0]));
-        data->v8.setter(v8::Local<v8::String>(), *reinterpret_cast<v8::Local<v8::Value>*>(&new_value), info);
+        if (data->is_named) {
+            data->v8.setter.named(v8::Local<v8::Name>(), *reinterpret_cast<v8::Local<v8::Value>*>(&new_value), info);
+        } else {
+            data->v8.setter.stringed(v8::Local<v8::String>(), *reinterpret_cast<v8::Local<v8::Value>*>(&new_value), info);
+        }
     } else {
         JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data);
-        data->v8.getter(v8::Local<v8::String>(), info);
+        if (data->is_named) {
+            data->v8.getter.named(v8::Local<v8::Name>(), info);
+        } else {
+            data->v8.getter.stringed(v8::Local<v8::String>(), info);
+        }
 
         v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
 
@@ -1599,6 +1658,38 @@ bool Object::SetPrototype(Local<Value> prototype) {
 
 Isolate* Object::GetIsolate() {
     return Isolate::GetCurrent();
+}
+
+Maybe<bool> Object::SetAccessor(Local<Context> context,
+                                Local<Name> name,
+                                AccessorNameGetterCallback getter,
+                                AccessorNameSetterCallback setter, /* = 0 */
+                                MaybeLocal<Value> data, /* = MaybeLocal<Value>()*/
+                                AccessControl settings, /* = DEFAULT */
+                                PropertyAttribute attribute /* = None */) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+
+    JerryValue* jdata = NULL;
+    if (!data.IsEmpty()) {
+        Local<Value> dataValue;
+        bool isOk = data.ToLocal(&dataValue);
+        (void)isOk; // the "emptyness" is alread checked this should be always true,
+        // TODO: maybe assert on "isOK"?
+
+        jdata = reinterpret_cast<JerryValue*>(*dataValue)->Copy();
+    }
+
+    AccessorEntry entry(
+        reinterpret_cast<JerryValue*>(*name)->Copy(),
+        getter,
+        setter,
+        jdata,
+        settings,
+        attribute
+    );
+
+    bool configured = JerryObjectTemplate::SetAccessor(jobj->value(), entry);
+    return Just(configured);
 }
 
 /* Array */
