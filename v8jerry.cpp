@@ -1857,6 +1857,25 @@ Local<Value> Function::Call(Local<Value> recv, int argc, Local<Value> argv[]) {
     RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(result));
 }
 
+MaybeLocal<Value> Function::Call(Local<Context> context, Local<Value> recv, int argc, Local<Value> argv[]) {
+    return Call(recv, argc, argv);
+}
+
+void Function::SetName(Local<String> name) {
+    // TODO: how to set the "name" of a function (in JS the function.name is readonly)
+}
+
+Local<Value> Function::GetDebugName() const {
+    // TODO: only used by node_perf.cc
+    return Local<Value>();
+}
+
+Local<Value> Function::GetBoundFunction() const {
+    // TODO: only used by node_perf.cc
+    return Local<Value>();
+}
+
+
 /* Function Template */
 void FunctionTemplate::SetCallHandler(FunctionCallback callback,
                                       v8::Local<Value> data) {
