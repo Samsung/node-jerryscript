@@ -111,11 +111,9 @@ public:
     bool IsTrue() const { return jerry_value_is_boolean(m_value) && jerry_get_boolean_value(m_value); }
     bool IsPromise() const { return jerry_value_is_promise(m_value); }
     bool IsArray() const { return jerry_value_is_array(m_value); }
-    bool IsNumber() const {
-        return jerry_value_is_number(m_value) && ((int) jerry_get_number_value(m_value) != jerry_get_number_value(m_value));
-    }
-    bool IsUint32() const { return jerry_value_is_number(m_value); } /* Todo: fix it. */
-    bool IsInt32() const { return jerry_value_is_number(m_value); } /* Todo: fix it. */
+    bool IsNumber() const { return jerry_value_is_number(m_value); }
+    bool IsUint32() const { return IsNumber() && (jerry_get_number_value (m_value) == (uint32_t) jerry_get_number_value (m_value)); }
+    bool IsInt32() const { return IsNumber() && (jerry_get_number_value (m_value) == (int32_t) jerry_get_number_value (m_value)); }
     bool IsFunction() const { return jerry_value_is_function(m_value); }
     bool IsObject() const { return jerry_value_is_object(m_value); }
     bool IsSymbol() const { return jerry_value_is_symbol(m_value); }
@@ -131,10 +129,10 @@ public:
     bool IsSharedArrayBuffer() const { return false; }
     bool IsAsyncFunction() const { return false; }
     bool IsNativeError() const { return false; }
-    bool IsArrayBufferView() const { return false; }
-    bool IsFloat64Array() const { return false; }
-    bool IsUint8Array() const { return false; }
-    bool IsDataView() const { return false; }
+    bool IsArrayBufferView() const { return jerry_value_is_typedarray(m_value) || jerry_value_is_dataview(m_value); }
+    bool IsFloat64Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_FLOAT64; }
+    bool IsUint8Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_UINT8; }
+    bool IsDataView() const { return jerry_value_is_dataview(m_value); }
 
     double GetNumberValue(void) const { return jerry_get_number_value(m_value); }
     uint32_t GetUInt32Value(void) const { return (uint32_t)jerry_get_number_value(m_value); }
@@ -1115,6 +1113,77 @@ ArrayBuffer::Allocator* ArrayBuffer::Allocator::NewDefaultAllocator() {
     return nullptr;
 }
 
+size_t TypedArray::Length() {
+    return (size_t) jerry_get_typedarray_length (reinterpret_cast<JerryValue*> (this)->value());
+}
+
+size_t ArrayBufferView::ByteLength() {
+    JerryValue* jarray = reinterpret_cast<JerryValue*> (this);
+
+    jerry_value_t buffer;
+    jerry_length_t byteLength = 0;
+
+    if (jarray->IsTypedArray()) {
+        buffer = jerry_get_typedarray_buffer (jarray->value(), NULL, &byteLength);
+    } else if (jarray->IsDataView()) {
+        buffer = jerry_get_dataview_buffer (jarray->value(), NULL, &byteLength);
+    } else {
+        printf("Unknown object...\n");
+    }
+
+    jerry_release_value(buffer);
+
+    return byteLength;
+}
+
+size_t ArrayBufferView::ByteOffset() {
+    JerryValue* jarray = reinterpret_cast<JerryValue*> (this);
+
+    jerry_value_t buffer;
+    jerry_length_t byteOffset = 0;
+
+    if (jarray->IsTypedArray()) {
+        buffer = jerry_get_typedarray_buffer (jarray->value(), &byteOffset, NULL);
+    } else if (jarray->IsDataView()) {
+        buffer = jerry_get_dataview_buffer (jarray->value(), &byteOffset, NULL);
+    } else {
+        printf("Unknown object...\n");
+    }
+
+    jerry_release_value(buffer);
+    return byteOffset;
+}
+
+Local<ArrayBuffer> ArrayBufferView::Buffer() {
+    JerryValue* jarray = reinterpret_cast<JerryValue*> (this);
+
+    jerry_value_t buffer;
+
+    if (jarray->IsTypedArray()) {
+        buffer = jerry_get_typedarray_buffer (jarray->value(), NULL, NULL);
+    } else if (jarray->IsDataView()) {
+        buffer = jerry_get_dataview_buffer (jarray->value(), NULL, NULL);
+    } else {
+        printf("Unknown object...\n");
+    }
+
+    RETURN_HANDLE(ArrayBuffer, Isolate::GetCurrent(), new JerryValue(buffer));
+}
+
+#define ArrayBufferView(view_class, view_type) \
+    Local<view_class> view_class::New(Local<ArrayBuffer> array_buffer, size_t byte_offset, size_t length) { \
+        JerryValue* jarraybuffer = reinterpret_cast<JerryValue*> (*array_buffer); \
+        jerry_value_t arrayview = jerry_create_typedarray_for_arraybuffer_sz (view_type, jarraybuffer->value(), byte_offset, length); \
+        if (jerry_value_is_error(arrayview)) { \
+            printf("Error at Typedarray creation...\n"); \
+        } \
+        RETURN_HANDLE(view_class, Isolate::GetCurrent(), new JerryValue(arrayview)); \
+    }
+
+ArrayBufferView(Uint8Array, JERRY_TYPEDARRAY_UINT8);
+ArrayBufferView(Uint32Array, JERRY_TYPEDARRAY_UINT32);
+ArrayBufferView(Float64Array, JERRY_TYPEDARRAY_FLOAT64);
+
 /* Isolate */
 ResourceConstraints::ResourceConstraints() { }
 
@@ -1472,10 +1541,7 @@ Maybe<bool> Object::Delete(Local<Context> context, Local<Value> key) {
     JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
     JerryValue* jkey = reinterpret_cast<JerryValue*> (*key);
 
-    bool result = jerry_delete_property (jobj->value(), jkey->value());
-    bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
-
-    return Just(isOk);
+    return Just(jerry_delete_property (jobj->value(), jkey->value()));
 }
 
 Maybe<bool> Object::Has(Local<Context> context, Local<Value> key) {
@@ -1499,12 +1565,14 @@ Maybe<bool> Object::DefineOwnProperty(Local<Context> context, Local<Name> key, L
         .is_get_defined = false,
         .is_set_defined = false,
         .is_writable_defined = true,
-        .is_writable = attributes && !PropertyAttribute::ReadOnly,
+        .is_writable = attributes & !PropertyAttribute::ReadOnly,
         .is_enumerable_defined = true,
-        .is_enumerable = attributes && !PropertyAttribute::DontEnum,
+        .is_enumerable = attributes & !PropertyAttribute::DontEnum,
         .is_configurable_defined = true,
-        .is_configurable = attributes && !PropertyAttribute::DontDelete,
-        .value = prop_value->value()
+        .is_configurable = attributes & !PropertyAttribute::DontDelete,
+        .value = prop_value->value(),
+        .getter = jerry_create_undefined(),
+        .setter = jerry_create_undefined()
     };
 
     jerry_value_t result = jerry_define_own_property (obj->value(), prop_name->value(), &prop_desc);
@@ -1512,6 +1580,17 @@ Maybe<bool> Object::DefineOwnProperty(Local<Context> context, Local<Name> key, L
     jerry_release_value(result);
 
     return Just(isOk);
+}
+
+bool Object::SetPrototype(Local<Value> prototype) {
+    JerryValue* obj = reinterpret_cast<JerryValue*> (this);
+    JerryValue* proto = reinterpret_cast<JerryValue*> (*prototype);
+
+    jerry_value_t result = jerry_set_prototype (obj->value(), proto->value());
+    bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+    jerry_release_value(result);
+
+    return isOk;
 }
 
 Isolate* Object::GetIsolate() {

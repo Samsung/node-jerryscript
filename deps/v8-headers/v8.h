@@ -312,6 +312,10 @@ class Local {
   friend class Symbol;
   friend class Array;
   friend class ArrayBuffer;
+  friend class ArrayBufferView;
+  friend class Uint8Array;
+  friend class Uint32Array;
+  friend class Float64Array;
   friend class Map;
   friend class Integer;
   friend class Number;
