@@ -33,11 +33,18 @@ public:
   v8::Local<v8::Context> getContext() { return m_scopes->getContext(); }
 
 private:
+  v8::Isolate::CreateParams m_create_params;
   v8::Isolate* m_isolate;
   V8Scopes* m_scopes;
 };
 
-static v8::Isolate* BuildIsolate(int argc, char** argv) {
+static v8::Isolate::CreateParams BuildCreateParams() {
+    v8::Isolate::CreateParams create_params;
+    create_params.array_buffer_allocator = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
+    return create_params;
+}
+
+static v8::Isolate* BuildIsolate(int argc, char** argv, v8::Isolate::CreateParams create_params) {
   v8::V8::InitializeICUDefaultLocation(argv[0]);
   v8::V8::InitializeExternalStartupData(argv[0]);
   //std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
@@ -45,14 +52,13 @@ static v8::Isolate* BuildIsolate(int argc, char** argv) {
   v8::V8::InitializePlatform(platform.get());
   v8::V8::Initialize();
 
-  // Dummy structure.
-  v8::Isolate::CreateParams params;
   // Create a new Isolate and make it the current one.
-  return v8::Isolate::New(params);
+  return v8::Isolate::New(create_params);
 }
 
 V8Environment::V8Environment(int argc, char** argv)
-  : m_isolate(BuildIsolate(argc, argv))
+  : m_create_params(BuildCreateParams())
+  , m_isolate(BuildIsolate(argc, argv, m_create_params))
   , m_scopes(new V8Scopes(m_isolate))
 {
 }
