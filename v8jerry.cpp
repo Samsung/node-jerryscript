@@ -2132,6 +2132,21 @@ Local<Signature> Signature::New(Isolate* isolate, Local<FunctionTemplate> receiv
     return Local<Signature>(reinterpret_cast<Signature*>(*receiver));
 }
 
+/* Exception & Error */
+#define EXCEPTION_ERROR(error_class, error_type) \
+    Local<Value> Exception::error_class(Local<String> message) { \
+        JerryValue* jstr = reinterpret_cast<JerryValue*>(*message); \
+        jerry_size_t req_sz = jerry_get_utf8_string_size(jstr->value()); \
+        jerry_char_t str_buf_p[req_sz]; \
+        jerry_string_to_utf8_char_buffer(jstr->value(), str_buf_p, req_sz); \
+        jerry_value_t error_obj = jerry_create_error_sz (error_type, str_buf_p, req_sz); \
+        RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(error_obj)); \
+    }
+
+EXCEPTION_ERROR(Error, JERRY_ERROR_COMMON);
+EXCEPTION_ERROR(RangeError, JERRY_ERROR_RANGE);
+EXCEPTION_ERROR(TypeError, JERRY_ERROR_TYPE);
+
 /* Stackframe */
 int StackFrame::GetColumn() const {
     return 5;

@@ -324,6 +324,7 @@ class Local {
   friend class ObjectTemplate;
   friend class Function;
   friend class External;
+  friend class Exception;
   friend class Signature;
   // ^^
 
