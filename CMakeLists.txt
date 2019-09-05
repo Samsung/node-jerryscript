@@ -25,6 +25,7 @@ target_link_libraries(v8jerry jerry)
 add_executable(demo test_hello.cpp)
 target_link_libraries(demo v8jerry)
 
+add_subdirectory(tests)
 
 if(USE_V8)
 
