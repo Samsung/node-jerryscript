@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../v8env.h"
+#include "v8env.h"
 #include "assert.h"
 
 #define ARRAY_SIZE 8
