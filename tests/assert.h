@@ -3,15 +3,16 @@
 
 #include <iostream>
 
-#define ASSERT_EQUAL(a, b) \
+#define ASSERT_EQUAL(a, b) do {             \
     std::cout << a << " == " << b << " : "; \
     if (a != b) { \
         std::cout << "FAILED (" <<  __FILE__ << ":" << __LINE__ << ")" << std::endl; \
     } else { \
         std::cout << "OK" << std::endl; \
-    }
+    } \
+} while (0)
 
-std::ostream& operator<<(std::ostream& os, const uint8_t data) {
+inline std::ostream& operator<<(std::ostream& os, const uint8_t data) {
     os << unsigned(data);
     return os;
 }
