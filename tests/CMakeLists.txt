@@ -12,5 +12,8 @@ endfunction(add_test)
 
 add_test(test_hello.cpp)
 
-# ArrayBuffer
 add_test(arraybuffer.cpp)
+add_test(object.cpp)
+add_test(script.cpp)
+add_test(string.cpp)
+add_test(value.cpp)

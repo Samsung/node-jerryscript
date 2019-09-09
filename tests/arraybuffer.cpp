@@ -10,7 +10,18 @@ int main(int argc, char* argv[]) {
     // Initialize V8.
     V8Environment env(argc, argv);
 
-    printf("ArrayBuffer:\n");
+    //
+    // Array
+    //
+
+    // Create a basic array.
+    v8::Local<v8::Array> array = v8::Array::New(env.getIsolate(), 3);
+
+    ASSERT_EQUAL(array->Length(), 3);
+
+    //
+    // ArrayBuffer
+    //
 
     uint8_t data[ARRAY_SIZE] = { 1, 1, 0, 0, 0, 0, 0, 0 };
 
@@ -57,7 +68,6 @@ int main(int argc, char* argv[]) {
     //
     // ArraybufferView
     //
-    printf("\nArrayBufferView:\n");
 
     // Create Uint8 viewer onto the ArrayBuffer.
     v8::Local<v8::Uint8Array> uint8Array = v8::Uint8Array::New(intBuffer, 2, 5);

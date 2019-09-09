@@ -140,8 +140,8 @@ public:
     int64_t GetInt64Value(void) const { return (int64_t)jerry_get_number_value(m_value); }
     bool GetBooleanValue(void) const { return jerry_get_boolean_value(m_value); }
 
-    int GetStringLength(void) const { return jerry_get_string_size(m_value); }
-    int GetStringUtf8Length(void) const { return jerry_get_utf8_string_size(m_value); }
+    int GetStringLength(void) const { return jerry_get_string_length(m_value); }
+    int GetStringUtf8Length(void) const { return jerry_get_utf8_string_length(m_value); }
 
     JerryValue* ToString(void) const {
         // TODO: error handling?
@@ -1506,7 +1506,7 @@ Local<Integer> Integer::New(Isolate* isolate, int32_t value) {
 }
 
 Local<Integer> Integer::NewFromUnsigned(Isolate* isolate, uint32_t value) {
-    jerry_value_t result = jerry_create_number(value);
+    jerry_value_t result = jerry_create_number((int32_t) value);
     RETURN_HANDLE(Integer, isolate, new JerryValue(result));
 }
 
@@ -1733,7 +1733,9 @@ MaybeLocal<Map> Map::Set(Local<Context> context, Local<Value> key, Local<Value> 
 }
 
 Local<Private> Private::New(Isolate* isolate, Local<String> name) {
-    RETURN_HANDLE(Private ,isolate, reinterpret_cast<JerryValue*>(*name));
+    JerryValue* jname = reinterpret_cast<JerryValue*>(*name);
+
+    RETURN_HANDLE(Private ,isolate, jname->Copy());
 }
 
 /* Symbol */
@@ -1741,8 +1743,6 @@ Local<Symbol> Symbol::New(Isolate* isolate, Local<String> name) {
     JerryValue* jname = reinterpret_cast<JerryValue*>(*name);
 
     jerry_value_t symbol_name = jerry_create_symbol (jname->value());
-    jerry_release_value (symbol_name);
-
     RETURN_HANDLE(Symbol, isolate, new JerryValue(symbol_name));
 }
 
@@ -1770,7 +1770,6 @@ Local<String> Message::GetSourceLine() const {
 ScriptOrigin Message::GetScriptOrigin() const {
     return ScriptOrigin(Local<Value>());
 }
-
 
 /* String */
 MaybeLocal<String> String::NewFromOneByte(
@@ -1869,7 +1868,7 @@ Local<String> String::Concat(Local<String> left, Local<String> right) {
     char* buffer = new char[lsize + rsize];
 
     jerry_string_to_char_buffer (lhs->value(), (jerry_char_t*) buffer, lsize);
-    jerry_string_to_char_buffer (lhs->value(), (jerry_char_t*) buffer + lsize, rsize);
+    jerry_string_to_char_buffer (rhs->value(), (jerry_char_t*) buffer + lsize, rsize);
 
     jerry_value_t value = jerry_create_string_sz ((jerry_char_t*)buffer, lsize + rsize);
 
