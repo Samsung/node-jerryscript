@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
     /* String */
     v8::Local<v8::String> string = v8::String::NewFromUtf8(env.getIsolate(), "String", v8::NewStringType::kNormal).ToLocalChecked();
     // Fixme: IsString is defined in the v8.h file.
-    // ASSERT_EQUAL(number->IsString(), true);
+    // ASSERT_EQUAL(string->IsString(), true);
 
     /* External */
     v8::Local<v8::External> external = v8::External::New(env.getIsolate(), (void*) 2);
@@ -66,6 +66,23 @@ int main(int argc, char* argv[]) {
     /* Symbol */
     v8::Local<v8::Symbol> symbol = v8::Symbol::New(env.getIsolate(), string);
     ASSERT_EQUAL(symbol->IsSymbol(), true);
+
+    /* Equality check */
+    v8::Local<v8::Integer> intTwo1 = v8::Integer::New(env.getIsolate(), 2);
+    v8::Local<v8::Integer> intTwo2 = v8::Integer::New(env.getIsolate(), 2);
+    v8::Local<v8::String> strTwo = v8::String::NewFromUtf8(env.getIsolate(), "2", v8::NewStringType::kNormal).ToLocalChecked();
+    ASSERT_EQUAL(intTwo1->Equals(strTwo), true);
+    ASSERT_EQUAL(intTwo1->StrictEquals(strTwo), false);
+    ASSERT_EQUAL(intTwo1->StrictEquals(intTwo2), true);
+
+    /* ToString */
+    v8::String::Utf8Value symbolUtf8(env.getIsolate(), symbol->ToDetailString(env.getContext()).ToLocalChecked());
+    v8::String::Utf8Value numberUtf8(env.getIsolate(), number->ToDetailString(env.getContext()).ToLocalChecked());
+    v8::String::Utf8Value objectUtf8(env.getIsolate(), object->ToDetailString(env.getContext()).ToLocalChecked());
+
+    ASSERT_STR_EQUAL(*symbolUtf8, "Symbol()");
+    ASSERT_STR_EQUAL(*numberUtf8, "3.14");
+    ASSERT_STR_EQUAL(*objectUtf8, "[object Object]");
 
     return 0;
 }

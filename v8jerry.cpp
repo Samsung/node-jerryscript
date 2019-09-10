@@ -1499,6 +1499,42 @@ bool Value::IsExternal() const {
     return reinterpret_cast<const JerryValue*> (this)->IsExternal();
 }
 
+MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
+    const JerryValue* jValue = reinterpret_cast<const JerryValue*> (this);
+
+    if (jValue->IsSymbol()) {
+        jerry_value_t string_value = jerry_create_string ((const jerry_char_t *) "Symbol()");
+        RETURN_HANDLE(String, context->GetIsolate(), new JerryValue(string_value));
+    } else if (jValue->IsProxy()) {
+        jerry_value_t string_value = jerry_create_string ((const jerry_char_t *) "[object Object]");
+        RETURN_HANDLE(String, context->GetIsolate(), new JerryValue(string_value));
+    }
+
+    RETURN_HANDLE(String, context->GetIsolate(), jValue->ToString());
+}
+
+bool Value::Equals(Local<Value> value) const {
+    const JerryValue* lhs = reinterpret_cast<const JerryValue*> (this);
+    JerryValue* rhs = reinterpret_cast<JerryValue*> (*value);
+
+    jerry_value_t result = jerry_binary_operation (JERRY_BIN_OP_EQUAL, lhs->value(), rhs->value());
+    bool isEqual = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+    jerry_release_value(result);
+
+    return isEqual;
+}
+
+bool Value::StrictEquals(Local<Value> value) const {
+    const JerryValue* lhs = reinterpret_cast<const JerryValue*> (this);
+    JerryValue* rhs = reinterpret_cast<JerryValue*> (*value);
+
+    jerry_value_t result = jerry_binary_operation (JERRY_BIN_OP_STRICT_EQUAL, lhs->value(), rhs->value());
+    bool isEqual = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+    jerry_release_value(result);
+
+    return isEqual;
+}
+
 /* Integer */
 Local<Integer> Integer::New(Isolate* isolate, int32_t value) {
     jerry_value_t result = jerry_create_number(value);
