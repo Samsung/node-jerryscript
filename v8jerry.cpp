@@ -701,6 +701,12 @@ public:
 
             m_fn_map_set = new JerryValue(BuildHelperMethod(fn_args, fn_body));
         }
+        {/* Object.assing helper method */
+            const char* fn_args = "value";
+            const char* fn_body = "return Object.assing({}, value);";
+
+            m_fn_object_assign = new JerryValue(BuildHelperMethod(fn_args, fn_body));
+        }
 
         InitalizeSlots();
     }
@@ -709,6 +715,7 @@ public:
 
     const JerryValue& HelperMapNew(void) const { return *m_fn_map_new; }
     const JerryValue& HelperMapSet(void) const { return *m_fn_map_set; }
+    const JerryValue& HelperObjectAssign(void) const { return *m_fn_object_assign; }
 
     void Enter(void) {
         JerryIsolate::s_currentIsolate = this;
@@ -734,6 +741,7 @@ public:
 
         delete m_fn_map_new;
         delete m_fn_map_set;
+        delete m_fn_object_assign;
 
         // Release slots
         {
@@ -828,6 +836,7 @@ private:
     std::vector<JerryTemplate*> m_templates;
     JerryValue* m_fn_map_new;
     JerryValue* m_fn_map_set;
+    JerryValue* m_fn_object_assign;
 
     static JerryIsolate* s_currentIsolate;
 };
@@ -1861,6 +1870,18 @@ void* Object::SlowGetAlignedPointerFromInternalField(int idx) {
 Local<Value> Object::SlowGetInternalField(int idx) {
     JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
     RETURN_HANDLE(Value, Isolate::GetCurrent(), jobj->GetInternalField<JerryValue*>(idx));
+}
+
+Local<Object> Object::Clone(void) {
+    // shallow copy!
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+
+    // TODO: maybe move the helper calls to a concrete method
+    jerry_value_t obj_assign = JerryIsolate::fromV8(GetIsolate())->HelperObjectAssign().value();
+    jerry_value_t arg = jobj->value();
+    jerry_value_t result = jerry_call_function(obj_assign, jerry_create_undefined(), &arg, 1);
+
+    RETURN_HANDLE(Object, GetIsolate(), new JerryValue(result));
 }
 
 /* Array */
