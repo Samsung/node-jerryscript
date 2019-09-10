@@ -1,5 +1,6 @@
 #include <v8.h>
 #include <v8-debug.h>
+#include <v8-profiler.h>
 #include <libplatform/libplatform.h>
 
 #include <cstring>
@@ -1272,6 +1273,12 @@ void Isolate::Dispose() {
     JerryIsolate::fromV8(this)->Dispose();
 }
 
+void Isolate::GetHeapStatistics(HeapStatistics*) { }
+
+HeapProfiler* Isolate::GetHeapProfiler() {
+    return NULL;
+}
+
 /* Context */
 Local<Context> Context::New(Isolate* isolate,
                             ExtensionConfiguration* extensions /*= NULL*/,
@@ -2182,7 +2189,7 @@ EXCEPTION_ERROR(Error, JERRY_ERROR_COMMON);
 EXCEPTION_ERROR(RangeError, JERRY_ERROR_RANGE);
 EXCEPTION_ERROR(TypeError, JERRY_ERROR_TYPE);
 
-/* Stackframe */
+/* StackFrame && StackTrace */
 int StackFrame::GetColumn() const {
     return 5;
 }
@@ -2210,6 +2217,20 @@ int StackFrame::GetLineNumber() const {
 Local<String> StackFrame::GetScriptName() const {
     return Local<String>();
 }
+
+Local<StackTrace> StackTrace::CurrentStackTrace(v8::Isolate*, int, StackTrace::StackTraceOptions) {
+    return Local<StackTrace>();
+}
+
+Local<StackFrame> StackTrace::GetFrame(unsigned int) const {
+    return Local<StackFrame>();
+}
+
+/* HeapProfiler & HeapStatistics */
+void HeapProfiler::SetWrapperClassInfoProvider(unsigned short class_id, WrapperInfoCallback cb) { }
+void HeapProfiler::StartTrackingHeapObjects(bool track_allocations) { }
+
+v8::HeapStatistics::HeapStatistics() { }
 
 /* Dummy tracing */
 namespace platform {
