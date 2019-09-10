@@ -9691,6 +9691,8 @@ void Template::Set(Isolate* isolate, const char* name, Local<Data> value) {
 
 
 Local<Value> Object::GetInternalField(int index) {
+// TODO: revert to the original
+/*
 #ifndef V8_ENABLE_CHECKS
   typedef internal::Object O;
   typedef internal::HeapObject HO;
@@ -9707,11 +9709,14 @@ Local<Value> Object::GetInternalField(int index) {
     return Local<Value>(reinterpret_cast<Value*>(result));
   }
 #endif
+*/
   return SlowGetInternalField(index);
 }
 
 
 void* Object::GetAlignedPointerFromInternalField(int index) {
+// TODO: revert to the original
+/*
 #ifndef V8_ENABLE_CHECKS
   typedef internal::Object O;
   typedef internal::Internals I;
@@ -9725,6 +9730,7 @@ void* Object::GetAlignedPointerFromInternalField(int index) {
     return I::ReadField<void*>(obj, offset);
   }
 #endif
+*/
   return SlowGetAlignedPointerFromInternalField(index);
 }
 

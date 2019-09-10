@@ -56,6 +56,28 @@ private:
 
 template class std::vector<JerryHandle*>;
 
+struct JerryV8InternalFieldData {
+    // TODO: maybe use raw pointers to reduce memory?
+    int count;
+    std::vector<void*> fields;
+    std::vector<bool> is_value;
+
+    JerryV8InternalFieldData(int count)
+        : count(count)
+        , fields(count, NULL)
+        , is_value(count, false)
+    {
+    }
+};
+
+void JerryV8InternalFieldDataFree(void *data) {
+    delete reinterpret_cast<JerryV8InternalFieldData*>(data);
+}
+
+static jerry_object_native_info_t JerryV8InternalFieldTypeInfo = {
+    .free_cb = JerryV8InternalFieldDataFree,
+};
+
 static jerry_object_native_info_t JerryV8ExternalTypeInfo = {
     .free_cb = NULL,
 };
@@ -189,6 +211,81 @@ public:
 
     JerryValue* Copy() const {
         return new JerryValue(jerry_acquire_value(m_value));
+    }
+
+    JerryV8InternalFieldData* GetInternalFieldData(int idx) {
+        void *native_p;
+        bool has_data = jerry_get_object_native_pointer(m_value, &native_p, &JerryV8InternalFieldTypeInfo);
+        if (!has_data) {
+            return NULL;
+        }
+
+        JerryV8InternalFieldData* data = reinterpret_cast<JerryV8InternalFieldData*>(native_p);
+        if (data->count <= idx) {
+            fprintf(stderr, "ERROR! incorrect index (available slots: %d, tried with: %d\n", data->count, idx);
+            abort();
+            return  NULL;
+        }
+
+        return data;
+    }
+
+    void SetInternalField(int idx, JerryValue* value) {
+        JerryV8InternalFieldData* data = GetInternalFieldData(idx);
+        if (data == NULL) {
+            fprintf(stderr, "ERROR!\n");
+            abort();
+            return;
+        }
+
+        data->fields[idx] = NULL;
+        data->is_value[idx] = true;
+
+        std::string internal_name = "$$internal_" + idx;
+        JerryValue name(jerry_create_string_from_utf8((const jerry_char_t*)internal_name.c_str()));
+
+        this->SetProperty(&name, value);
+    }
+
+    void SetInternalField(int idx, void* value) {
+        JerryV8InternalFieldData* data = GetInternalFieldData(idx);
+
+        // TODO: maybe delete "$$internal_<x>" properties?
+        data->fields[idx] = value;
+        data->is_value[idx] = false;
+    }
+
+    template<typename T>
+    T GetInternalField(int idx) {
+        JerryV8InternalFieldData* data = GetInternalFieldData(idx);
+        if (data == NULL) {
+            return NULL;
+        }
+
+        if (std::is_same<T, JerryValue*>::value) {
+            if (!data->is_value[idx]) {
+                return NULL;
+            }
+
+            std::string internal_name = "$$internal_" + idx;
+            JerryValue name(jerry_create_string_from_utf8((const jerry_char_t*)internal_name.c_str()));
+            return this->GetProperty(&name);
+        } else if (std::is_same<T, void*>::value) {
+            return reinterpret_cast<T>(data->fields[idx]);
+        } else {
+            // DON'T do this...
+            abort();
+        }
+    }
+
+    int InternalFieldCount(void) {
+        JerryV8InternalFieldData *data;
+        bool has_data = jerry_get_object_native_pointer(m_value, reinterpret_cast<void**>(&data), &JerryV8InternalFieldTypeInfo);
+        if (!has_data) {
+            return 0;
+        }
+
+        return data->count;
     }
 
     JerryValue(JerryValue& that) = delete;
@@ -388,6 +485,7 @@ public:
     JerryObjectTemplate()
         : JerryTemplate(ObjectTemplate)
         , m_function_template(NULL)
+        , m_internal_field_count(0)
     {
     }
 
@@ -395,6 +493,7 @@ public:
         ReleaseProperties();
     }
 
+    void SetInteralFieldCount(int count) { m_internal_field_count = count; }
     void SetConstructor(JerryFunctionTemplate* function_template) { m_function_template = function_template; }
 
     JerryFunctionTemplate* FunctionTemplate(void) { return m_function_template; }
@@ -453,6 +552,11 @@ public:
         for (AccessorEntry* entry : m_accessors) {
             JerryObjectTemplate::SetAccessor(target, *entry);
         }
+
+        if (m_internal_field_count) {
+            JerryV8InternalFieldData *data = new JerryV8InternalFieldData(m_internal_field_count);
+            jerry_set_object_native_pointer(target, data, &JerryV8InternalFieldTypeInfo);
+        }
     }
 
     void ReleaseProperties(void) {
@@ -468,6 +572,7 @@ private:
     // it must be released "manually"
     JerryFunctionTemplate* m_function_template;
     std::vector<AccessorEntry*> m_accessors;
+    int m_internal_field_count;
 };
 
 /* Simple function call types & methods */
@@ -1729,6 +1834,35 @@ Maybe<bool> Object::SetAccessor(Local<Context> context,
     return Just(configured);
 }
 
+void Object::SetInternalField(int idx, Local<Value> value) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+    // Indexing starts from 0!
+
+    jobj->SetInternalField(idx, reinterpret_cast<JerryValue*>(*value));
+}
+
+void Object::SetAlignedPointerInInternalField(int idx, void* value) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+    // Indexing starts from 0!
+
+    jobj->SetInternalField(idx, value);
+}
+
+int Object::InternalFieldCount(void) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+    return jobj->InternalFieldCount();
+}
+
+void* Object::SlowGetAlignedPointerFromInternalField(int idx) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+    return jobj->GetInternalField<void*>(idx);
+}
+
+Local<Value> Object::SlowGetInternalField(int idx) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+    RETURN_HANDLE(Value, Isolate::GetCurrent(), jobj->GetInternalField<JerryValue*>(idx));
+}
+
 /* Array */
 Local<Array> Array::New(Isolate* isolate, int length) {
     if (length < 0) {
@@ -2162,6 +2296,11 @@ void ObjectTemplate::SetAccessor(Local<String> name,
     }
 
     tmplt->SetAccessor(jname, getter, setter, jdata, settings, attribute);
+}
+
+void ObjectTemplate::SetInternalFieldCount(int count) {
+    JerryObjectTemplate* tmplt = reinterpret_cast<JerryObjectTemplate*>(this);
+    tmplt->SetInteralFieldCount(count);
 }
 
 /* Signature */
