@@ -506,35 +506,14 @@ public:
     }
 
     ~JerryFunctionTemplate(void) {
-        if (m_prototype_template) {
-            delete m_prototype_template;
-        }
-
-        if (m_instance_template) {
-            delete m_instance_template;
-        }
-
         ReleaseProperties();
         jerry_release_value(m_external);
 
         delete m_function;
     }
 
-    JerryObjectTemplate* PrototypeTemplate(void) {
-        if (!m_prototype_template) {
-            m_prototype_template = new JerryObjectTemplate();
-        }
-
-        return m_prototype_template;
-    }
-
-    JerryObjectTemplate* InstanceTemplate(void) {
-        if (!m_instance_template) {
-            m_instance_template = new JerryObjectTemplate();
-        }
-
-        return m_instance_template;
-    }
+    JerryObjectTemplate* PrototypeTemplate(void);
+    JerryObjectTemplate* InstanceTemplate(void);
 
     bool HasInstanceTemplate(void) const { return m_instance_template != NULL; }
 
@@ -641,14 +620,7 @@ public:
             JerryHandle* jhandle = *it;
             switch (jhandle->type()) {
                 case JerryHandle::FunctionTemplate: delete reinterpret_cast<JerryFunctionTemplate*>(jhandle); break;
-                case JerryHandle::ObjectTemplate: {
-                    // TODO: for now it is assumed that the functiontemplate will release the object template
-                    JerryObjectTemplate* tmplt = reinterpret_cast<JerryObjectTemplate*>(jhandle);
-                    if (tmplt->FunctionTemplate() != NULL) {
-                        delete reinterpret_cast<JerryObjectTemplate*>(jhandle);
-                    }
-                    break;
-                }
+                case JerryHandle::ObjectTemplate: delete reinterpret_cast<JerryObjectTemplate*>(jhandle); break;
                 default:
                     fprintf(stderr, "Isolate::Dispose unsupported type (%d)\n", jhandle->type());
                     break;
@@ -696,7 +668,10 @@ public:
     }
 
     void AddTemplate(JerryTemplate* handle) {
-        m_templates.push_back(handle);
+        // TODO: make the vector a set or a map
+        if (std::find(std::begin(m_templates), std::end(m_templates), handle) == std::end(m_templates)) {
+            m_templates.push_back(handle);
+        }
     }
 
     static v8::Isolate* toV8(JerryIsolate* iso) {
@@ -1066,6 +1041,25 @@ JerryHandleScope::~JerryHandleScope(void) {
         }
     }
 }
+
+JerryObjectTemplate* JerryFunctionTemplate::PrototypeTemplate(void) {
+    if (!m_prototype_template) {
+        m_prototype_template = new JerryObjectTemplate();
+        JerryIsolate::GetCurrent()->AddTemplate(m_prototype_template);
+    }
+
+    return m_prototype_template;
+}
+
+JerryObjectTemplate* JerryFunctionTemplate::InstanceTemplate(void) {
+    if (!m_instance_template) {
+        m_instance_template = new JerryObjectTemplate();
+        JerryIsolate::GetCurrent()->AddTemplate(m_instance_template);
+    }
+
+    return m_instance_template;
+}
+
 
 /* V8 API helpers */
 #define RETURN_HANDLE(T, ISOLATE, HANDLE) \
