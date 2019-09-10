@@ -1908,12 +1908,13 @@ Local<String> String::Concat(Local<String> left, Local<String> right) {
     jerry_size_t lsize = jerry_get_string_size (lhs->value());
     jerry_size_t rsize = jerry_get_string_size (rhs->value());
 
-    char* buffer = new char[lsize + rsize];
+    std::vector<char> buffer;
+    buffer.resize(lsize + rsize);
 
-    jerry_string_to_char_buffer (lhs->value(), (jerry_char_t*) buffer, lsize);
-    jerry_string_to_char_buffer (rhs->value(), (jerry_char_t*) buffer + lsize, rsize);
+    jerry_string_to_char_buffer (lhs->value(), reinterpret_cast<jerry_char_t*>(&buffer[0]), lsize);
+    jerry_string_to_char_buffer (rhs->value(), reinterpret_cast<jerry_char_t*>(&buffer[0]) + lsize, rsize);
 
-    jerry_value_t value = jerry_create_string_sz ((jerry_char_t*)buffer, lsize + rsize);
+    jerry_value_t value = jerry_create_string_sz (reinterpret_cast<const jerry_char_t*>(&buffer[0]), lsize + rsize);
 
     RETURN_HANDLE(String, Isolate::GetCurrent(), new JerryValue(value));
 }
