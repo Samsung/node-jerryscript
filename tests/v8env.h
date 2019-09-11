@@ -42,6 +42,7 @@ public:
         // No need to call delete on the isolate,
         // it will delete itself and the destructor is deleted in the v8 header.
 
+        delete m_create_params.array_buffer_allocator;
         v8::V8::Dispose();
         v8::V8::ShutdownPlatform();
     }
