@@ -3,7 +3,9 @@
 #include <v8-profiler.h>
 #include <libplatform/libplatform.h>
 
+#include <cassert>
 #include <cstring>
+#include <deque>
 #include <stack>
 #include <vector>
 #include <algorithm>
@@ -55,6 +57,7 @@ private:
 };
 
 template class std::vector<JerryHandle*>;
+template class std::vector<JerryHandleScope*>;
 
 struct JerryV8InternalFieldData {
     // TODO: maybe use raw pointers to reduce memory?
@@ -96,6 +99,7 @@ public:
     ~JerryValue(void) {
         if (m_value) {
             jerry_release_value(m_value);
+            m_value = 0;
         }
     }
 
@@ -666,20 +670,34 @@ public:
 
 class JerryHandleScope {
 public:
-    JerryHandleScope() {}
+    enum ScopeType {
+        Normal = 0, // Normal and Escapable scopes are treated the as same atm.
+        //Escapable,
+        Sealed,
+    };
+
+    JerryHandleScope(ScopeType type, void* handle_scope)
+        : m_type(type)
+        , m_v8handle_scope(handle_scope)
+    {
+    }
 
     ~JerryHandleScope();
 
-    void AddHandle(JerryHandle* jvalue) {
-        m_handles.push_back(jvalue);
-    }
+    void AddHandle(JerryHandle* jvalue);
 
     void RemoveHandle(JerryHandle* jvalue) {
         // TODO: check if it really exists
         m_handles.erase(std::find(m_handles.begin(), m_handles.end(), jvalue));
     }
 
+    const void* V8HandleScope(void) { return m_v8handle_scope; }
+
+    void Seal(void) { m_type = Sealed; }
+
 private:
+    ScopeType m_type;
+    const void* m_v8handle_scope;
     std::vector<JerryHandle*> m_handles;
 };
 
@@ -689,6 +707,7 @@ public:
     {
         jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
         jerry_port_default_set_abort_on_fail(true);
+        m_fatalErrorCallback = nullptr;
 
         {/* new Map() method */
             const char* fn_args = "";
@@ -776,29 +795,54 @@ public:
         delete this;
     }
 
-    void PushHandleScope(void* ptr) {
-        m_handleScopes.push(new JerryHandleScope());
+    void PushHandleScope(JerryHandleScope::ScopeType type, void* handle_scope) {
+        m_handleScopes.push_back(new JerryHandleScope(type, handle_scope));
     }
 
-    void PopHandleScope(void* ptr) {
-        JerryHandleScope* handleScope = m_handleScopes.top();
-        m_handleScopes.pop();
+    void PopHandleScope(void* handle_scope) {
+        JerryHandleScope* handleScope = m_handleScopes.back();
+
+        assert(handleScope->V8HandleScope() == handle_scope);
+
+        m_handleScopes.pop_back();
 
         delete handleScope;
     }
 
     JerryHandleScope* CurrentHandleScope(void) {
-        return m_handleScopes.top();
+        return m_handleScopes.back();
     }
 
     void AddToHandleScope(JerryHandle* jvalue) {
-        m_handleScopes.top()->AddHandle(jvalue);
+        m_handleScopes.back()->AddHandle(jvalue);
+    }
+
+    void EscapeHandle(JerryHandle* jvalue) {
+        assert(m_handleScopes.size() > 1);
+
+        std::deque<JerryHandleScope*>::reverse_iterator end = m_handleScopes.rbegin();
+        (*end)->RemoveHandle(jvalue);
+        ++end; // Step to a parent handleScope
+        (*end)->AddHandle(jvalue);
+    }
+
+    void SealHandleScope(void* handle_scope) {
+        assert(m_handleScopes.back()->V8HandleScope() == handle_scope);
+        m_handleScopes.back()->Seal();
     }
 
     void AddTemplate(JerryTemplate* handle) {
         // TODO: make the vector a set or a map
         if (std::find(std::begin(m_templates), std::end(m_templates), handle) == std::end(m_templates)) {
             m_templates.push_back(handle);
+        }
+    }
+
+    void SetFatalErrorHandler(v8::FatalErrorCallback callback) { m_fatalErrorCallback = callback; }
+
+    void ReportFatalError(const char* location, const char* message) {
+        if (m_fatalErrorCallback != nullptr) {
+            m_fatalErrorCallback(location, message);
         }
     }
 
@@ -847,13 +891,15 @@ private:
     // They must be the first field of GraalIsolate
     void* m_slot[22] = {};
 
-    std::stack<JerryHandleScope*> m_handleScopes;
+    std::deque<JerryHandleScope*> m_handleScopes;
     std::vector<JerryTemplate*> m_templates;
     JerryValue* m_fn_map_new;
     JerryValue* m_fn_is_map;
     JerryValue* m_fn_is_set;
     JerryValue* m_fn_map_set;
     JerryValue* m_fn_object_assign;
+
+    v8::FatalErrorCallback m_fatalErrorCallback;
 
     static JerryIsolate* s_currentIsolate;
 };
@@ -1159,6 +1205,17 @@ static jerry_value_t JerryV8FunctionHandler(
 
 /**/
 
+void JerryHandleScope::AddHandle(JerryHandle* jvalue) {
+    if (m_type == Sealed) {
+        fprintf(stderr, "Invalid usage of handles: Using SealHandleScope for variables\n");
+        JerryIsolate::GetCurrent()->ReportFatalError("", "Trying to add handle to SealHandleScope");
+        return;
+    }
+
+    m_handles.push_back(jvalue);
+}
+
+
 JerryHandleScope::~JerryHandleScope(void) {
     for (std::vector<JerryHandle*>::reverse_iterator it = m_handles.rbegin();
         it != m_handles.rend();
@@ -1398,6 +1455,10 @@ void Isolate::Dispose() {
     JerryIsolate::fromV8(this)->Dispose();
 }
 
+void Isolate::SetFatalErrorHandler(FatalErrorCallback that) {
+    JerryIsolate::fromV8(this)->SetFatalErrorHandler(that);
+}
+
 void Isolate::GetHeapStatistics(HeapStatistics*) { }
 
 HeapProfiler* Isolate::GetHeapProfiler() {
@@ -1432,7 +1493,7 @@ Local<Object> Context::Global() {
 HandleScope::HandleScope(Isolate* isolate)
     : isolate_(reinterpret_cast<internal::Isolate*>(isolate))
 {
-    JerryIsolate::fromV8(isolate_)->PushHandleScope(this);
+    JerryIsolate::fromV8(isolate_)->PushHandleScope(JerryHandleScope::Normal, this);
 }
 
 HandleScope::~HandleScope(void) {
@@ -1451,6 +1512,28 @@ internal::Object** HandleScope::CreateHandle(internal::Isolate* isolate, interna
             break;
     }
     return reinterpret_cast<internal::Object**>(jhandle);
+}
+
+/* EscapableHandleScope */
+EscapableHandleScope::EscapableHandleScope(Isolate* isolate)
+    : HandleScope(isolate)
+{
+}
+
+internal::Object** EscapableHandleScope::Escape(internal::Object** value) {
+    JerryIsolate::fromV8(GetIsolate())->EscapeHandle(reinterpret_cast<JerryValue*>(value));
+    return value;
+}
+
+/* SealHandleScope */
+SealHandleScope::SealHandleScope(Isolate* isolate)
+    : isolate_(reinterpret_cast<v8::internal::Isolate* const>(isolate))
+{
+    JerryIsolate::fromV8(isolate_)->PushHandleScope(JerryHandleScope::Sealed, this);
+}
+
+SealHandleScope::~SealHandleScope() {
+    JerryIsolate::fromV8(isolate_)->PopHandleScope(this);
 }
 
 /* Value */
@@ -2056,6 +2139,10 @@ String::Utf8Value::Utf8Value(Isolate* isolate, Local<v8::Value> v8Value)
     , length_(0)
 {
     JerryValue* jvalue = reinterpret_cast<JerryValue*>(*v8Value);
+
+    if (jvalue == NULL || jvalue->value() == 0) {
+        return;
+    }
 
     jerry_value_t value;
     if (!jvalue->IsString()) {
