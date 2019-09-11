@@ -58,7 +58,8 @@ int main(int argc, char* argv[]) {
 
     /* Map */
     v8::Local<v8::Map> map = v8::Map::New(env.getIsolate());
-    //ASSERT_EQUAL(map->IsMap(), true);
+    ASSERT_EQUAL(map->IsMap(), true);
+    ASSERT_EQUAL(map->IsSet(), false);
 
     /* Private */
     v8::Local<v8::Private> priv = v8::Private::New(env.getIsolate(), string);

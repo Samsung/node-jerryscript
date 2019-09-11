@@ -695,12 +695,23 @@ public:
             const char* fn_body = "return new Map();";
             m_fn_map_new = new JerryValue(BuildHelperMethod(fn_args, fn_body));
         }
+        {/* isMap helper method */
+            const char* fn_args = "value";
+            const char* fn_body = "return value instanceof Map;";
+            m_fn_is_map = new JerryValue(BuildHelperMethod(fn_args, fn_body));
+        }
+        {/* isSet helper method */
+            const char* fn_args = "value";
+            const char* fn_body = "return value instanceof Set;";
+            m_fn_is_set = new JerryValue(BuildHelperMethod(fn_args, fn_body));
+        }
         {/* Map.Set helper method */
             const char* fn_args = "map, key, value";
             const char* fn_body = "return map.set(key, value);";
 
             m_fn_map_set = new JerryValue(BuildHelperMethod(fn_args, fn_body));
         }
+
         {/* Object.assing helper method */
             const char* fn_args = "value";
             const char* fn_body = "return Object.assing({}, value);";
@@ -716,6 +727,8 @@ public:
     const JerryValue& HelperMapNew(void) const { return *m_fn_map_new; }
     const JerryValue& HelperMapSet(void) const { return *m_fn_map_set; }
     const JerryValue& HelperObjectAssign(void) const { return *m_fn_object_assign; }
+    const JerryValue& HelperIsMap(void) const { return *m_fn_is_map; }
+    const JerryValue& HelperIsSet(void) const { return *m_fn_is_set; }
 
     void Enter(void) {
         JerryIsolate::s_currentIsolate = this;
@@ -740,6 +753,8 @@ public:
         }
 
         delete m_fn_map_new;
+        delete m_fn_is_map;
+        delete m_fn_is_set;
         delete m_fn_map_set;
         delete m_fn_object_assign;
 
@@ -835,6 +850,8 @@ private:
     std::stack<JerryHandleScope*> m_handleScopes;
     std::vector<JerryTemplate*> m_templates;
     JerryValue* m_fn_map_new;
+    JerryValue* m_fn_is_map;
+    JerryValue* m_fn_is_set;
     JerryValue* m_fn_map_set;
     JerryValue* m_fn_object_assign;
 
@@ -1559,15 +1576,33 @@ bool Value::IsProxy() const {
 }
 
 bool Value::IsMap() const {
-    return reinterpret_cast<const JerryValue*> (this)->IsMap();
+    const JerryValue* jval = reinterpret_cast<const JerryValue*> (this);
+
+    jerry_value_t is_map = JerryIsolate::fromV8(v8::Isolate::GetCurrent())->HelperIsMap().value();
+    jerry_value_t arg = jval->value();
+    jerry_value_t result = jerry_call_function(is_map, jerry_create_undefined(), &arg, 1);
+
+    bool isMap = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+    jerry_release_value(result);
+
+    return isMap;
 }
 
 bool Value::IsMapIterator() const {
      return reinterpret_cast<const JerryValue*> (this)->IsMapIterator();
- }
+}
 
 bool Value::IsSet() const {
-    return reinterpret_cast<const JerryValue*> (this)->IsSet();
+    const JerryValue* jval = reinterpret_cast<const JerryValue*> (this);
+
+    jerry_value_t is_set = JerryIsolate::fromV8(v8::Isolate::GetCurrent())->HelperIsSet().value();
+    jerry_value_t arg = jval->value();
+    jerry_value_t result = jerry_call_function(is_set, jerry_create_undefined(), &arg, 1);
+
+    bool isSet = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+    jerry_release_value(result);
+
+    return isSet;
 }
 
 bool Value::IsSetIterator() const {
