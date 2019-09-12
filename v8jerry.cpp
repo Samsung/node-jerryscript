@@ -185,16 +185,20 @@ public:
         return new JerryValue(jerry_value_to_object(m_value));
     }
 
+    JerryContext* GetObjectCreationContext(void);
+
+    static JerryValue* NewObject(void);
+
     static JerryValue* NewExternal(void* ptr) {
-        jerry_value_t object = jerry_create_object();
-        jerry_set_object_native_pointer(object, ptr, &JerryV8ExternalTypeInfo);
+        JerryValue* jobject = JerryValue::NewObject();
+        jerry_set_object_native_pointer(jobject->value(), ptr, &JerryV8ExternalTypeInfo);
 
         // TODO: move this to a better place so it'll be constructed once, maybe create a constructor and prototype?
         jerry_value_t conv_failer = BuildHelperMethod("", "this.toString = this.valueOf = function() { throw new TypeError('Invalid usage'); }");
-        jerry_call_function(conv_failer, object, NULL, 0);
+        jerry_call_function(conv_failer, jobject->value(), NULL, 0);
         jerry_release_value(conv_failer);
 
-        return new JerryValue(object);
+        return jobject;
     }
 
     void* GetExternalData(void) const {
@@ -795,6 +799,23 @@ public:
         delete this;
     }
 
+    void PushContext(JerryContext* context) {
+        // Contexts are managed by HandleScopes, here we only need the stack to correctly
+        // return the current context if needed.
+        m_contexts.push_back(context);
+    }
+
+    void PopContext(JerryContext* context) {
+        JerryContext* ctx = m_contexts.back();
+        assert(ctx == context);
+
+        m_contexts.pop_back();
+    }
+
+    JerryContext* CurrentContext(void) {
+        return m_contexts.back();
+    }
+
     void PushHandleScope(JerryHandleScope::ScopeType type, void* handle_scope) {
         m_handleScopes.push_back(new JerryHandleScope(type, handle_scope));
     }
@@ -892,6 +913,7 @@ private:
     void* m_slot[22] = {};
 
     std::deque<JerryHandleScope*> m_handleScopes;
+    std::deque<JerryContext*> m_contexts;
     std::vector<JerryTemplate*> m_templates;
     JerryValue* m_fn_map_new;
     JerryValue* m_fn_is_map;
@@ -920,9 +942,11 @@ public:
 
     void Enter(void) {
         m_isolate->Enter();
+        m_isolate->PushContext(this);
     }
 
     void Exit(void) {
+        m_isolate->PopContext(this);
         m_isolate->Exit();
     }
 
@@ -1204,6 +1228,31 @@ static jerry_value_t JerryV8FunctionHandler(
 
 
 /**/
+
+static const jerry_object_native_info_t JerryV8ObjectContextTypeInfo = {
+    /* native_pointer stores JerryContext* */
+    .free_cb = NULL
+};
+
+JerryContext* JerryValue::GetObjectCreationContext(void) {
+    void* data_p;
+    bool has_p = jerry_get_object_native_pointer(m_value, &data_p, &JerryV8ObjectContextTypeInfo);
+    if (!has_p) {
+        return NULL;
+    }
+
+    return reinterpret_cast<JerryContext*>(data_p);
+}
+
+JerryValue* JerryValue::NewObject(void) {
+    jerry_value_t object = jerry_create_object();
+
+    JerryContext* ctx = JerryIsolate::GetCurrent()->CurrentContext();
+
+    jerry_set_object_native_pointer(object, ctx, &JerryV8ObjectContextTypeInfo);
+
+    return new JerryValue(object);
+}
 
 void JerryHandleScope::AddHandle(JerryHandle* jvalue) {
     if (m_type == Sealed) {
@@ -1820,9 +1869,15 @@ void* External::Value() const {
 
 /* Object */
 Local<Object> Object::New(Isolate* isolate) {
-    jerry_value_t obj = jerry_create_object();
+    RETURN_HANDLE(Object, isolate, JerryValue::NewObject());
+}
 
-    RETURN_HANDLE(Object, isolate, new JerryValue(obj));
+Local<Context> Object::CreationContext(void) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+
+    JerryContext* jctx = jobj->GetObjectCreationContext();
+    // Copy the context
+    RETURN_HANDLE(Context, GetIsolate(), new JerryContext(*jctx));
 }
 
 Maybe<bool> Object::Set(Local<Context> context, Local<Value> key, Local<Value> value) {
@@ -2452,7 +2507,7 @@ MaybeLocal<Object> ObjectTemplate::NewInstance(Local<Context> context) {
     JerryObjectTemplate* object_template = reinterpret_cast<JerryObjectTemplate*>(this);
 
     // TODO: the function template's method should be set as the object's constructor
-    JerryValue* new_instance = new JerryValue(jerry_create_object());
+    JerryValue* new_instance = JerryValue::NewObject();
     object_template->InstallProperties(new_instance->value());
 
     RETURN_HANDLE(Object, context->GetIsolate(), new_instance);
