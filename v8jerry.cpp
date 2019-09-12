@@ -1883,6 +1883,29 @@ Maybe<bool> Object::Has(Local<Context> context, Local<Value> key) {
     return Just(has_prop);
 }
 
+MaybeLocal<Value> Object::GetPrivate(Local<Context> context, Local<Private> key) {
+    JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+    RETURN_HANDLE(Value, Isolate::GetCurrent(), reinterpret_cast<JerryValue*> (this)->GetProperty(jkey));
+}
+
+Maybe<bool> Object::HasPrivate(Local<Context> context, Local<Private> key) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
+    JerryValue* jkey = reinterpret_cast<JerryValue*> (*key);
+
+    jerry_value_t has_prop_js = jerry_has_property (jobj->value(), jkey->value());
+    bool has_prop = jerry_get_boolean_value (has_prop_js);
+    jerry_release_value (has_prop_js);
+
+    return Just(has_prop);
+}
+
+Maybe<bool> Object::SetPrivate(Local<Context> context, Local<Private> key, Local<Value> value) {
+    return Just(reinterpret_cast<JerryValue*>(this)->SetProperty(
+                    reinterpret_cast<JerryValue*>(*key),
+                    reinterpret_cast<JerryValue*>(*value)));
+}
+
 Maybe<bool> Object::DefineOwnProperty(Local<Context> context, Local<Name> key, Local<Value> value, PropertyAttribute attributes) {
     JerryValue* obj = reinterpret_cast<JerryValue*> (this);
     JerryValue* prop_name = reinterpret_cast<JerryValue*> (*key);
@@ -2045,7 +2068,17 @@ MaybeLocal<Map> Map::Set(Local<Context> context, Local<Value> key, Local<Value> 
 Local<Private> Private::New(Isolate* isolate, Local<String> name) {
     JerryValue* jname = reinterpret_cast<JerryValue*>(*name);
 
-    RETURN_HANDLE(Private ,isolate, jname->Copy());
+    jerry_size_t size = jerry_get_string_size (jname->value());
+    std::vector<char> buffer(size);
+
+    jerry_string_to_char_buffer (jname->value(), reinterpret_cast<jerry_char_t*>(&buffer[0]), size);
+
+    std::string private_name("$$private_");
+    private_name.append(buffer.data());
+
+    jerry_value_t private_key = jerry_create_string_from_utf8((const jerry_char_t*)private_name.c_str());
+
+    RETURN_HANDLE(Private, isolate, new JerryValue(private_key));
 }
 
 /* Symbol */

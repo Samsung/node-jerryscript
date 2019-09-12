@@ -62,5 +62,15 @@ int main(int argc, char* argv[]) {
     hasMath = object->Has(env.getContext(), math);
     ASSERT_EQUAL(hasMath.FromJust(),true);
 
+    // Define private property.
+    v8::Local<v8::Private> privateKey = v8::Private::New(env.getIsolate(), fooKey);
+    ASSERT_EQUAL(object->HasPrivate(env.getContext(), privateKey).FromJust(), false);
+
+    object->SetPrivate(env.getContext(), privateKey, fooValue);
+
+    ASSERT_EQUAL(object->HasPrivate(env.getContext(), privateKey).FromJust(), true);
+    ASSERT_EQUAL(object->GetPrivate(env.getContext(), privateKey).ToLocalChecked()->IsInt32(), true);
+    ASSERT_EQUAL(object->GetPrivate(env.getContext(), privateKey).ToLocalChecked()->Int32Value(), 33);
+
     return 0;
 }
