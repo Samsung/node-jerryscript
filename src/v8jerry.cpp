@@ -846,12 +846,13 @@ Local<Private> Private::New(Isolate* isolate, Local<String> name) {
     jerry_size_t size = jerry_get_string_size (jname->value());
     std::vector<char> buffer(size);
 
-    jerry_string_to_char_buffer (jname->value(), reinterpret_cast<jerry_char_t*>(&buffer[0]), size);
+    jerry_length_t copied =
+        jerry_string_to_char_buffer (jname->value(), reinterpret_cast<jerry_char_t*>(&buffer[0]), size);
 
     std::string private_name("$$private_");
-    private_name.append(buffer.data());
+    private_name.append(buffer.data(), copied);
 
-    jerry_value_t private_key = jerry_create_string_from_utf8((const jerry_char_t*)private_name.c_str());
+    jerry_value_t private_key = jerry_create_string_sz_from_utf8((const jerry_char_t*)private_name.c_str(), private_name.size());
 
     RETURN_HANDLE(Private, isolate, new JerryValue(private_key));
 }
