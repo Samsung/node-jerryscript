@@ -1,6 +1,7 @@
 #include "v8jerry_isolate.hpp"
 
 #include <cassert>
+#include <cstring>
 #include <algorithm>
 
 #include "v8jerry_value.hpp"
@@ -14,34 +15,14 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     jerry_port_default_set_abort_on_fail(true);
     m_fatalErrorCallback = nullptr;
 
-    {/* new Map() method */
-        const char* fn_args = "";
-        const char* fn_body = "return new Map();";
-        m_fn_map_new = new JerryValue(BuildHelperMethod(fn_args, fn_body));
-    }
-    {/* isMap helper method */
-        const char* fn_args = "value";
-        const char* fn_body = "return value instanceof Map;";
-        m_fn_is_map = new JerryValue(BuildHelperMethod(fn_args, fn_body));
-    }
-    {/* isSet helper method */
-        const char* fn_args = "value";
-        const char* fn_body = "return value instanceof Set;";
-        m_fn_is_set = new JerryValue(BuildHelperMethod(fn_args, fn_body));
-    }
-    {/* Map.Set helper method */
-        const char* fn_args = "map, key, value";
-        const char* fn_body = "return map.set(key, value);";
+    m_fn_map_new = new JerryPolyfill("new_map", "", "return new Map();");
+    m_fn_is_map = new JerryPolyfill("is_map", "value", "return value instanceof Map;");
+    m_fn_is_set = new JerryPolyfill("is_set", "value", "return value instanceof Set;");
+    m_fn_map_set = new JerryPolyfill("map_set", "map, key, value", "return map.set(key, value);");
+    m_fn_object_assign = new JerryPolyfill("object_assign", "value", "return Object.assign({}, value);");
+    m_fn_conversion_failer =
+        new JerryPolyfill("conv_fail", "", "this.toString = this.valueOf = function() { throw new TypeError('Invalid usage'); }");
 
-        m_fn_map_set = new JerryValue(BuildHelperMethod(fn_args, fn_body));
-    }
-
-    {/* Object.assing helper method */
-        const char* fn_args = "value";
-        const char* fn_body = "return Object.assing({}, value);";
-
-        m_fn_object_assign = new JerryValue(BuildHelperMethod(fn_args, fn_body));
-    }
 
     InitalizeSlots();
 }
@@ -73,6 +54,7 @@ void JerryIsolate::Dispose(void) {
     delete m_fn_is_set;
     delete m_fn_map_set;
     delete m_fn_object_assign;
+    delete m_fn_conversion_failer;
 
     // Release slots
     {

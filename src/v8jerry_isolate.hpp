@@ -10,6 +10,7 @@
 #include "jerryscript-port-default.h"
 
 #include "v8jerry_value.hpp"
+#include "v8jerry_utils.hpp"
 
 class JerryContext;
 class JerryHandle;
@@ -22,11 +23,12 @@ public:
     JerryIsolate(const v8::Isolate::CreateParams& params);
     ~JerryIsolate() {}
 
-    const JerryValue& HelperMapNew(void) const { return *m_fn_map_new; }
-    const JerryValue& HelperMapSet(void) const { return *m_fn_map_set; }
-    const JerryValue& HelperObjectAssign(void) const { return *m_fn_object_assign; }
-    const JerryValue& HelperIsMap(void) const { return *m_fn_is_map; }
-    const JerryValue& HelperIsSet(void) const { return *m_fn_is_set; }
+    const JerryPolyfill& HelperMapNew(void) const { return *m_fn_map_new; }
+    const JerryPolyfill& HelperMapSet(void) const { return *m_fn_map_set; }
+    const JerryPolyfill& HelperObjectAssign(void) const { return *m_fn_object_assign; }
+    const JerryPolyfill& HelperIsMap(void) const { return *m_fn_is_map; }
+    const JerryPolyfill& HelperIsSet(void) const { return *m_fn_is_set; }
+    const JerryPolyfill& HelperConversionFailer(void) const { return *m_fn_conversion_failer; }
 
     void Enter(void);
     void Exit(void);
@@ -66,11 +68,12 @@ private:
     std::deque<JerryHandleScope*> m_handleScopes;
     std::deque<JerryContext*> m_contexts;
     std::vector<JerryTemplate*> m_templates;
-    JerryValue* m_fn_map_new;
-    JerryValue* m_fn_is_map;
-    JerryValue* m_fn_is_set;
-    JerryValue* m_fn_map_set;
-    JerryValue* m_fn_object_assign;
+    JerryPolyfill* m_fn_map_new;
+    JerryPolyfill* m_fn_is_map;
+    JerryPolyfill* m_fn_is_set;
+    JerryPolyfill* m_fn_map_set;
+    JerryPolyfill* m_fn_object_assign;
+    JerryPolyfill* m_fn_conversion_failer;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
 

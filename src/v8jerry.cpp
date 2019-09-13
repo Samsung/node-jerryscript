@@ -434,9 +434,9 @@ bool Value::IsProxy() const {
 bool Value::IsMap() const {
     const JerryValue* jval = reinterpret_cast<const JerryValue*> (this);
 
-    jerry_value_t is_map = JerryIsolate::fromV8(v8::Isolate::GetCurrent())->HelperIsMap().value();
     jerry_value_t arg = jval->value();
-    jerry_value_t result = jerry_call_function(is_map, jerry_create_undefined(), &arg, 1);
+    jerry_value_t result =
+        JerryIsolate::fromV8(v8::Isolate::GetCurrent())->HelperIsMap().Call(jerry_create_undefined(), &arg, 1);
 
     bool isMap = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
     jerry_release_value(result);
@@ -451,9 +451,9 @@ bool Value::IsMapIterator() const {
 bool Value::IsSet() const {
     const JerryValue* jval = reinterpret_cast<const JerryValue*> (this);
 
-    jerry_value_t is_set = JerryIsolate::fromV8(v8::Isolate::GetCurrent())->HelperIsSet().value();
     jerry_value_t arg = jval->value();
-    jerry_value_t result = jerry_call_function(is_set, jerry_create_undefined(), &arg, 1);
+    jerry_value_t result =
+        JerryIsolate::fromV8(v8::Isolate::GetCurrent())->HelperIsSet().Call(jerry_create_undefined(), &arg, 1);
 
     bool isSet = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
     jerry_release_value(result);
@@ -796,10 +796,8 @@ Local<Object> Object::Clone(void) {
     // shallow copy!
     JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
 
-    // TODO: maybe move the helper calls to a concrete method
-    jerry_value_t obj_assign = JerryIsolate::fromV8(GetIsolate())->HelperObjectAssign().value();
     jerry_value_t arg = jobj->value();
-    jerry_value_t result = jerry_call_function(obj_assign, jerry_create_undefined(), &arg, 1);
+    jerry_value_t result = JerryIsolate::fromV8(GetIsolate())->HelperObjectAssign().Call(jerry_create_undefined(), &arg, 1);
 
     RETURN_HANDLE(Object, GetIsolate(), new JerryValue(result));
 }
@@ -823,8 +821,7 @@ uint32_t Array::Length() const {
 /* Map */
 Local<Map> Map::New(Isolate* isolate) {
     // TODO: add jerry api for map creation;
-    jerry_value_t map_builder = JerryIsolate::fromV8(isolate)->HelperMapNew().value();
-    jerry_value_t new_map = jerry_call_function(map_builder, jerry_create_undefined(), NULL, 0);
+    jerry_value_t new_map = JerryIsolate::fromV8(isolate)->HelperMapNew().Call(jerry_create_undefined(), NULL, 0);
 
     RETURN_HANDLE(Map, isolate, new JerryValue(new_map));
 }
@@ -836,9 +833,8 @@ MaybeLocal<Map> Map::Set(Local<Context> context, Local<Value> key, Local<Value> 
 
     // TODO: ADD JS api / make sure the function is only created once.
 
-    jerry_value_t map_set_helper = JerryIsolate::fromV8(context->GetIsolate())->HelperMapSet().value();
     jerry_value_t args[] = { jmap->value(), jkey->value(), jvalue->value() };
-    jerry_value_t result = jerry_call_function(map_set_helper, jerry_create_undefined(), args, 3);
+    jerry_value_t result = JerryIsolate::fromV8(context->GetIsolate())->HelperMapSet().Call(jerry_create_undefined(), args, 3);
     jerry_release_value(result);
 
     return Local<Map>(this);

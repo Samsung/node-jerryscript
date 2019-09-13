@@ -63,11 +63,9 @@ JerryValue* JerryValue::NewExternal(void* ptr) {
     JerryValue* jobject = JerryValue::NewObject();
     jerry_set_object_native_pointer(jobject->value(), ptr, &JerryV8ExternalTypeInfo);
 
-    // TODO: move this to a better place so it'll be constructed once, maybe create a constructor and prototype?
-    jerry_value_t conv_failer = BuildHelperMethod("", "this.toString = this.valueOf = function() { throw new TypeError('Invalid usage'); }");
-    jerry_call_function(conv_failer, jobject->value(), NULL, 0);
-    jerry_release_value(conv_failer);
+    JerryIsolate* iso = JerryIsolate::GetCurrent();
 
+    jerry_release_value(iso->HelperConversionFailer().Call(jobject->value()));
     return jobject;
 }
 
