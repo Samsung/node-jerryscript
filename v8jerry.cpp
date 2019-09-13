@@ -2089,6 +2089,17 @@ Local<Symbol> Symbol::New(Isolate* isolate, Local<String> name) {
     RETURN_HANDLE(Symbol, isolate, new JerryValue(symbol_name));
 }
 
+/* Proxy */
+Local<Object> Proxy::GetTarget() {
+    // Proxy is not supported by JerryScript.
+    return Local<Object>();
+}
+
+Local<Value> Proxy::GetHandler() {
+    // Proxy is not supported by JerryScript.
+    return Local<Value>();
+}
+
 /* Message */
 Maybe<int> Message::GetStartColumn(v8::Local<v8::Context> context) const {
     return Just(0);
