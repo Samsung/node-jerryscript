@@ -30,6 +30,22 @@
         'deps/v8-headers/v8config.h',
 
         'src/v8jerry.cpp',
+
+        'src/v8jerry_callback.cpp',
+        'src/v8jerry_callback.hpp',
+        'src/v8jerry_context.hpp',
+        'src/v8jerry_handlescope.cpp',
+        'src/v8jerry_handlescope.hpp',
+        'src/v8jerry_isolate.cpp',
+        'src/v8jerry_isolate.hpp',
+        'src/v8jerry_platform.hpp',
+        'src/v8jerry_templates.cpp',
+        'src/v8jerry_templates.hpp',
+        'src/v8jerry_utils.cpp',
+        'src/v8jerry_utils.hpp',
+        'src/v8jerry_value.cpp',
+        'src/v8jerry_value.hpp',
+
       ],
       'conditions': [
         ['want_separate_host_toolset==1', {
