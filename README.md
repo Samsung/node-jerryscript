@@ -17,3 +17,6 @@ $ cmake -Bbuild -H. -DUSE_V8=1 \
 `USE_V8=1` will build additional binaries with `v8_` prefix.
 `USE_V8_LIB_DIR` should point to the dir where the node.js have it's build v8 archives (eg.: libv8_base.a).
 `USE_V8_HEADER_DIR` should point to the dir where the v8 headers are (eg.: v8.h).
+
+These variable can also be specified via environment variables.
+However please take note that the cmake arguments have a higher priority.

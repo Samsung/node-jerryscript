@@ -29,7 +29,7 @@
         'deps/v8-headers/v8.h',
         'deps/v8-headers/v8config.h',
 
-        'v8jerry.cpp',
+        'src/v8jerry.cpp',
       ],
       'conditions': [
         ['want_separate_host_toolset==1', {
