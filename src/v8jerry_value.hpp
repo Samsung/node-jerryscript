@@ -105,7 +105,7 @@ public:
     bool GetBooleanValue(void) const { return jerry_get_boolean_value(m_value); }
 
     int GetStringLength(void) const { return jerry_get_string_length(m_value); }
-    int GetStringUtf8Length(void) const { return jerry_get_utf8_string_length(m_value); }
+    int GetStringUtf8Length(void) const { return jerry_get_utf8_string_size(m_value); }
 
     JerryValue* ToString(void) const {
         // TODO: error handling?

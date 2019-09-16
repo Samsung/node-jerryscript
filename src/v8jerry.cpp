@@ -83,6 +83,10 @@ void V8::FromJustIsNothing() { }
 void V8::ShutdownPlatform() { }
 
 /* ArrayBuffer & Allocator */
+void delete_external_array_buffer(void* ptr) {
+    delete [] static_cast<uint8_t*> (ptr);
+}
+
 Local<ArrayBuffer> ArrayBuffer::New(Isolate* isolate, void* data, size_t byte_length, ArrayBufferCreationMode mode) {
     jerry_value_t buffer;
 
@@ -90,7 +94,7 @@ Local<ArrayBuffer> ArrayBuffer::New(Isolate* isolate, void* data, size_t byte_le
         buffer = jerry_create_arraybuffer(byte_length);
         jerry_arraybuffer_write(buffer, 0, (uint8_t*)data, byte_length);
     } else {
-        buffer = jerry_create_arraybuffer_external(byte_length, (uint8_t*)data, nullptr);
+        buffer = jerry_create_arraybuffer_external(byte_length, (uint8_t*)data, delete_external_array_buffer);
     }
 
     RETURN_HANDLE(ArrayBuffer, isolate, new JerryValue(buffer));
@@ -925,6 +929,7 @@ Local<String> String::NewFromUtf8(
     }
 
     jerry_value_t str_value = jerry_create_string_sz_from_utf8((const jerry_char_t*)data, length);
+
     RETURN_HANDLE(String, isolate, new JerryValue(str_value));
 }
 
@@ -935,12 +940,80 @@ MaybeLocal<String> String::NewFromUtf8(
     return String::NewFromUtf8(isolate, data, (String::NewStringType)type, length);
 }
 
+/* Two-byte strings are not supported. Fallback to UTF-8. */
+MaybeLocal<String> String::NewFromTwoByte(Isolate* isolate, const uint16_t* data, v8::NewStringType type, int length) {
+    return String::NewFromUtf8(isolate, (const char*)data, (String::NewStringType)type, length);
+}
+
+/* External strings are not supported yet. */
+MaybeLocal<String> String::NewExternalOneByte(Isolate* isolate, ExternalOneByteStringResource* resource) {
+    printf("TODO: External strings are not supported.\n");
+    return String::NewFromUtf8(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
+}
+
+MaybeLocal<String> String::NewExternalTwoByte(Isolate* isolate, ExternalStringResource* resource) {
+    printf("TODO: External strings are not supported.\n");
+    return String::NewFromTwoByte(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
+}
+
+const String::ExternalOneByteStringResource* String::GetExternalOneByteStringResource() const {
+    return NULL;
+}
+
+bool String::IsExternal() const {
+    return false;
+}
+
+bool String::IsExternalOneByte() const {
+    return false;
+}
+
 int String::WriteUtf8(char* buffer, int length, int* nchars_ref, int options) const {
     const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
 
     jerry_size_t bytes = jerry_string_to_utf8_char_buffer (jvalue->value(), (jerry_char_t *)buffer, length);
 
-    buffer[bytes] = '\0';
+    if ((options & String::NO_NULL_TERMINATION) == 0) {
+        buffer[bytes] = '\0';
+    }
+
+    return (int)bytes;
+}
+
+int String::WriteOneByte(uint8_t* buffer, int start, int length, int options) const {
+    const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
+
+    jerry_size_t str_length = jerry_get_string_length(jvalue->value());
+
+    if ((length == -1) || (start + length > str_length)) {
+        length = str_length - start;
+    }
+
+    jerry_size_t bytes = jerry_substring_to_char_buffer (jvalue->value(), start, start + length, (jerry_char_t *)buffer, length);
+
+    if ((options & String::NO_NULL_TERMINATION) == 0) {
+        buffer[bytes] = '\0';
+    }
+
+    return (int)bytes;
+}
+
+/* Two-byte strings are not supported. Fallback to UTF-8. */
+int String::Write(uint16_t* buffer, int start, int length, int options) const {
+    const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
+
+    jerry_size_t str_length = jerry_get_utf8_string_length(jvalue->value());
+
+    if ((length == -1) || (start + length > str_length)) {
+        length = str_length - start;
+    }
+
+    jerry_size_t bytes = jerry_substring_to_utf8_char_buffer (jvalue->value(), start, start + length, (jerry_char_t *)buffer, length);
+
+    if ((options & String::NO_NULL_TERMINATION) == 0) {
+        buffer[bytes] = '\0';
+    }
+
     return (int)bytes;
 }
 
@@ -953,6 +1026,37 @@ int String::Utf8Length() const {
 }
 
 String::Utf8Value::Utf8Value(Local<v8::Value> obj) : Utf8Value(Isolate::GetCurrent(), obj) { }
+
+String::Value::Value(Isolate* isolate, Local<v8::Value> v8Value)
+    : str_(nullptr)
+    , length_(0)
+{
+    JerryValue* jvalue = reinterpret_cast<JerryValue*>(*v8Value);
+
+    if (jvalue == NULL || jvalue->value() == 0) {
+        return;
+    }
+
+    jerry_value_t value;
+    if (!jvalue->IsString()) {
+        value = jerry_value_to_string(jvalue->value());
+    } else {
+        value = jvalue->value();
+    }
+
+    length_ = jerry_get_utf8_string_length(value);
+    uint32_t size = (uint32_t)jerry_get_utf8_string_size(value);
+
+    char* buffer = new char[size + 1];
+    jerry_string_to_utf8_char_buffer (value, (jerry_char_t *)buffer, size + 1);
+    buffer[size] = '\0';
+
+    str_ = (uint16_t*) buffer;
+
+    if (!jvalue->IsString()) {
+        jerry_release_value(value);
+    }
+}
 
 String::Utf8Value::Utf8Value(Isolate* isolate, Local<v8::Value> v8Value)
     : str_(nullptr)

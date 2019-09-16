@@ -23,7 +23,10 @@ int main(int argc, char* argv[]) {
     // ArrayBuffer
     //
 
-    uint8_t data[ARRAY_SIZE] = { 1, 1, 0, 0, 0, 0, 0, 0 };
+    uint8_t* data = new uint8_t[ARRAY_SIZE];
+    memset(data, 0, ARRAY_SIZE);
+    data[0] = 1;
+    data[1] = 1;
 
     // Create an internalized arraybuffer.
     v8::Local<v8::ArrayBuffer> intBuffer =
