@@ -19,6 +19,7 @@
 # define JERRY_MEM_STATS 0
 # define JERRY_CPOINTER_32_BIT 1
 # define JERRY_SYSTEM_ALLOCATOR 1
+# define JERRY_LINE_INFO 1
 
 /**
  * Built-in configurations

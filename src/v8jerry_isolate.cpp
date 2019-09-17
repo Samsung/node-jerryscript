@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstring>
 #include <algorithm>
+#include <iostream>
 
 #include "v8jerry_value.hpp"
 #include "v8jerry_handlescope.hpp"
@@ -23,8 +24,11 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     m_fn_conversion_failer =
         new JerryPolyfill("conv_fail", "", "this.toString = this.valueOf = function() { throw new TypeError('Invalid usage'); }");
 
-
     InitalizeSlots();
+
+    m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
+    m_try_catch_count = 0;
+    m_current_error = NULL;
 }
 
 void JerryIsolate::Enter(void) {
@@ -48,6 +52,9 @@ void JerryIsolate::Dispose(void) {
                 break;
         }
     }
+
+    delete m_magic_string_stack;
+    ClearError();
 
     delete m_fn_map_new;
     delete m_fn_is_map;
@@ -73,6 +80,67 @@ void JerryIsolate::Dispose(void) {
     // You have been warned!
     delete this;
 }
+
+void JerryIsolate::PushTryCatch(void* try_catch_obj) {
+    m_try_catch_count++;
+}
+
+void JerryIsolate::PopTryCatch(void* try_catch_obj) {
+    assert(m_try_catch_count > 0);
+
+    m_try_catch_count--;
+}
+
+void JerryIsolate::SetError(JerryValue* error) {
+    assert(error != NULL);
+    // If there was a previous error, release it!
+    ClearError();
+
+    m_current_error = error;
+
+    if (m_try_catch_count == 0) {
+        // No default handler print out trace
+        jerry_value_t stack_trace = jerry_get_property(error->value(), m_magic_string_stack->value());
+
+        assert(!jerry_value_is_error(stack_trace));
+
+        uint32_t array_length = jerry_get_array_length (stack_trace);
+        for (uint32_t idx = 0; idx < array_length; idx++)
+        {
+            jerry_value_t property = jerry_get_property_by_index (stack_trace, idx);
+
+            jerry_size_t msg_size = jerry_get_string_size(property);
+
+            std::vector<jerry_char_t> msg;
+            msg.resize(msg_size + 1);
+
+            jerry_size_t copied = jerry_string_to_char_buffer (property, &msg[0], msg_size + 1);
+            assert(copied == msg_size);
+            msg[copied] = static_cast<jerry_char_t>('\0');
+
+            std::cerr << "# " << idx << ": " << (const char*)&msg[0] << std::endl;
+        }
+    }
+}
+
+void JerryIsolate::SetError(const jerry_value_t error_value) {
+    assert(jerry_value_is_error(error_value));
+
+    jerry_value_t error_obj = jerry_get_value_from_error(error_value, true);
+    SetError(new JerryValue(error_obj));
+}
+
+
+void JerryIsolate::ClearError(void) {
+    if (m_current_error != NULL) {
+        delete m_current_error;
+    }
+}
+
+bool JerryIsolate::HasError(void) {
+    return m_current_error != NULL;
+}
+
 
 void JerryIsolate::PushContext(JerryContext* context) {
     // Contexts are managed by HandleScopes, here we only need the stack to correctly
@@ -137,6 +205,9 @@ void JerryIsolate::AddTemplate(JerryTemplate* handle) {
 void JerryIsolate::ReportFatalError(const char* location, const char* message) {
     if (m_fatalErrorCallback != nullptr) {
         m_fatalErrorCallback(location, message);
+    } else {
+        std::cerr << "Fatal error: " << location << " " << message << std::endl;
+        abort();
     }
 }
 

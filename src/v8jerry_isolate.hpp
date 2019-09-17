@@ -35,6 +35,13 @@ public:
 
     void Dispose(void);
 
+    void PushTryCatch(void* try_catch_obj);
+    void PopTryCatch(void* try_catch_obj);
+    void SetError(JerryValue* error);
+    void SetError(const jerry_value_t error_value);
+    void ClearError(void);
+    bool HasError(void);
+
     void PushContext(JerryContext* context);
     void PopContext(JerryContext* context);
     JerryContext* CurrentContext(void);
@@ -74,6 +81,11 @@ private:
     JerryPolyfill* m_fn_map_set;
     JerryPolyfill* m_fn_object_assign;
     JerryPolyfill* m_fn_conversion_failer;
+
+    JerryValue* m_magic_string_stack;
+
+    int m_try_catch_count;
+    JerryValue* m_current_error;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
 

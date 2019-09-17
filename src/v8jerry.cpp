@@ -110,6 +110,7 @@ bool V8::Dispose() {
 
 void V8::ToLocalEmpty() {
     V8_CALL_TRACE();
+    JerryIsolate::GetCurrent()->ReportFatalError("v8::ToLocalChecked", "Empty MaybeLocal");
 }
 
 void V8::FromJustIsNothing() {
@@ -356,6 +357,10 @@ HandleScope::~HandleScope(void) {
 
 internal::Object** HandleScope::CreateHandle(internal::Isolate* isolate, internal::Object* value) {
     V8_CALL_TRACE();
+    if (V8_UNLIKELY(value == NULL)) {
+        return reinterpret_cast<internal::Object**>(value);
+    }
+
     JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(value);
     switch (jhandle->type()) {
         case JerryHandle::FunctionTemplate:
@@ -1319,23 +1324,33 @@ MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source,
     RETURN_HANDLE(Script, context->GetIsolate(), new JerryValue(scriptFunction));
 }
 
-MaybeLocal<Value> Script::Run(v8::Local<v8::Context> context) {
-    V8_CALL_TRACE();
-    JerryValue* jvalue = reinterpret_cast<JerryValue*>(this);
+
+// TODO: maybe move this to into the isolate?
+static JerryValue* RunHelper(JerryIsolate* iso, v8::Script* script) {
+    JerryValue* jvalue = reinterpret_cast<JerryValue*>(script);
 
     jerry_value_t result = jerry_run(jvalue->value());
 
-    RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(result));
+    if (V8_UNLIKELY(jerry_value_is_error(result))) {
+        iso->SetError(result);
+
+        return NULL;
+    } else {
+        return new JerryValue(result);
+    }
+}
+
+MaybeLocal<Value> Script::Run(v8::Local<v8::Context> context) {
+    V8_CALL_TRACE();
+    v8::Isolate* iso = context->GetIsolate();
+    RETURN_HANDLE(Value, iso, RunHelper(reinterpret_cast<JerryIsolate*>(iso), this));
 }
 
 Local<Value> Script::Run() {
     V8_CALL_TRACE();
-    JerryValue* jvalue = reinterpret_cast<JerryValue*>(this);
-
-    jerry_value_t result = jerry_run(jvalue->value());
-    // TODO: report error for try-catch.
-
-    RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(result));
+    JerryIsolate* iso = JerryIsolate::GetCurrent();
+    JerryValue* result = RunHelper(iso, this);
+    RETURN_HANDLE(Value, reinterpret_cast<v8::Isolate*>(iso), result);
 }
 
 /* Function */
@@ -1645,6 +1660,67 @@ Local<StackFrame> StackTrace::GetFrame(unsigned int) const {
     V8_CALL_TRACE();
     return Local<StackFrame>();
 }
+
+/* TryCatch */
+TryCatch::TryCatch(v8::Isolate* isolate)
+    : isolate_(reinterpret_cast<v8::internal::Isolate*>(isolate))
+    , is_verbose_(false)
+    , rethrow_(false)
+    , has_terminated_(false)
+{
+    V8_CALL_TRACE();
+
+    JerryIsolate::fromV8(isolate_)->PushTryCatch(this);
+}
+
+TryCatch::~TryCatch() {
+    V8_CALL_TRACE();
+    // TODO: remove from isolate stack
+    JerryIsolate::fromV8(isolate_)->PopTryCatch(this);
+
+    if (!rethrow_) {
+        // By not clearing the error "effectively" the parent TryCatch would inherit everything.
+        JerryIsolate::fromV8(isolate_)->ClearError();
+    }
+}
+
+bool TryCatch::HasCaught() const {
+    V8_CALL_TRACE();
+    // TODO: return error from isolate/context
+    return JerryIsolate::fromV8(isolate_)->HasError();
+}
+
+Local<Value> TryCatch::ReThrow() {
+    V8_CALL_TRACE();
+    rethrow_ = true;
+
+    // TODO: push error to "try catch" stack above?
+    // TODO: return what?
+    return Local<Value>();
+}
+
+Local<Value>  TryCatch::Exception() const {
+    V8_CALL_TRACE();
+    // TODO: return the current error object
+    return Local<Value>();
+}
+
+Local<v8::Message> TryCatch::Message() const {
+    V8_CALL_TRACE();
+    // TODO: return the current error message
+    return Local<v8::Message>();
+}
+
+void TryCatch::SetVerbose(bool value) {
+    V8_CALL_TRACE();
+    is_verbose_ = value;
+}
+
+bool TryCatch::IsVerbose() const {
+    V8_CALL_TRACE();
+    return is_verbose_;
+}
+
 
 /* HeapProfiler & HeapStatistics */
 void HeapProfiler::SetWrapperClassInfoProvider(unsigned short class_id, WrapperInfoCallback cb) {
