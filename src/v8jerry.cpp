@@ -1226,6 +1226,12 @@ String::Utf8Value::Utf8Value(Local<v8::Value> obj) : Utf8Value(Isolate::GetCurre
     V8_CALL_TRACE();
 }
 
+String::Value::Value(Local<v8::Value> obj)
+    : Value(Isolate::GetCurrent(), obj)
+{
+    V8_CALL_TRACE();
+}
+
 String::Value::Value(Isolate* isolate, Local<v8::Value> v8Value)
     : str_(nullptr)
     , length_(0)
