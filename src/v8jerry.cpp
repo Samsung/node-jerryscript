@@ -275,13 +275,48 @@ Isolate* Isolate::GetCurrent() {
     return JerryIsolate::toV8(JerryIsolate::GetCurrent());
 }
 
+Local<Context> Isolate::GetCurrentContext(void) {
+    V8_CALL_TRACE();
+    JerryContext* ctx = JerryIsolate::fromV8(this)->CurrentContext();
+    // Do not create a handle, just return a ref
+    return Local<Context>(reinterpret_cast<Context*>(ctx));
+}
+
+void Isolate::TerminateExecution(void) {
+    V8_CALL_TRACE();
+    // TODO: maybe disable all JS calls somehow?
+    JerryIsolate::fromV8(this)->Terminate();
+}
+
+int64_t Isolate::AdjustAmountOfExternalAllocatedMemoryCustom(int64_t change_in_bytes) {
+    V8_CALL_TRACE();
+    // TODO: what to do?
+    return 0;
+}
+
+bool Isolate::AddMessageListener(MessageCallback that, Local<Value> data /* = Local<Value>() */) {
+    V8_CALL_TRACE();
+    // There is no messages to listen to, ignoring the call.
+    return true;
+}
+
+void Isolate::AddGCPrologueCallback(GCCallback callback, GCType gc_type_filter /* = kGCTypeAll */) {
+    V8_CALL_TRACE();
+    // TODO: node only uses for perf/tracing
+}
+
+void Isolate::AddGCEpilogueCallback(GCCallbackWithData callback, void* data /* = nullptr */, GCType gc_type_filter /* = kGCTypeAll */) {
+    V8_CALL_TRACE();
+    // TODO: node only uses for perf/tracing
+}
+
 void Isolate::LowMemoryNotification(void) {
     V8_CALL_TRACE();
 }
 
 bool Isolate::IsDead() {
     V8_CALL_TRACE();
-    return false;
+    return !JerryIsolate::fromV8(this)->IsTerminated();
 }
 
 void Isolate::Enter() {
@@ -304,6 +339,11 @@ void Isolate::SetFatalErrorHandler(FatalErrorCallback that) {
     JerryIsolate::fromV8(this)->SetFatalErrorHandler(that);
 }
 
+void Isolate::SetAbortOnUncaughtExceptionCallback(AbortOnUncaughtExceptionCallback callback) {
+    V8_CALL_TRACE();
+    // ATM we'll ignore this, all uncaught exceptions will "terminate"
+}
+
 void Isolate::GetHeapStatistics(HeapStatistics*) {
     V8_CALL_TRACE();
 }
@@ -314,10 +354,26 @@ HeapProfiler* Isolate::GetHeapProfiler() {
 }
 
 v8::Local<v8::Value> Isolate::ThrowException(v8::Local<v8::Value> error) {
+    V8_CALL_TRACE();
     JerryValue* jerror = reinterpret_cast<JerryValue*>(*error);
     JerryIsolate::fromV8(this)->SetError(jerry_create_error_from_value(jerror->value(), false));
 
     return error;
+}
+
+void Isolate::SetAutorunMicrotasks(bool autorun) {
+    V8_CALL_TRACE();
+    JerryIsolate::fromV8(this)->SetAutorunMicrotasks(autorun);
+}
+
+void Isolate::EnqueueMicrotask(MicrotaskCallback microtask, void* data /* = NULL */) {
+    V8_CALL_TRACE();
+    JerryIsolate::fromV8(this)->EnqueueMicrotask(microtask, data);
+}
+
+void Isolate::RunMicrotasks(void) {
+    V8_CALL_TRACE();
+    JerryIsolate::fromV8(this)->RunMicrotasks();
 }
 
 /* Context */
@@ -347,6 +403,16 @@ void Context::Exit() {
 Local<Object> Context::Global() {
     V8_CALL_TRACE();
     RETURN_HANDLE(Object, GetIsolate(), new JerryValue(jerry_get_global_object()));
+}
+
+void Context::SetAlignedPointerInEmbedderData(int index, void* value) {
+    V8_CALL_TRACE();
+    reinterpret_cast<JerryContext*>(this)->SetEmbedderData(index, value);
+}
+
+void* Context::SlowGetAlignedPointerFromEmbedderData(int index) {
+    V8_CALL_TRACE();
+    return reinterpret_cast<JerryContext*>(this)->GetEmbedderData(index);
 }
 
 /* HandleScope */

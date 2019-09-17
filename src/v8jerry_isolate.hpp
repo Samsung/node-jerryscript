@@ -32,6 +32,8 @@ public:
 
     void Enter(void);
     void Exit(void);
+    bool IsTerminated(void) const { return m_terminated; }
+    void Terminate(void) { m_terminated = true; }
 
     void Dispose(void);
 
@@ -59,6 +61,10 @@ public:
     void SetFatalErrorHandler(v8::FatalErrorCallback callback) { m_fatalErrorCallback = callback; }
     void ReportFatalError(const char* location, const char* message);
 
+    void SetAutorunMicrotasks(bool autorun) { m_autorun_tasks = autorun; }
+    void EnqueueMicrotask(v8::MicrotaskCallback callback, void* data);
+    void RunMicrotasks(void);
+
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }
     static JerryIsolate* fromV8(v8::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
     static JerryIsolate* fromV8(v8::internal::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
@@ -66,6 +72,12 @@ public:
     static JerryIsolate* GetCurrent(void);
 
 private:
+    struct Task {
+        v8::MicrotaskCallback callback;
+        void* data;
+    };
+
+
     void SetError(JerryValue* error);
     void InitalizeSlots(void);
 
@@ -89,6 +101,11 @@ private:
     JerryValue* m_current_error;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
+
+    bool m_terminated;
+    bool m_autorun_tasks;
+
+    std::vector<Task*> m_tasks;
 
     static JerryIsolate* s_currentIsolate;
 };

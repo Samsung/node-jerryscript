@@ -12,6 +12,7 @@
 JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
 
 JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
+    m_terminated = false;
     jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
     jerry_port_default_set_abort_on_fail(true);
     m_fatalErrorCallback = nullptr;
@@ -240,3 +241,13 @@ void JerryIsolate::InitalizeSlots(void) {
     //m_slot[root_offset + v8::internal::Internals::kDoubleReturnValuePlaceholderIndex] =
 }
 
+void JerryIsolate::EnqueueMicrotask(v8::MicrotaskCallback callback, void* data) {
+    m_tasks.push_back(new Task{callback, data});
+}
+
+void JerryIsolate::RunMicrotasks(void) {
+    for (Task* task : m_tasks) {
+        task->callback(task->data);
+    }
+    m_tasks.clear();
+}

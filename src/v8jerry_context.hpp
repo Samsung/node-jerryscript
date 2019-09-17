@@ -14,6 +14,7 @@ public:
     JerryContext(JerryIsolate* iso)
         : JerryHandle(JerryHandle::Context)
         , m_isolate(iso)
+        , m_data(0)
     {}
 
     JerryIsolate* GetIsolate(void) {
@@ -30,6 +31,21 @@ public:
         m_isolate->Exit();
     }
 
+    void SetEmbedderData(int index, void* value) {
+        if (m_data.size() <= index) {
+            m_data.resize(index + 1);
+        }
+        m_data[index] = value;
+    }
+
+    void* GetEmbedderData(int index) {
+        if (V8_UNLIKELY(m_data.size() < index)) {
+            return NULL;
+        }
+
+        return m_data[index];
+    }
+
     static v8::Context* toV8(JerryContext* ctx) {
         return reinterpret_cast<v8::Context*>(ctx);
     }
@@ -40,6 +56,7 @@ public:
 
 private:
     JerryIsolate* m_isolate;
+    std::vector<void*> m_data;
 };
 
 #endif /* V8JERRY_CONTEXT_HPP */
