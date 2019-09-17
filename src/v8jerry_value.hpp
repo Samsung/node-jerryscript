@@ -7,6 +7,7 @@
 #include "v8jerry_utils.hpp"
 
 class JerryContext;
+class JerryIsolate;
 
 class JerryHandle {
 public:
@@ -54,6 +55,11 @@ public:
         , m_value(value)
     {}
 
+    /* Create a JerryValue if there is no error.
+     * If the "value" is an error report it to the Isolate (for try-catch)
+     */
+    static JerryValue* TryCreateValue(JerryIsolate* iso, jerry_value_t value);
+
     ~JerryValue(void) {
         if (m_value) {
             jerry_release_value(m_value);
@@ -66,8 +72,8 @@ public:
     bool SetProperty(JerryValue* key, JerryValue* value);
     bool SetPropertyIdx(uint32_t idx, JerryValue* value);
 
-    JerryValue* GetProperty(JerryValue* key) { return new JerryValue(jerry_get_property(m_value, key->value())); }
-    JerryValue* GetPropertyIdx(uint32_t idx) { return new JerryValue(jerry_get_property_by_index(m_value, idx)); }
+    JerryValue* GetProperty(JerryValue* key);
+    JerryValue* GetPropertyIdx(uint32_t idx);
 
     bool IsString() const { return jerry_value_is_string(m_value); }
     bool IsBoolean() const { return jerry_value_is_boolean(m_value); }

@@ -1337,14 +1337,7 @@ static JerryValue* RunHelper(JerryIsolate* iso, v8::Script* script) {
     JerryValue* jvalue = reinterpret_cast<JerryValue*>(script);
 
     jerry_value_t result = jerry_run(jvalue->value());
-
-    if (V8_UNLIKELY(jerry_value_is_error(result))) {
-        iso->SetError(result);
-
-        return NULL;
-    } else {
-        return new JerryValue(result);
-    }
+    return JerryValue::TryCreateValue(iso, result);
 }
 
 MaybeLocal<Value> Script::Run(v8::Local<v8::Context> context) {
@@ -1404,12 +1397,7 @@ Local<Value> Function::Call(Local<Value> recv, int argc, Local<Value> argv[]) {
     }
 
     jerry_value_t result = jerry_call_function(jfunc->value(), jthis->value(), &arguments[0], argc);
-    JerryValue* return_value = NULL;
-    if (V8_UNLIKELY(jerry_value_is_error(result))) {
-        JerryIsolate::GetCurrent()->SetError(result);
-    } else {
-        return_value = new JerryValue(result);
-    }
+    JerryValue* return_value = JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), result);
 
     RETURN_HANDLE(Value, Isolate::GetCurrent(), return_value);
 }
@@ -1716,7 +1704,7 @@ Local<Value> TryCatch::ReThrow() {
 Local<Value>  TryCatch::Exception() const {
     V8_CALL_TRACE();
     // TODO: return the current error object
-    return Local<Value>();
+    return Local<Value>(reinterpret_cast<Value*>(JerryIsolate::fromV8(isolate_)->GetRawError()));
 }
 
 Local<v8::Message> TryCatch::Message() const {
@@ -1734,6 +1722,11 @@ bool TryCatch::IsVerbose() const {
     V8_CALL_TRACE();
     return is_verbose_;
 }
+
+void TryCatch::Reset() {
+    V8_CALL_TRACE();
+    JerryIsolate::fromV8(isolate_)->ClearError();
+};
 
 
 /* HeapProfiler & HeapStatistics */

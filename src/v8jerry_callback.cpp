@@ -101,12 +101,20 @@ jerry_value_t JerryV8GetterSetterHandler(
             data->v8.getter.stringed(v8::Local<v8::String>(), info);
         }
 
-        v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
 
-        // Again: dragons!
-        JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+        JerryIsolate* iso = JerryIsolate::GetCurrent();
+        if (!iso->HasError()) {
+            v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
 
-        jret = jerry_acquire_value(retVal->value());
+            // Again: dragons!
+            JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+
+            jret = jerry_acquire_value(retVal->value());
+        } else {
+            JerryValue* jerror = iso->GetRawError();
+            jret = jerry_create_error_from_value(jerror->value(), false);
+            iso->ClearError();
+        }
     }
 
 

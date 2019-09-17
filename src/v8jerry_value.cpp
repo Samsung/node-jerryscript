@@ -32,6 +32,16 @@ bool JerryValue::SetPropertyIdx(uint32_t idx, JerryValue* value) {
     return isOk;
 }
 
+JerryValue* JerryValue::GetProperty(JerryValue* key) {
+    jerry_value_t prop = jerry_get_property(m_value, key->value());
+    return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);
+}
+
+JerryValue* JerryValue::GetPropertyIdx(uint32_t idx) {
+    jerry_value_t prop = jerry_get_property_by_index(m_value, idx);
+    return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);
+}
+
 static const jerry_object_native_info_t JerryV8ObjectContextTypeInfo = {
     /* native_pointer stores JerryContext* */
     .free_cb = NULL
@@ -143,3 +153,13 @@ int JerryValue::InternalFieldCount(void) {
     return data->count;
 }
 
+/* static */
+JerryValue* JerryValue::TryCreateValue(JerryIsolate* iso, jerry_value_t value) {
+    if (V8_UNLIKELY(jerry_value_is_error(value))) {
+        iso->SetError(value);
+
+        return NULL;
+    } else {
+        return new JerryValue(value);
+    }
+}

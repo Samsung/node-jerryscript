@@ -326,6 +326,7 @@ class Local {
   friend class External;
   friend class Exception;
   friend class Signature;
+  friend class TryCatch;
   // ^^
 
   friend class Object;
