@@ -55,6 +55,7 @@ public:
 protected:
     JerryTemplate(JerryHandle::Type type)
         : JerryHandle(type)
+        , m_properties(0)
     {
     }
 
@@ -146,6 +147,7 @@ public:
     JerryObjectTemplate()
         : JerryTemplate(ObjectTemplate)
         , m_function_template(NULL)
+        , m_accessors(0)
         , m_internal_field_count(0)
     {
     }
