@@ -37,10 +37,10 @@ public:
 
     void PushTryCatch(void* try_catch_obj);
     void PopTryCatch(void* try_catch_obj);
-    void SetError(JerryValue* error);
     void SetError(const jerry_value_t error_value);
     void ClearError(void);
     bool HasError(void);
+    JerryValue* GetRawError(void) { return m_current_error; }
 
     void PushContext(JerryContext* context);
     void PopContext(JerryContext* context);
@@ -66,6 +66,7 @@ public:
     static JerryIsolate* GetCurrent(void);
 
 private:
+    void SetError(JerryValue* error);
     void InitalizeSlots(void);
 
     // Slots accessed by v8::Isolate::Get/SetData

@@ -271,12 +271,19 @@ jerry_value_t JerryV8FunctionHandler(
 
         data->v8callback(info);
 
-        v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+        JerryIsolate* iso = JerryIsolate::GetCurrent();
+        if (!iso->HasError()) {
+            v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
 
-        // Again: dragons!
-        JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+            // Again: dragons!
+            JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
 
-        jret = jerry_acquire_value(retVal->value());
+            jret = jerry_acquire_value(retVal->value());
+        } else {
+            JerryValue* jerror = iso->GetRawError();
+            jret = jerry_create_error_from_value(jerror->value(), false);
+            iso->ClearError();
+        }
     }
 
     // No need to delete the JerryValue here, the HandleScope will take (should) care of it!

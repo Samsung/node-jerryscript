@@ -313,6 +313,13 @@ HeapProfiler* Isolate::GetHeapProfiler() {
     return NULL;
 }
 
+v8::Local<v8::Value> Isolate::ThrowException(v8::Local<v8::Value> error) {
+    JerryValue* jerror = reinterpret_cast<JerryValue*>(*error);
+    JerryIsolate::fromV8(this)->SetError(jerry_create_error_from_value(jerror->value(), false));
+
+    return error;
+}
+
 /* Context */
 Local<Context> Context::New(Isolate* isolate,
                             ExtensionConfiguration* extensions /*= NULL*/,
@@ -1397,7 +1404,14 @@ Local<Value> Function::Call(Local<Value> recv, int argc, Local<Value> argv[]) {
     }
 
     jerry_value_t result = jerry_call_function(jfunc->value(), jthis->value(), &arguments[0], argc);
-    RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(result));
+    JerryValue* return_value = NULL;
+    if (V8_UNLIKELY(jerry_value_is_error(result))) {
+        JerryIsolate::GetCurrent()->SetError(result);
+    } else {
+        return_value = new JerryValue(result);
+    }
+
+    RETURN_HANDLE(Value, Isolate::GetCurrent(), return_value);
 }
 
 MaybeLocal<Value> Function::Call(Local<Context> context, Local<Value> recv, int argc, Local<Value> argv[]) {

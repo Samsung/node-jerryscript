@@ -134,6 +134,7 @@ void JerryIsolate::SetError(const jerry_value_t error_value) {
 void JerryIsolate::ClearError(void) {
     if (m_current_error != NULL) {
         delete m_current_error;
+        m_current_error = NULL;
     }
 }
 
