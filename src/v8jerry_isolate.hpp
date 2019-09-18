@@ -12,6 +12,10 @@
 #include "v8jerry_value.hpp"
 #include "v8jerry_utils.hpp"
 
+#ifdef __POSIX__
+#include <pthread.h>
+#endif
+
 class JerryContext;
 class JerryHandle;
 class JerryHandleScope;
@@ -84,6 +88,14 @@ private:
     // Slots accessed by v8::Isolate::Get/SetData
     // They must be the first field of GraalIsolate
     void* m_slot[22] = {};
+
+    // TODO: support non POSIX systems.
+    #ifdef __POSIX__
+        pthread_mutex_t m_lock;
+    #endif
+
+    v8::Locker* m_lock_owner;
+    friend class v8::Locker;
 
     std::deque<JerryHandleScope*> m_handleScopes;
     std::deque<JerryContext*> m_contexts;

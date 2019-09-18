@@ -30,6 +30,10 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
     m_try_catch_count = 0;
     m_current_error = NULL;
+
+#ifdef __POSIX__
+    m_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
 }
 
 void JerryIsolate::Enter(void) {
@@ -56,6 +60,10 @@ void JerryIsolate::Dispose(void) {
 
     delete m_magic_string_stack;
     ClearError();
+
+#ifdef __POSIX__
+    pthread_mutex_destroy(&m_lock);
+#endif
 
     delete m_fn_map_new;
     delete m_fn_is_map;

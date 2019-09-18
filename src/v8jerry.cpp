@@ -121,6 +121,28 @@ void V8::ShutdownPlatform() {
     V8_CALL_TRACE();
 }
 
+/* Locker */
+void Locker::Initialize(Isolate* isolate) {
+    JerryIsolate* jerry_isolate = reinterpret_cast<JerryIsolate*> (isolate);
+#ifdef __POSIX__
+    pthread_mutex_lock(&jerry_isolate->m_lock);
+#endif
+
+    jerry_isolate->m_lock_owner = this;
+    isolate_ = reinterpret_cast<internal::Isolate*> (isolate);
+}
+
+Locker::~Locker() {
+    JerryIsolate* jerry_isolate = reinterpret_cast<JerryIsolate*> (isolate_);
+
+    if (jerry_isolate->m_lock_owner == this) {
+        jerry_isolate->m_lock_owner = nullptr;
+#ifdef __POSIX__
+        pthread_mutex_unlock(&jerry_isolate->m_lock);
+#endif
+    }
+}
+
 /* ArrayBuffer & Allocator */
 void delete_external_array_buffer(void* ptr) {
     delete [] static_cast<uint8_t*> (ptr);
