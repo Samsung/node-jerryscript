@@ -160,13 +160,13 @@ Local<ArrayBuffer> ArrayBuffer::New(Isolate* isolate, void* data, size_t byte_le
     V8_CALL_TRACE();
 
     jerry_value_t buffer;
+    jerry_object_native_free_callback_t free_cb = NULL;
 
     if (mode == ArrayBufferCreationMode::kInternalized) {
-        buffer = jerry_create_arraybuffer(byte_length);
-        jerry_arraybuffer_write(buffer, 0, (uint8_t*)data, byte_length);
-    } else {
-        buffer = jerry_create_arraybuffer_external(byte_length, (uint8_t*)data, delete_external_array_buffer);
+        free_cb = delete_external_array_buffer;
     }
+
+    buffer = jerry_create_arraybuffer_external(byte_length, (uint8_t*)data, free_cb);
 
     RETURN_HANDLE(ArrayBuffer, isolate, new JerryValue(buffer));
 }
@@ -747,10 +747,10 @@ MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
     const JerryValue* jValue = reinterpret_cast<const JerryValue*> (this);
 
     if (jValue->IsSymbol()) {
-        jerry_value_t string_value = jerry_create_string ((const jerry_char_t *) "Symbol()");
+        jerry_value_t string_value = jerry_create_string ((const jerry_char_t *) "Symbol(String)");
         RETURN_HANDLE(String, context->GetIsolate(), new JerryValue(string_value));
-    } else if (jValue->IsProxy()) {
-        jerry_value_t string_value = jerry_create_string ((const jerry_char_t *) "[object Object]");
+    } else if (jValue->IsObject()) {
+        jerry_value_t string_value = jerry_create_string ((const jerry_char_t *) "#<Object>");
         RETURN_HANDLE(String, context->GetIsolate(), new JerryValue(string_value));
     }
 
@@ -1237,13 +1237,19 @@ MaybeLocal<String> String::NewFromTwoByte(Isolate* isolate, const uint16_t* data
 
 /* External strings are not supported yet. */
 MaybeLocal<String> String::NewExternalOneByte(Isolate* isolate, ExternalOneByteStringResource* resource) {
-    printf("TODO: External strings are not supported.\n");
-    return String::NewFromUtf8(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
+    MaybeLocal<String> result = String::NewFromUtf8(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
+    /* TODO: resource should be deallocated at the same time with String. */
+    delete resource;
+
+    return result;
 }
 
 MaybeLocal<String> String::NewExternalTwoByte(Isolate* isolate, ExternalStringResource* resource) {
-    printf("TODO: External strings are not supported.\n");
-    return String::NewFromTwoByte(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
+    MaybeLocal<String> result = String::NewFromTwoByte(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
+    /* TODO: resource should be deallocated at the same time with String. */
+    delete resource;
+
+    return result;
 }
 
 const String::ExternalOneByteStringResource* String::GetExternalOneByteStringResource() const {

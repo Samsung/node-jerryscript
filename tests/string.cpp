@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
     v8::String::ExternalOneByteStringResource* resource = new v8::ExternalOneByteStringResourceImpl(helloworldextbuffer, strlen(helloworldextbuffer));
     v8::Local<v8::String> helloworldext = v8::String::NewExternalOneByte(env.getIsolate(), resource).ToLocalChecked();
 
-    helloworldext->WriteUtf8(buffer, resource->length() + 1, NULL, 0);
+    helloworldext->WriteUtf8(buffer, strlen(helloworldextbuffer) + 1, NULL, 0);
     ASSERT_STR_EQUAL(buffer, "Hello world! (external)");
 
     // Substring check.

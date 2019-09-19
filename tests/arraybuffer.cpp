@@ -39,6 +39,8 @@ int main(int argc, char* argv[]) {
     // Check the size of the array.
     ASSERT_EQUAL(byteLength, ARRAY_SIZE);
 
+    // Do a modification in the original array.
+    data[0] = 0;
     // Check data similarity.
     for (int i = 0; i < ARRAY_SIZE; i++) {
         ASSERT_EQUAL(data[i], *((uint8_t*)contents.Data() + i));
@@ -59,6 +61,8 @@ int main(int argc, char* argv[]) {
     // Check the size of the array.
     ASSERT_EQUAL(byteLength, 8);
 
+    // Do a modification in the original array.
+    data[0] = 1;
     // Check data similarity.
     for (int i = 0; i < ARRAY_SIZE; i++) {
         ASSERT_EQUAL(data[i], *((uint8_t*)contents.Data() + i));

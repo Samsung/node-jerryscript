@@ -4,13 +4,26 @@
 #include "v8env.h"
 #include "assert.h"
 
+#define UINT_ARRAY_SIZE 8
+#define DBL_ARRAY_SIZE 2
+
 int main(int argc, char* argv[]) {
     // Initialize V8.
     V8Environment env(argc, argv);
 
-    /* Helper arrays */
-    uint8_t uint8Data[] = { 1, 1, 0, 0, 0, 0, 0, 0 };
-    double float64Data[] = { 3.14, 1.21 };
+    /* Helper arrays. These arrays should be deallocated by the ArrayBuffers. */
+    uint8_t* uint8Data = new uint8_t[UINT_ARRAY_SIZE];
+    double* float64Data = new double[DBL_ARRAY_SIZE];
+
+    memset(uint8Data, 0, UINT_ARRAY_SIZE * sizeof(uint8_t));
+    memset(float64Data, 0, DBL_ARRAY_SIZE * sizeof(double));
+
+    // Initialize user defined array.
+    uint8Data[0] = 1;
+    uint8Data[1] = 1;
+
+    float64Data[0] = 3.14;
+    float64Data[1] = 1.21;
 
     /* Array */
     v8::Local<v8::Array> array = v8::Array::New(env.getIsolate(), 3);
@@ -81,9 +94,9 @@ int main(int argc, char* argv[]) {
     v8::String::Utf8Value numberUtf8(env.getIsolate(), number->ToDetailString(env.getContext()).ToLocalChecked());
     v8::String::Utf8Value objectUtf8(env.getIsolate(), object->ToDetailString(env.getContext()).ToLocalChecked());
 
-    ASSERT_STR_EQUAL(*symbolUtf8, "Symbol()");
+    ASSERT_STR_EQUAL(*symbolUtf8, "Symbol(String)");
     ASSERT_STR_EQUAL(*numberUtf8, "3.14");
-    ASSERT_STR_EQUAL(*objectUtf8, "[object Object]");
+    ASSERT_STR_EQUAL(*objectUtf8, "#<Object>");
 
     return 0;
 }
