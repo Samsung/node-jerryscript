@@ -79,6 +79,14 @@ public:
 
 } // namespace base
 
+void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
+    V8_CALL_TRACE();
+}
+
+void V8::SetFlagsFromString(const char* str, int length) {
+    V8_CALL_TRACE();
+}
+
 const char* V8::GetVersion() {
     V8_CALL_TRACE();
     return "JerryScript v2.0";
