@@ -13,9 +13,10 @@
  * limitations under the License.
  */
 
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef JERRYSCRIPT_CONFIG_H
+#define JERRYSCRIPT_CONFIG_H
 
+// @JERRY_BUILD_CFG@
 # define JERRY_MEM_STATS 0
 # define JERRY_CPOINTER_32_BIT 1
 # define JERRY_SYSTEM_ALLOCATOR 1
@@ -209,6 +210,15 @@
 #ifndef JERRY_GLOBAL_HEAP_SIZE
 # define JERRY_GLOBAL_HEAP_SIZE (512)
 #endif /* !defined (JERRY_GLOBAL_HEAP_SIZE) */
+
+/**
+ * The allowed heap usage limit until next garbage collection, in bytes.
+ *
+ * If value is 0, the default is 1/32 of JERRY_HEAP_SIZE
+ */
+#ifndef JERRY_GC_LIMIT
+# define JERRY_GC_LIMIT 0
+#endif /* !defined (JERRY_GC_LIMIT) */
 
 /**
  * Maximum stack usage size in kilobytes
@@ -616,6 +626,9 @@
 #if !defined (JERRY_GLOBAL_HEAP_SIZE) || (JERRY_GLOBAL_HEAP_SIZE <= 0)
 # error "Invalid value for 'JERRY_GLOBAL_HEAP_SIZE' macro."
 #endif
+#if !defined (JERRY_GC_LIMIT) || (JERRY_GC_LIMIT < 0)
+# error "Invalid value for 'JERRY_GC_LIMIT' macro."
+#endif
 #if !defined (JERRY_STACK_LIMIT) || (JERRY_STACK_LIMIT < 0)
 # error "Invalid value for 'JERRY_STACK_LIMIT' macro."
 #endif
@@ -703,4 +716,4 @@
 #  error "Date does not support float32"
 #endif
 
-#endif /* !CONFIG_H */
+#endif /* !JERRYSCRIPT_CONFIG_H */
