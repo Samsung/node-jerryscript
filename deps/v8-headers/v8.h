@@ -329,6 +329,7 @@ class Local {
   friend class TryCatch;
   friend class Context;
   friend class Isolate;
+  friend class Promise;
   // ^^
 
   friend class Object;

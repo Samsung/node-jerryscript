@@ -420,6 +420,18 @@ void Isolate::RunMicrotasks(void) {
     JerryIsolate::fromV8(this)->RunMicrotasks();
 }
 
+void Isolate::SetPromiseHook(v8::PromiseHook promiseHook) {
+    JerryIsolate::fromV8(this)->SetPromiseHook(promiseHook);
+}
+
+void Isolate::SetPromiseRejectCallback(PromiseRejectCallback callback) {
+   /** from the v8.h:
+   * Set callback to notify about promise reject with no handler, or
+   * revocation of such a previous notification once the handler is added.
+   */
+    JerryIsolate::fromV8(this)->SetPromiseRejectCallback(callback);
+}
+
 /* Context */
 Local<Context> Context::New(Isolate* isolate,
                             ExtensionConfiguration* extensions /*= NULL*/,
@@ -1849,6 +1861,62 @@ void TryCatch::Reset() {
     V8_CALL_TRACE();
     JerryIsolate::fromV8(isolate_)->ClearError();
 };
+
+/* Promise */
+MaybeLocal<Promise::Resolver> Promise::Resolver::New(v8::Local<v8::Context> ctx) {
+    V8_CALL_TRACE();
+    JerryValue* jpromise = JerryValue::NewPromise();
+
+    RETURN_HANDLE(Promise::Resolver, ctx->GetIsolate(), jpromise);
+}
+
+Maybe<bool> Promise::Resolver::Resolve(Local<Context> context, Local<Value> value) {
+    V8_CALL_TRACE();
+    JerryValue* jpromise = reinterpret_cast<JerryValue*>(this);
+    JerryValue* jdata = reinterpret_cast<JerryValue*>(*value);
+    jerry_value_t result = jerry_resolve_or_reject_promise(jpromise->value(), jdata->value(), true);
+
+    if (jerry_value_is_error(result)) {
+        return Just(false);
+    } else {
+        return Just(true);
+    }
+}
+
+Maybe<bool> Promise::Resolver::Reject(Local<v8::Context> context, Local<v8::Value> value) {
+    V8_CALL_TRACE();
+    JerryValue* jpromise = reinterpret_cast<JerryValue*>(this);
+    JerryValue* jdata = reinterpret_cast<JerryValue*>(*value);
+    jerry_value_t result = jerry_resolve_or_reject_promise(jpromise->value(), jdata->value(), false);
+
+    if (jerry_value_is_error(result)) {
+        return Just(false);
+    } else {
+        return Just(true);
+    }
+}
+
+Promise::PromiseState Promise::State(void) {
+    V8_CALL_TRACE();
+    JerryValue* jvalue = reinterpret_cast<JerryValue*>(this);
+
+    switch(jerry_get_promise_state(jvalue->value())) {
+        case JERRY_PROMISE_STATE_PENDING: return Promise::kPending;
+        case JERRY_PROMISE_STATE_FULFILLED: return Promise::kFulfilled;
+        case JERRY_PROMISE_STATE_REJECTED: return Promise::kRejected;
+    }
+
+    // TODO: what to return?
+    return Promise::kRejected;
+}
+
+Local<Value> Promise::Result(void) {
+    V8_CALL_TRACE();
+    JerryValue* jvalue = reinterpret_cast<JerryValue*>(this);
+
+    JerryValue* jresult = JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), jerry_get_promise_result(jvalue->value()));
+    RETURN_HANDLE(Value, reinterpret_cast<Isolate*>(JerryIsolate::GetCurrent()), jresult);
+}
 
 
 /* HeapProfiler & HeapStatistics */

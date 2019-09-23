@@ -58,6 +58,17 @@ JerryContext* JerryValue::GetObjectCreationContext(void) {
 }
 
 /* static */
+JerryValue* JerryValue::NewPromise(void) {
+    jerry_value_t promise = jerry_create_promise();
+
+    JerryContext* ctx = JerryIsolate::GetCurrent()->CurrentContext();
+
+    jerry_set_object_native_pointer(promise, ctx, &JerryV8ObjectContextTypeInfo);
+
+    return new JerryValue(promise);
+}
+
+/* static */
 JerryValue* JerryValue::NewObject(void) {
     jerry_value_t object = jerry_create_object();
 

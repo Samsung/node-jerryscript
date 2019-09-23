@@ -130,6 +130,7 @@ public:
 
     JerryContext* GetObjectCreationContext(void);
 
+    static JerryValue* NewPromise(void);
     static JerryValue* NewObject(void);
     static JerryValue* NewExternal(void* ptr);
 

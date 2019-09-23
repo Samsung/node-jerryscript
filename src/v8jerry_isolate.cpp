@@ -258,6 +258,9 @@ void JerryIsolate::RunMicrotasks(void) {
         task->callback(task->data);
     }
     m_tasks.clear();
+
+    // TODO: is it ok to have this here?
+    jerry_run_all_enqueued_jobs();
 }
 
 void JerryIsolate::SetEternal(JerryValue* value, int* index) {
