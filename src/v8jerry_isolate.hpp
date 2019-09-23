@@ -69,6 +69,8 @@ public:
     void EnqueueMicrotask(v8::MicrotaskCallback callback, void* data);
     void RunMicrotasks(void);
 
+    void SetEternal(JerryValue* value, int* index);
+
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }
     static JerryIsolate* fromV8(v8::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
     static JerryIsolate* fromV8(v8::internal::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
@@ -100,6 +102,7 @@ private:
     std::deque<JerryHandleScope*> m_handleScopes;
     std::deque<JerryContext*> m_contexts;
     std::vector<JerryTemplate*> m_templates;
+    std::vector<JerryHandle*> m_eternals;
     JerryPolyfill* m_fn_map_new;
     JerryPolyfill* m_fn_is_map;
     JerryPolyfill* m_fn_is_set;

@@ -129,6 +129,20 @@ void V8::ShutdownPlatform() {
     V8_CALL_TRACE();
 }
 
+Value* V8::Eternalize(Isolate* isolate, Value* handle) {
+    JerryIsolate* jerry_isolate = reinterpret_cast<JerryIsolate*> (isolate);
+    JerryHandle* jerry_handle = reinterpret_cast<JerryHandle*> (handle);
+
+    // Just JerryValue has Copy method.
+    assert(jerry_handle->type() == JerryHandle::Value);
+
+    int index = -1;
+    JerryValue* value_copy = static_cast<JerryValue*>(jerry_handle)->Copy();
+    jerry_isolate->SetEternal(value_copy, &index);
+
+    return reinterpret_cast<Value*>(value_copy);
+}
+
 /* Locker */
 void Locker::Initialize(Isolate* isolate) {
     JerryIsolate* jerry_isolate = reinterpret_cast<JerryIsolate*> (isolate);

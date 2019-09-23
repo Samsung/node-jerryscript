@@ -259,3 +259,12 @@ void JerryIsolate::RunMicrotasks(void) {
     }
     m_tasks.clear();
 }
+
+void JerryIsolate::SetEternal(JerryValue* value, int* index) {
+    if (*index == -1) {
+        *index = m_eternals.size();
+        m_eternals.push_back(value);
+    } else {
+        m_eternals[*index] = value;
+    }
+}
