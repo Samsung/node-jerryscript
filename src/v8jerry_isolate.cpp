@@ -58,6 +58,18 @@ void JerryIsolate::Dispose(void) {
         }
     }
 
+    for (std::vector<JerryValue*>::iterator it = m_eternals.begin();
+        it != m_eternals.end();
+        it++) {
+        delete *it;
+    }
+
+    for (std::vector<JerryValue*>::iterator it = m_weakrefs.begin();
+        it != m_weakrefs.end();
+        it++) {
+        delete *it;
+    }
+
     delete m_magic_string_stack;
     ClearError();
 
@@ -270,4 +282,32 @@ void JerryIsolate::SetEternal(JerryValue* value, int* index) {
     } else {
         m_eternals[*index] = value;
     }
+}
+
+bool JerryIsolate::HasAsWeak(JerryValue* value) {
+    std::vector<JerryValue*>::iterator iter = std::find(m_weakrefs.begin(), m_weakrefs.end(), value);
+
+    return iter == m_weakrefs.end();
+}
+
+void JerryIsolate::AddAsWeak(JerryValue* value) {
+    assert(HasAsWeak(value) == false);
+
+    std::vector<JerryValue*>::iterator iter = std::find(m_eternals.begin(), m_eternals.end(), value);
+    // Just eternal objects can have weak reference.
+    assert(iter != m_eternals.end());
+
+    m_eternals.erase(iter);
+    m_weakrefs.push_back(value);
+}
+
+void JerryIsolate::RemoveAsWeak(JerryValue* value) {
+    std::vector<JerryValue*>::iterator eternal_iter = std::find(m_eternals.begin(), m_eternals.end(), value);
+    std::vector<JerryValue*>::iterator weak_iter = std::find(m_weakrefs.begin(), m_weakrefs.end(), value);
+
+    assert(eternal_iter == m_eternals.end());
+    assert(weak_iter != m_weakrefs.end());
+
+    m_weakrefs.erase(weak_iter);
+    m_eternals.push_back(value);
 }

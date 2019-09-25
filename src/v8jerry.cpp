@@ -143,6 +143,47 @@ Value* V8::Eternalize(Isolate* isolate, Value* handle) {
     return reinterpret_cast<Value*>(value_copy);
 }
 
+void V8::MakeWeak(v8::internal::Object** global_handle, void* data,
+        WeakCallbackInfo<void>::Callback weak_callback, WeakCallbackType type) {
+    JerryValue* object = reinterpret_cast<JerryValue*> (global_handle);
+
+    assert(object->IsWeakReferenced() == false);
+
+    if (type == WeakCallbackType::kInternalFields) {
+        void** wrapper = new void*[kInternalFieldsInWeakCallback + 1];
+        for (int i = 0; i < kInternalFieldsInWeakCallback; i++) {
+            wrapper[i] = object->GetInternalField<void*>(i);
+        }
+        wrapper[kInternalFieldsInWeakCallback] = data;
+        data = (void*) wrapper;
+    }
+
+    object->MakeWeak(weak_callback, type, data);
+}
+
+void* V8::ClearWeak(internal::Object** global_handle) {
+    JerryValue* object = reinterpret_cast<JerryValue*> (global_handle);
+
+    return object->ClearWeak();
+}
+
+void V8::DisposeGlobal(internal::Object** global_handle) {
+    JerryValue* object = reinterpret_cast<JerryValue*> (object);
+
+    if (object->IsWeakReferenced()) {
+        object->ClearWeak();
+    }
+
+    delete object;
+}
+
+internal::Object** V8::GlobalizeReference(internal::Isolate* isolate, internal::Object** handle) {
+    JerryValue* object_orig = reinterpret_cast<JerryValue*> (handle);
+    JerryValue* object_copy = object_orig->Copy();
+
+    return reinterpret_cast<internal::Object**> (object_copy);
+}
+
 /* Locker */
 void Locker::Initialize(Isolate* isolate) {
     JerryIsolate* jerry_isolate = reinterpret_cast<JerryIsolate*> (isolate);

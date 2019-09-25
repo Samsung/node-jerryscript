@@ -1,6 +1,7 @@
 #include "v8jerry_value.hpp"
 
 #include "v8jerry_isolate.hpp"
+#include "assert.h"
 
 static void JerryV8InternalFieldDataFree(void *data) {
     delete reinterpret_cast<JerryV8InternalFieldData*>(data);
@@ -12,6 +13,26 @@ static jerry_object_native_info_t JerryV8InternalFieldTypeInfo = {
 
 static jerry_object_native_info_t JerryV8ExternalTypeInfo = {
     .free_cb = NULL,
+};
+
+static void JerryV8WeakCallback(void* data) {
+    JerryV8WeakReferenceData* weak_cb_data = static_cast<JerryV8WeakReferenceData*>(data);
+
+    void* parameter = NULL;
+    void** embedder_fields = NULL;
+
+    if (weak_cb_data->type == v8::WeakCallbackType::kInternalFields) {
+        embedder_fields = reinterpret_cast<void**>(weak_cb_data->data);
+    } else {
+        parameter = weak_cb_data->data;
+    }
+
+    v8::WeakCallbackInfo<void> info(v8::Isolate::GetCurrent(), parameter, embedder_fields, &weak_cb_data->callback);
+    weak_cb_data->callback(info);
+};
+
+static jerry_object_native_info_t JerryV8WeakReferenceInfo = {
+    .free_cb = JerryV8WeakCallback,
 };
 
 bool JerryValue::SetProperty(JerryValue* key, JerryValue* value) {
@@ -173,4 +194,30 @@ JerryValue* JerryValue::TryCreateValue(JerryIsolate* iso, jerry_value_t value) {
     } else {
         return new JerryValue(value);
     }
+}
+
+bool JerryValue::IsWeakReferenced() {
+    return jerry_get_object_native_pointer(m_value, NULL, &JerryV8WeakReferenceInfo);
+}
+
+void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data) {
+    assert(IsWeakReferenced() == false);
+
+    JerryV8WeakReferenceData* weak_data = new JerryV8WeakReferenceData(weak_callback, type, data);
+    JerryValue* object_copy = Copy();
+    jerry_set_object_native_pointer(object_copy->value(), weak_data, &JerryV8WeakReferenceInfo);
+
+    JerryIsolate::GetCurrent()->AddAsWeak(object_copy);
+}
+
+void* JerryValue::ClearWeak() {
+    assert(IsWeakReferenced() == true);
+
+    JerryV8WeakReferenceData* weak_data;
+    jerry_get_object_native_pointer (m_value, reinterpret_cast<void**>(&weak_data), &JerryV8WeakReferenceInfo);
+    jerry_delete_object_native_pointer(m_value, &JerryV8WeakReferenceInfo);
+
+    JerryIsolate::GetCurrent()->RemoveAsWeak(this);
+
+    return weak_data->data;
 }

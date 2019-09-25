@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "v8.h"
 #include "v8jerry_utils.hpp"
 
 class JerryContext;
@@ -42,6 +43,19 @@ struct JerryV8InternalFieldData {
         , is_value(count, false)
     {
     }
+};
+
+struct JerryV8WeakReferenceData {
+    v8::WeakCallbackInfo<void>::Callback callback;
+    v8::WeakCallbackType type;
+    void* data;
+
+    JerryV8WeakReferenceData(v8::WeakCallbackInfo<void>::Callback callback, v8::WeakCallbackType type, void* data)
+        : callback(callback)
+        , type(type)
+        , data(data)
+        {
+        }
 };
 
 class JerryValue : public JerryHandle {
@@ -138,6 +152,9 @@ public:
     bool IsExternal() const;
 
     JerryValue* Copy() const { return new JerryValue(jerry_acquire_value(m_value)); }
+    void MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data);
+    bool IsWeakReferenced();
+    void* ClearWeak();
 
     static void CreateInternalFields(jerry_value_t target, int field_count);
     JerryV8InternalFieldData* GetInternalFieldData(int idx);

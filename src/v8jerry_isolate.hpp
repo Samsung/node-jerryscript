@@ -73,6 +73,12 @@ public:
     void SetPromiseRejectCallback(v8::PromiseRejectCallback callback) { m_promise_reject_calback = callback; }
 
     void SetEternal(JerryValue* value, int* index);
+    void ClearEternal(JerryValue* value);
+    bool HasEternal(JerryValue* value);
+
+    void AddAsWeak(JerryValue* value);
+    void RemoveAsWeak(JerryValue* value);
+    bool HasAsWeak(JerryValue* value);
 
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }
     static JerryIsolate* fromV8(v8::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
@@ -105,7 +111,9 @@ private:
     std::deque<JerryHandleScope*> m_handleScopes;
     std::deque<JerryContext*> m_contexts;
     std::vector<JerryTemplate*> m_templates;
-    std::vector<JerryHandle*> m_eternals;
+    std::vector<JerryValue*> m_eternals;
+    std::vector<JerryValue*> m_weakrefs;
+
     JerryPolyfill* m_fn_map_new;
     JerryPolyfill* m_fn_is_map;
     JerryPolyfill* m_fn_is_set;
@@ -132,4 +140,3 @@ private:
 };
 
 #endif /* V8JERRY_ISOLATE_HPP */
-
