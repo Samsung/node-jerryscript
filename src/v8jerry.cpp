@@ -809,6 +809,21 @@ bool Value::IsExternal() const {
     return reinterpret_cast<const JerryValue*> (this)->IsExternal();
 }
 
+bool Value::FullIsUndefined() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsUndefined();
+}
+
+bool Value::FullIsString() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsString();
+}
+
+bool Value::FullIsNull() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsNull();
+}
+
 MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
     V8_CALL_TRACE();
     const JerryValue* jValue = reinterpret_cast<const JerryValue*> (this);
@@ -2045,5 +2060,47 @@ void Debug::DebugBreak(Isolate*) {
     V8_CALL_TRACE();
     // TODO: add trace
 }
+
+
+/* Cast checks */
+
+void External::CheckCast(v8::Value* that) {}
+void Object::CheckCast(v8::Value* that) {}
+void Function::CheckCast(v8::Value* that) {}
+void Boolean::CheckCast(v8::Value* that) {}
+void Name::CheckCast(v8::Value* that) {}
+void String::CheckCast(v8::Value* that) {}
+void Symbol::CheckCast(v8::Value* that) {}
+void Number::CheckCast(v8::Value* that) {}
+void Integer::CheckCast(v8::Value* that) {}
+void Int32::CheckCast(v8::Value* that) {}
+void Uint32::CheckCast(v8::Value* that) {}
+void Array::CheckCast(v8::Value* that) {}
+void Map::CheckCast(v8::Value* that) {}
+void Set::CheckCast(v8::Value* that) {}
+void Promise::CheckCast(v8::Value* that) {}
+void Promise::Resolver::CheckCast(Value* that) {}
+void Proxy::CheckCast(v8::Value* that) {}
+void ArrayBuffer::CheckCast(v8::Value* that) {}
+void ArrayBufferView::CheckCast(v8::Value* that) {}
+void TypedArray::CheckCast(v8::Value* that) {}
+
+#define CHECK_TYPED_ARRAY_CAST(TYPE) void TYPE::CheckCast(v8::Value* that) {}
+
+CHECK_TYPED_ARRAY_CAST(Uint8Array)
+CHECK_TYPED_ARRAY_CAST(Uint32Array)
+CHECK_TYPED_ARRAY_CAST(Float64Array)
+
+#undef CHECK_TYPED_ARRAY_CAST
+
+void DataView::CheckCast(v8::Value* that) {}
+//void SharedArrayBuffer::CheckCast(Value* that) {}
+//void v8::Date::CheckCast(v8::Value* that) {}
+//void v8::StringObject::CheckCast(v8::Value* that) {}
+//void v8::SymbolObject::CheckCast(v8::Value* that) {}
+//void v8::NumberObject::CheckCast(v8::Value* that) {}
+//void v8::BooleanObject::CheckCast(v8::Value* that) {}
+void RegExp::CheckCast(v8::Value* that) {}
+
 
 } // namespace v8

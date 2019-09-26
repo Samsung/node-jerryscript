@@ -117,6 +117,8 @@ public:
     bool IsFloat64Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_FLOAT64; }
     bool IsUint8Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_UINT8; }
     bool IsDataView() const { return jerry_value_is_dataview(m_value); }
+    bool IsNull() const { return jerry_value_is_null(m_value); }
+    bool IsUndefined() const { return jerry_value_is_undefined(m_value); }
 
     double GetNumberValue(void) const { return jerry_get_number_value(m_value); }
     uint32_t GetUInt32Value(void) const { return (uint32_t)jerry_get_number_value(m_value); }

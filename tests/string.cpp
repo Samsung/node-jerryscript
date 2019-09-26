@@ -8,6 +8,12 @@ int main(int argc, char* argv[]) {
     // Initialize V8.
     V8Environment env(argc, argv);
 
+    {
+        v8::Local<v8::Value> value_test = v8::String::NewFromUtf8(env.getIsolate(), "hi").As<v8::Value>();
+        ASSERT_EQUAL(value_test->IsString(), true);
+    }
+
+
     char buffer[100];
     char helloworldbuffer[] = "Hello world!";
     char helloworldextbuffer[] = "Hello world! (external)";

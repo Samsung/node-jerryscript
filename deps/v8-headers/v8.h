@@ -9797,11 +9797,15 @@ String::ExternalStringResourceBase* String::GetExternalStringResourceBase(
 
 
 bool Value::IsUndefined() const {
+  // TODO: revert to original
+/*
 #ifdef V8_ENABLE_CHECKS
   return FullIsUndefined();
 #else
   return QuickIsUndefined();
 #endif
+*/
+  return FullIsUndefined();
 }
 
 bool Value::QuickIsUndefined() const {
@@ -9815,11 +9819,15 @@ bool Value::QuickIsUndefined() const {
 
 
 bool Value::IsNull() const {
+  // TODO: revert to original
+/*
 #ifdef V8_ENABLE_CHECKS
   return FullIsNull();
 #else
   return QuickIsNull();
 #endif
+*/
+  return FullIsNull();
 }
 
 bool Value::QuickIsNull() const {
@@ -9832,11 +9840,15 @@ bool Value::QuickIsNull() const {
 }
 
 bool Value::IsNullOrUndefined() const {
+  // TODO: revert to original
+/*
 #ifdef V8_ENABLE_CHECKS
   return FullIsNull() || FullIsUndefined();
 #else
   return QuickIsNullOrUndefined();
 #endif
+*/
+  return FullIsNull() || FullIsUndefined();
 }
 
 bool Value::QuickIsNullOrUndefined() const {
@@ -9850,11 +9862,15 @@ bool Value::QuickIsNullOrUndefined() const {
 }
 
 bool Value::IsString() const {
+  // TODO: revert to original
+/*
 #ifdef V8_ENABLE_CHECKS
   return FullIsString();
 #else
   return QuickIsString();
 #endif
+*/
+  return FullIsString();
 }
 
 bool Value::QuickIsString() const {

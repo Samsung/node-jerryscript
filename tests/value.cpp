@@ -58,8 +58,7 @@ int main(int argc, char* argv[]) {
 
     /* String */
     v8::Local<v8::String> string = v8::String::NewFromUtf8(env.getIsolate(), "String", v8::NewStringType::kNormal).ToLocalChecked();
-    // Fixme: IsString is defined in the v8.h file.
-    // ASSERT_EQUAL(string->IsString(), true);
+   ASSERT_EQUAL(string->IsString(), true);
 
     /* External */
     v8::Local<v8::External> external = v8::External::New(env.getIsolate(), (void*) 2);
