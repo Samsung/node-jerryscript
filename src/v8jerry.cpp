@@ -168,7 +168,7 @@ void* V8::ClearWeak(internal::Object** global_handle) {
 }
 
 void V8::DisposeGlobal(internal::Object** global_handle) {
-    JerryValue* object = reinterpret_cast<JerryValue*> (object);
+    JerryValue* object = reinterpret_cast<JerryValue*> (global_handle);
 
     if (object->IsWeakReferenced()) {
         object->ClearWeak();
