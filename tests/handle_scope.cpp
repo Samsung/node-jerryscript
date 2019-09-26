@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
             v8::HandleScope scope(env.getIsolate());
             v8::Local<v8::String> data = create_string();
 
-            v8::String::Utf8Value utf8(env.getIsolate(), txt);
+            v8::String::Utf8Value utf8(env.getIsolate(), data);
             ASSERT_STR_EQUAL(*utf8, "DATA");
         }
 
