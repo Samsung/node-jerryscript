@@ -9214,9 +9214,15 @@ template <class T>
 Local<T> Local<T>::New(Isolate* isolate, T* that) {
   if (that == NULL) return Local<T>();
   T* that_ptr = that;
+  // TODO: revert to the original
+/*
   internal::Object** p = reinterpret_cast<internal::Object**>(that_ptr);
   return Local<T>(reinterpret_cast<T*>(HandleScope::CreateHandle(
       reinterpret_cast<internal::Isolate*>(isolate), *p)));
+*/
+  internal::Object* p = reinterpret_cast<internal::Object*>(that_ptr);
+  return Local<T>(reinterpret_cast<T*>(HandleScope::CreateHandle(
+      reinterpret_cast<internal::Isolate*>(isolate), p)));
 }
 
 

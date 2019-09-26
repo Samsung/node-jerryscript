@@ -50,7 +50,7 @@ static void _LogTrace(int line, std::string file_name, std::string func_name) {
 #define RETURN_HANDLE(T, ISOLATE, HANDLE) \
 do {                                                                    \
     JerryHandle *__handle = HANDLE;                                     \
-    return v8::Local<T>::New(ISOLATE, reinterpret_cast<T*>(&__handle)); \
+    return v8::Local<T>::New(ISOLATE, reinterpret_cast<T*>(__handle)); \
 } while (0)
 
 
