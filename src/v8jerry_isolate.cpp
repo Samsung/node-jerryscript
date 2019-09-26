@@ -30,18 +30,22 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
     m_try_catch_count = 0;
     m_current_error = NULL;
+    m_current_error_verbose = false;
 
 #ifdef __POSIX__
     m_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
 }
 
+
 void JerryIsolate::Enter(void) {
     JerryIsolate::s_currentIsolate = this;
 }
 
 void JerryIsolate::Exit(void) {
-    JerryIsolate::s_currentIsolate = nullptr;
+    if (m_contexts.size() == 0) {
+        JerryIsolate::s_currentIsolate = NULL;
+    }
 }
 
 void JerryIsolate::Dispose(void) {
@@ -188,6 +192,8 @@ void JerryIsolate::PushContext(JerryContext* context) {
     // Contexts are managed by HandleScopes, here we only need the stack to correctly
     // return the current context if needed.
     m_contexts.push_back(context);
+
+    JerryIsolate::s_currentIsolate = this;
 }
 
 void JerryIsolate::PopContext(JerryContext* context) {
@@ -302,6 +308,10 @@ void JerryIsolate::SetEternal(JerryValue* value, int* index) {
     } else {
         m_eternals[*index] = value;
     }
+}
+
+bool JerryIsolate::HasEternal(JerryValue* value) {
+    return std::find(m_eternals.begin(), m_eternals.end(), value) != m_eternals.end();
 }
 
 bool JerryIsolate::HasAsWeak(JerryValue* value) {

@@ -184,10 +184,24 @@ void V8::DisposeGlobal(internal::Object** global_handle) {
 }
 
 internal::Object** V8::GlobalizeReference(internal::Isolate* isolate, internal::Object** handle) {
-    JerryValue* object_orig = reinterpret_cast<JerryValue*> (handle);
-    JerryValue* object_copy = object_orig->Copy();
+    JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(handle);
+    JerryHandle* jresult;
+    if (jhandle->type() == JerryHandle::Context) {
+        int index = -1;
+        JerryIsolate::fromV8(isolate)->SetEternal(reinterpret_cast<JerryValue*>(jhandle), &index);
 
-    return reinterpret_cast<internal::Object**> (object_copy);
+        jresult = reinterpret_cast<JerryHandle*>(jhandle);
+    } else {
+        JerryValue* object_orig = reinterpret_cast<JerryValue*> (handle);
+        JerryValue* object_copy = object_orig->Copy();
+
+        int index = -1;
+        JerryIsolate::fromV8(isolate)->SetEternal(object_copy, &index);
+
+        jresult = reinterpret_cast<JerryHandle*>(object_copy);
+    }
+
+    return reinterpret_cast<internal::Object**> (jresult);
 }
 
 /* Locker */
@@ -544,7 +558,9 @@ internal::Object** HandleScope::CreateHandle(internal::Isolate* isolate, interna
             reinterpret_cast<JerryIsolate*>(isolate)->AddTemplate(reinterpret_cast<JerryTemplate*>(jhandle));
             break;
         default:
-            reinterpret_cast<JerryIsolate*>(isolate)->AddToHandleScope(jhandle);
+            if (!JerryIsolate::fromV8(isolate)->HasEternal(reinterpret_cast<JerryValue*>(jhandle))) {
+                reinterpret_cast<JerryIsolate*>(isolate)->AddToHandleScope(jhandle);
+            }
             break;
     }
     return reinterpret_cast<internal::Object**>(jhandle);
@@ -940,6 +956,12 @@ Local<Context> Object::CreationContext(void) {
     JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
 
     JerryContext* jctx = jobj->GetObjectCreationContext();
+
+    // TODO: remove the hack:
+    if (jctx == NULL) {
+        jctx = JerryIsolate::GetCurrent()->CurrentContext();
+    }
+
     // Copy the context
     RETURN_HANDLE(Context, GetIsolate(), new JerryContext(*jctx));
 }

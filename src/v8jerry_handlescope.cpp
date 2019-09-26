@@ -11,6 +11,11 @@ JerryHandleScope::~JerryHandleScope(void) {
         it != m_handles.rend();
         it++) {
         JerryHandle* jhandle = *it;
+
+        if (JerryIsolate::GetCurrent()->HasEternal(reinterpret_cast<JerryValue*>(jhandle))) {
+            continue;
+        }
+
         switch (jhandle->type()) {
             case JerryHandle::Value: delete reinterpret_cast<JerryValue*>(jhandle); break;
             case JerryHandle::Context: delete reinterpret_cast<JerryContext*>(jhandle); break;
