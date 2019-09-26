@@ -57,6 +57,12 @@ do {                                                                    \
 /* API Implementation */
 namespace v8 {
 
+namespace internal {
+
+void Internals::CheckInitializedImpl(v8::Isolate* isolate) {}
+
+} // namespace inernal
+
 namespace platform {
 
     Platform* CreateDefaultPlatform(
