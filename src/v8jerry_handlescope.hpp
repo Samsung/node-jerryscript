@@ -24,13 +24,13 @@ public:
     void AddHandle(JerryHandle* jvalue);
     void RemoveHandle(JerryHandle* jvalue);
 
-    const void* V8HandleScope(void) { return m_v8handle_scope; }
+    void* V8HandleScope(void) { return m_v8handle_scope; }
 
     void Seal(void) { m_type = Sealed; }
 
 private:
     JerryHandleScopeType m_type;
-    const void* m_v8handle_scope;
+    void* m_v8handle_scope;
     std::vector<JerryHandle*> m_handles;
 };
 

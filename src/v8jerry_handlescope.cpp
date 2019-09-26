@@ -7,12 +7,15 @@
 #include "v8jerry_value.hpp"
 
 JerryHandleScope::~JerryHandleScope(void) {
+    JerryIsolate* iso = JerryIsolate::fromV8(reinterpret_cast<v8::HandleScope*>(V8HandleScope())->GetIsolate());
+
     for (std::vector<JerryHandle*>::reverse_iterator it = m_handles.rbegin();
         it != m_handles.rend();
         it++) {
         JerryHandle* jhandle = *it;
 
-        if (JerryIsolate::GetCurrent()->HasEternal(reinterpret_cast<JerryValue*>(jhandle))) {
+        // TODO: remove this if after JerryContext change
+        if (iso->HasEternal(reinterpret_cast<JerryValue*>(jhandle))) {
             continue;
         }
 
