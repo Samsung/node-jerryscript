@@ -292,7 +292,7 @@ size_t ArrayBufferView::ByteLength() {
     } else if (jarray->IsDataView()) {
         buffer = jerry_get_dataview_buffer (jarray->value(), NULL, &byteLength);
     } else {
-        printf("Unknown object...\n");
+       abort();
     }
 
     jerry_release_value(buffer);
@@ -312,7 +312,7 @@ size_t ArrayBufferView::ByteOffset() {
     } else if (jarray->IsDataView()) {
         buffer = jerry_get_dataview_buffer (jarray->value(), &byteOffset, NULL);
     } else {
-        printf("Unknown object...\n");
+        abort();
     }
 
     jerry_release_value(buffer);
@@ -330,7 +330,7 @@ Local<ArrayBuffer> ArrayBufferView::Buffer() {
     } else if (jarray->IsDataView()) {
         buffer = jerry_get_dataview_buffer (jarray->value(), NULL, NULL);
     } else {
-        printf("Unknown object...\n");
+        abort();
     }
 
     RETURN_HANDLE(ArrayBuffer, Isolate::GetCurrent(), new JerryValue(buffer));
@@ -342,7 +342,7 @@ Local<ArrayBuffer> ArrayBufferView::Buffer() {
         JerryValue* jarraybuffer = reinterpret_cast<JerryValue*> (*array_buffer); \
         jerry_value_t arrayview = jerry_create_typedarray_for_arraybuffer_sz (view_type, jarraybuffer->value(), byte_offset, length); \
         if (jerry_value_is_error(arrayview)) { \
-            printf("Error at Typedarray creation...\n"); \
+            printf("Error at Typedarray creation...\n"); abort();\
         } \
         RETURN_HANDLE(view_class, Isolate::GetCurrent(), new JerryValue(arrayview)); \
     }
