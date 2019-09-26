@@ -43,6 +43,7 @@ public:
 
     void PushTryCatch(void* try_catch_obj);
     void PopTryCatch(void* try_catch_obj);
+    void SetErrorVerbose(bool value);
     void SetError(const jerry_value_t error_value);
     void ClearError(void);
     bool HasError(void);
@@ -125,6 +126,7 @@ private:
 
     int m_try_catch_count;
     JerryValue* m_current_error;
+    bool m_current_error_verbose;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
 

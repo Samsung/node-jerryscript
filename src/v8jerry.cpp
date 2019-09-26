@@ -1514,17 +1514,29 @@ Local<String> String::Concat(Local<String> left, Local<String> right) {
     RETURN_HANDLE(String, Isolate::GetCurrent(), new JerryValue(value));
 }
 
+void String::VerifyExternalStringResource(String::ExternalStringResource* resource) const {}
+
 /* Script */
 MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source, ScriptOrigin* origin /* = nullptr */) {
     V8_CALL_TRACE();
     jerry_char_t* sourceString = new jerry_char_t[source->Utf8Length() + 1];
     source->WriteUtf8((char*)sourceString, source->Utf8Length(), 0, 0);
 
-    jerry_value_t scriptFunction = jerry_parse(NULL, 0, sourceString, source->Utf8Length(), JERRY_PARSE_NO_OPTS);
+    std::vector<jerry_char_t> originStr;
+    if (origin != NULL) {
+        v8::Local<v8::String> originData = origin->ResourceName().As<v8::String>();
+
+        originStr.resize(originData->Utf8Length());
+        originData->WriteUtf8((char*)&originStr[0], originStr.size(), 0, 0);
+    }
+
+    jerry_value_t scriptFunction = jerry_parse(&originStr[0], originStr.size(), sourceString, source->Utf8Length(), JERRY_PARSE_NO_OPTS);
 
     delete [] sourceString;
 
-    RETURN_HANDLE(Script, context->GetIsolate(), new JerryValue(scriptFunction));
+    JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(context->GetIsolate()), scriptFunction);
+
+    RETURN_HANDLE(Script, context->GetIsolate(), result /*new JerryValue(scriptFunction)*/);
 }
 
 
@@ -1912,6 +1924,7 @@ Local<v8::Message> TryCatch::Message() const {
 void TryCatch::SetVerbose(bool value) {
     V8_CALL_TRACE();
     is_verbose_ = value;
+    JerryIsolate::fromV8(isolate_)->SetErrorVerbose(value);
 }
 
 bool TryCatch::IsVerbose() const {

@@ -112,6 +112,10 @@ void JerryIsolate::PopTryCatch(void* try_catch_obj) {
     m_try_catch_count--;
 }
 
+void JerryIsolate::SetErrorVerbose(bool value) {
+    m_current_error_verbose = value;
+}
+
 void JerryIsolate::SetError(JerryValue* error) {
     assert(error != NULL);
     // If there was a previous error, release it!
@@ -119,7 +123,23 @@ void JerryIsolate::SetError(JerryValue* error) {
 
     m_current_error = error;
 
-    if (m_try_catch_count == 0) {
+    if (m_try_catch_count == 0 || m_current_error_verbose) {
+        {
+            jerry_value_t errorStr = jerry_value_to_string(error->value());
+            jerry_size_t msg_size = jerry_get_string_size(errorStr);
+
+            std::vector<jerry_char_t> msg;
+            msg.resize(msg_size + 1);
+
+            jerry_size_t copied = jerry_string_to_char_buffer (errorStr, &msg[0], msg_size + 1);
+            jerry_release_value(errorStr);
+
+            assert(copied == msg_size);
+            msg[copied] = static_cast<jerry_char_t>('\0');
+
+            std::cerr << (const char*)&msg[0] << std::endl;
+        }
+
         // No default handler print out trace
         jerry_value_t stack_trace = jerry_get_property(error->value(), m_magic_string_stack->value());
 
