@@ -1541,8 +1541,9 @@ void String::VerifyExternalStringResource(String::ExternalStringResource* resour
 /* Script */
 MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source, ScriptOrigin* origin /* = nullptr */) {
     V8_CALL_TRACE();
-    jerry_char_t* sourceString = new jerry_char_t[source->Utf8Length() + 1];
-    source->WriteUtf8((char*)sourceString, source->Utf8Length(), 0, 0);
+    std::vector<jerry_char_t> sourceString;
+    sourceString.resize(source->Utf8Length());
+    source->WriteUtf8((char*)&sourceString[0], source->Utf8Length(), 0, 0);
 
     std::vector<jerry_char_t> originStr;
     if (origin != NULL) {
@@ -1552,9 +1553,7 @@ MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source,
         originData->WriteUtf8((char*)&originStr[0], originStr.size(), 0, 0);
     }
 
-    jerry_value_t scriptFunction = jerry_parse(&originStr[0], originStr.size(), sourceString, source->Utf8Length(), JERRY_PARSE_NO_OPTS);
-
-    delete [] sourceString;
+    jerry_value_t scriptFunction = jerry_parse(&originStr[0], originStr.size(), &sourceString[0], sourceString.size(), JERRY_PARSE_NO_OPTS);
 
     JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(context->GetIsolate()), scriptFunction);
 
