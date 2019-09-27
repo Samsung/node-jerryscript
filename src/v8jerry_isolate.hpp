@@ -81,6 +81,8 @@ public:
     void RemoveAsWeak(JerryValue* value);
     bool HasAsWeak(JerryValue* value);
 
+    void AddExternalStringResource(v8::String::ExternalStringResource* resource);
+
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }
     static JerryIsolate* fromV8(v8::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
     static JerryIsolate* fromV8(v8::internal::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
@@ -114,6 +116,7 @@ private:
     std::vector<JerryTemplate*> m_templates;
     std::vector<JerryValue*> m_eternals;
     std::vector<JerryValue*> m_weakrefs;
+    std::vector<v8::String::ExternalStringResource*> m_ext_str_res;
 
     JerryPolyfill* m_fn_map_new;
     JerryPolyfill* m_fn_is_map;

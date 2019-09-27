@@ -46,6 +46,28 @@ int main(int argc, char* argv[]) {
     helloworldext->WriteUtf8(buffer, strlen(helloworldextbuffer) + 1, NULL, 0);
     ASSERT_STR_EQUAL(buffer, "Hello world! (external)");
 
+    // External string creation with static data.
+    static const uint8_t raw_assert_key[] = { 97, 115, 115, 101, 114, 116 };
+
+    static struct : public v8::String::ExternalOneByteStringResource {
+        const char* data() const override {
+            return reinterpret_cast<const char*>(raw_assert_key);
+        }
+        size_t length() const override { return strlen((const char*)raw_assert_key); }
+        void Dispose() override { /* Default calls `delete this`. */ }
+
+        v8::Local<v8::String> ToStringChecked(v8::Isolate* isolate) {
+            return v8::String::NewExternalOneByte(isolate, this).ToLocalChecked();
+        }
+    } assert_key;
+
+    v8::Local<v8::String> helloWorldExtStatic = v8::String::NewExternalOneByte(env.getIsolate(), &assert_key).ToLocalChecked();
+    ASSERT_EQUAL(helloWorldExtStatic->Length(), assert_key.length());
+
+    memset(buffer, 0, sizeof(buffer));
+    helloWorldExtStatic->WriteUtf8(buffer, assert_key.length() + 1, NULL, 0);
+    ASSERT_STR_EQUAL(buffer, raw_assert_key);
+
     // Substring check.
     memset(buffer, 0, sizeof(buffer));
     helloworld->WriteOneByte((uint8_t*)buffer, 1, 4, 0);

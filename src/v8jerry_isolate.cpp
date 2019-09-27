@@ -48,6 +48,17 @@ void JerryIsolate::Exit(void) {
     }
 }
 
+namespace v8 {
+    namespace internal {
+        class Heap {
+        public:
+            static void DisposeExternalString(v8::String::ExternalStringResourceBase* external_string) {
+                external_string->Dispose();
+            }
+        };
+    }
+}
+
 void JerryIsolate::Dispose(void) {
     for (std::vector<JerryTemplate*>::reverse_iterator it = m_templates.rbegin();
         it != m_templates.rend();
@@ -72,6 +83,12 @@ void JerryIsolate::Dispose(void) {
         it != m_weakrefs.end();
         it++) {
         delete *it;
+    }
+
+    for (std::vector<v8::String::ExternalStringResource*>::iterator it = m_ext_str_res.begin();
+        it != m_ext_str_res.end();
+        it++) {
+        v8::internal::Heap::DisposeExternalString(*it);
     }
 
     delete m_magic_string_stack;
@@ -340,4 +357,12 @@ void JerryIsolate::RemoveAsWeak(JerryValue* value) {
 
     m_weakrefs.erase(weak_iter);
     m_eternals.push_back(value);
+}
+
+void JerryIsolate::AddExternalStringResource(v8::String::ExternalStringResource* resource) {
+    std::vector<v8::String::ExternalStringResource*>::iterator iter = std::find(m_ext_str_res.begin(), m_ext_str_res.end(), resource);
+
+    assert(iter == m_ext_str_res.end());
+
+    m_ext_str_res.push_back(resource);
 }

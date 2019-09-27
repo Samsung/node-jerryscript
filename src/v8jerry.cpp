@@ -1348,16 +1348,16 @@ MaybeLocal<String> String::NewFromTwoByte(Isolate* isolate, const uint16_t* data
 /* External strings are not supported yet. */
 MaybeLocal<String> String::NewExternalOneByte(Isolate* isolate, ExternalOneByteStringResource* resource) {
     MaybeLocal<String> result = String::NewFromUtf8(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
-    /* TODO: resource should be deallocated at the same time with String. */
-    delete resource;
+    // TODO: bind ExternalStringResource to the String and NOT the Isolate lifecycle.
+    reinterpret_cast<JerryIsolate*>(isolate)->AddExternalStringResource(reinterpret_cast<ExternalStringResource*>(resource));
 
     return result;
 }
 
 MaybeLocal<String> String::NewExternalTwoByte(Isolate* isolate, ExternalStringResource* resource) {
     MaybeLocal<String> result = String::NewFromTwoByte(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
-    /* TODO: resource should be deallocated at the same time with String. */
-    delete resource;
+    // TODO: bind ExternalStringResource to the String and NOT the Isolate lifecycle.
+    reinterpret_cast<JerryIsolate*>(isolate)->AddExternalStringResource(reinterpret_cast<ExternalStringResource*>(resource));
 
     return result;
 }
