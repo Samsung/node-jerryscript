@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cstdio>
 
-#include "v8jerry_context.hpp"
 #include "v8jerry_handlescope.hpp"
 #include "v8jerry_isolate.hpp"
 #include "v8jerry_value.hpp"
@@ -14,14 +13,11 @@ JerryHandleScope::~JerryHandleScope(void) {
         it++) {
         JerryHandle* jhandle = *it;
 
-        // TODO: remove this if after JerryContext change
-        if (iso->HasEternal(reinterpret_cast<JerryValue*>(jhandle))) {
-            continue;
-        }
-
         switch (jhandle->type()) {
             case JerryHandle::Value: delete reinterpret_cast<JerryValue*>(jhandle); break;
-            case JerryHandle::Context: delete reinterpret_cast<JerryContext*>(jhandle); break;
+            case JerryHandle::GlobalValue: {
+                /* This case is very bad at the moment */
+            }
             // FunctionTemplate and ObjectTemplates are now Isolate level items.
             default: fprintf(stderr, "~JerryHandleScope::Unsupported handle type (%d)\n", jhandle->type()); break;
         }

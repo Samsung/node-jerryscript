@@ -7,8 +7,8 @@
 #include "v8.h"
 #include "v8jerry_utils.hpp"
 
-class JerryContext;
 class JerryIsolate;
+struct JerryV8ContextData;
 
 class JerryHandle {
 public:
@@ -17,6 +17,8 @@ public:
         FunctionTemplate,
         ObjectTemplate,
         Value,
+
+        GlobalValue,
     };
 
     JerryHandle() {}
@@ -26,6 +28,12 @@ public:
     {}
 
     Type type() const { return m_type; }
+
+
+    static bool IsValueType(JerryHandle* handle) {
+        return (handle != NULL) &&
+                ((handle->type() == Value) || (handle->type() == GlobalValue));
+    }
 
 private:
     Type m_type;
@@ -61,12 +69,11 @@ struct JerryV8WeakReferenceData {
 class JerryValue : public JerryHandle {
 public:
     JerryValue()
-        : JerryHandle(JerryHandle::Value)
+        : JerryValue(0, false)
     {}
 
     JerryValue(jerry_value_t value)
-        : JerryHandle(JerryHandle::Value)
-        , m_value(value)
+        : JerryValue(value, false)
     {}
 
     /* Create a JerryValue if there is no error.
@@ -144,16 +151,28 @@ public:
         return new JerryValue(jerry_value_to_object(m_value));
     }
 
-    JerryContext* GetObjectCreationContext(void);
+    JerryValue* GetObjectCreationContext(void);
 
     static JerryValue* NewPromise(void);
     static JerryValue* NewObject(void);
     static JerryValue* NewExternal(void* ptr);
 
+    static JerryValue* NewContextObject(JerryIsolate* iso);
+    bool IsContextObject(void);
+    JerryV8ContextData* ContextGetData(void);
+    JerryIsolate* ContextGetIsolate(void);
+    void ContextEnter(void);
+    void ContextExit(void);
+    void ContextSetEmbedderData(int index, void* value);
+    void* ContextGetEmbedderData(int index);
+
+
     void* GetExternalData(void) const;
     bool IsExternal() const;
 
     JerryValue* Copy() const { return new JerryValue(jerry_acquire_value(m_value)); }
+    JerryValue* CopyToGlobal() const { return new JerryValue(jerry_acquire_value(m_value), true); }
+
     void MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data);
     bool IsWeakReferenced();
     void* ClearWeak();
@@ -191,6 +210,10 @@ public:
     JerryValue(JerryValue& that) = delete;
 
 private:
+    JerryValue(jerry_value_t value, bool isGlobal)
+        : JerryHandle(isGlobal ? JerryHandle::GlobalValue : JerryHandle::Value)
+        , m_value(value)
+    {}
 
     jerry_value_t m_value;
 };

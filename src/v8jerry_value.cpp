@@ -64,25 +64,25 @@ JerryValue* JerryValue::GetPropertyIdx(uint32_t idx) {
 }
 
 static const jerry_object_native_info_t JerryV8ObjectContextTypeInfo = {
-    /* native_pointer stores JerryContext* */
+    /* native_pointer stores JerryContext (aka JerryValue*) which will be freed via the handlescope */
     .free_cb = NULL
 };
 
-JerryContext* JerryValue::GetObjectCreationContext(void) {
+JerryValue* JerryValue::GetObjectCreationContext(void) {
     void* data_p;
     bool has_p = jerry_get_object_native_pointer(m_value, &data_p, &JerryV8ObjectContextTypeInfo);
     if (!has_p) {
         return NULL;
     }
 
-    return reinterpret_cast<JerryContext*>(data_p);
+    return reinterpret_cast<JerryValue*>(data_p);
 }
 
 /* static */
 JerryValue* JerryValue::NewPromise(void) {
     jerry_value_t promise = jerry_create_promise();
 
-    JerryContext* ctx = JerryIsolate::GetCurrent()->CurrentContext();
+    JerryValue* ctx = JerryIsolate::GetCurrent()->CurrentContext();
 
     jerry_set_object_native_pointer(promise, ctx, &JerryV8ObjectContextTypeInfo);
 
@@ -93,7 +93,7 @@ JerryValue* JerryValue::NewPromise(void) {
 JerryValue* JerryValue::NewObject(void) {
     jerry_value_t object = jerry_create_object();
 
-    JerryContext* ctx = JerryIsolate::GetCurrent()->CurrentContext();
+    JerryValue* ctx = JerryIsolate::GetCurrent()->CurrentContext();
 
     jerry_set_object_native_pointer(object, ctx, &JerryV8ObjectContextTypeInfo);
 
@@ -126,6 +126,93 @@ bool JerryValue::IsExternal() const {
     bool has_data = jerry_get_object_native_pointer(m_value, &native_p, &JerryV8ExternalTypeInfo);
     return has_data;
 }
+
+struct JerryV8ContextData {
+    JerryIsolate* isolate;
+    std::vector<void*> embedderData;
+};
+
+static void JerryV8ContextDataFree(void *data) {
+    delete reinterpret_cast<JerryV8ContextData*>(data);
+}
+
+static jerry_object_native_info_t JerryV8ContextTypeInfo = {
+    .free_cb = JerryV8ContextDataFree,
+};
+
+/* static */
+JerryValue* JerryValue::NewContextObject(JerryIsolate* iso) {
+    jerry_value_t object = jerry_create_object();
+
+    JerryV8ContextData* ctx_data = new JerryV8ContextData{iso, {}};
+
+    jerry_set_object_native_pointer(object, ctx_data, &JerryV8ContextTypeInfo);
+
+    return new JerryValue(object);
+}
+
+bool JerryValue::IsContextObject(void) {
+    return jerry_get_object_native_pointer(m_value, NULL, &JerryV8ContextTypeInfo);
+}
+
+JerryV8ContextData* JerryValue::ContextGetData(void) {
+    JerryV8ContextData* data;
+    bool has_native = jerry_get_object_native_pointer(m_value, (void**)&data, &JerryV8ContextTypeInfo);
+    if (!has_native) {
+        return NULL;
+    }
+
+    return data;
+}
+
+JerryIsolate* JerryValue::ContextGetIsolate(void) {
+    assert(IsContextObject());
+
+    JerryV8ContextData* ctx = ContextGetData();
+    return ctx->isolate;
+}
+
+void JerryValue::ContextEnter(void) {
+    assert(IsContextObject());
+
+    JerryV8ContextData* ctx = ContextGetData();
+
+    ctx->isolate->Enter();
+    ctx->isolate->PushContext(this);
+}
+
+void JerryValue::ContextExit(void) {
+    assert(IsContextObject());
+
+    JerryV8ContextData* ctx = ContextGetData();
+
+    ctx->isolate->PopContext(this);
+    ctx->isolate->Exit();
+}
+
+void JerryValue::ContextSetEmbedderData(int index, void* value) {
+    assert(IsContextObject());
+
+    JerryV8ContextData* ctx = ContextGetData();
+
+    if (ctx->embedderData.size() <= index) {
+        ctx->embedderData.resize(index + 1);
+    }
+    ctx->embedderData[index] = value;
+}
+
+void* JerryValue::ContextGetEmbedderData(int index) {
+    assert(IsContextObject());
+
+    JerryV8ContextData* ctx = ContextGetData();
+
+    if (V8_UNLIKELY(ctx->embedderData.size() < index)) {
+        return NULL;
+    }
+
+    return ctx->embedderData[index];
+}
+
 
 /* static */
 void JerryValue::CreateInternalFields(jerry_value_t target, int field_count) {

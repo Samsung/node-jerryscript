@@ -205,7 +205,7 @@ bool JerryIsolate::HasError(void) {
 }
 
 
-void JerryIsolate::PushContext(JerryContext* context) {
+void JerryIsolate::PushContext(JerryValue* context) {
     // Contexts are managed by HandleScopes, here we only need the stack to correctly
     // return the current context if needed.
     m_contexts.push_back(context);
@@ -213,14 +213,14 @@ void JerryIsolate::PushContext(JerryContext* context) {
     JerryIsolate::s_currentIsolate = this;
 }
 
-void JerryIsolate::PopContext(JerryContext* context) {
-    JerryContext* ctx = m_contexts.back();
+void JerryIsolate::PopContext(JerryValue* context) {
+    JerryValue* ctx = m_contexts.back();
     assert(ctx == context);
 
     m_contexts.pop_back();
 }
 
-JerryContext* JerryIsolate::CurrentContext(void) {
+JerryValue* JerryIsolate::CurrentContext(void) {
     return m_contexts.back();
 }
 

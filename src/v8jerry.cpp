@@ -15,7 +15,6 @@
 
 /* Jerry <-> V8 binding classes */
 #include "v8jerry_callback.hpp"
-#include "v8jerry_context.hpp"
 #include "v8jerry_handlescope.hpp"
 #include "v8jerry_isolate.hpp"
 #include "v8jerry_platform.hpp"
@@ -140,7 +139,7 @@ Value* V8::Eternalize(Isolate* isolate, Value* handle) {
     JerryHandle* jerry_handle = reinterpret_cast<JerryHandle*> (handle);
 
     // Just JerryValue has Copy method.
-    assert(jerry_handle->type() == JerryHandle::Value);
+    assert(JerryHandle::IsValueType(jerry_handle));
 
     int index = -1;
     JerryValue* value_copy = static_cast<JerryValue*>(jerry_handle)->Copy();
@@ -185,23 +184,11 @@ void V8::DisposeGlobal(internal::Object** global_handle) {
 
 internal::Object** V8::GlobalizeReference(internal::Isolate* isolate, internal::Object** handle) {
     JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(handle);
-    JerryHandle* jresult;
-    if (jhandle->type() == JerryHandle::Context) {
-        int index = -1;
-        JerryIsolate::fromV8(isolate)->SetEternal(reinterpret_cast<JerryValue*>(jhandle), &index);
+    assert(jhandle->type() == JerryHandle::Value);
 
-        jresult = reinterpret_cast<JerryHandle*>(jhandle);
-    } else {
-        JerryValue* object_orig = reinterpret_cast<JerryValue*> (handle);
-        JerryValue* object_copy = object_orig->Copy();
+    JerryValue* jcopy = reinterpret_cast<JerryValue*>(jhandle)->CopyToGlobal();
 
-        int index = -1;
-        JerryIsolate::fromV8(isolate)->SetEternal(object_copy, &index);
-
-        jresult = reinterpret_cast<JerryHandle*>(object_copy);
-    }
-
-    return reinterpret_cast<internal::Object**> (jresult);
+    return reinterpret_cast<internal::Object**>(jcopy);
 }
 
 /* Locker */
@@ -382,9 +369,11 @@ Isolate* Isolate::GetCurrent() {
 
 Local<Context> Isolate::GetCurrentContext(void) {
     V8_CALL_TRACE();
-    JerryContext* ctx = JerryIsolate::fromV8(this)->CurrentContext();
+    JerryValue* ctx = JerryIsolate::fromV8(this)->CurrentContext();
+
+    RETURN_HANDLE(Context, this, ctx->Copy());
     // Do not create a handle, just return a ref
-    return Local<Context>(reinterpret_cast<Context*>(ctx));
+    //return Local<Context>(reinterpret_cast<Context*>(ctx));
 }
 
 void Isolate::TerminateExecution(void) {
@@ -499,37 +488,48 @@ Local<Context> Context::New(Isolate* isolate,
                             MaybeLocal<ObjectTemplate> global_template /*= MaybeLocal<ObjectTemplate>()*/,
                             MaybeLocal<Value> global_object /*= MaybeLocal<Value>()*/) {
     V8_CALL_TRACE();
-    RETURN_HANDLE(Context, isolate, new JerryContext(JerryIsolate::fromV8(isolate)));
+    RETURN_HANDLE(Context, isolate, JerryValue::NewContextObject(JerryIsolate::fromV8(isolate)));
 }
 
 Isolate* Context::GetIsolate() {
     V8_CALL_TRACE();
-    return JerryIsolate::toV8(JerryContext::fromV8(this)->GetIsolate());
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+    assert(ctx->IsContextObject());
+    return JerryIsolate::toV8(ctx->ContextGetIsolate());
 }
 
 void Context::Enter() {
     V8_CALL_TRACE();
-    JerryContext::fromV8(this)->Enter();
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+    assert(ctx->IsContextObject());
+    ctx->ContextEnter();
 }
 
 void Context::Exit() {
     V8_CALL_TRACE();
-    JerryContext::fromV8(this)->Exit();
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+    assert(ctx->IsContextObject());
+    ctx->ContextExit();
 }
 
 Local<Object> Context::Global() {
     V8_CALL_TRACE();
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
     RETURN_HANDLE(Object, GetIsolate(), new JerryValue(jerry_get_global_object()));
 }
 
 void Context::SetAlignedPointerInEmbedderData(int index, void* value) {
     V8_CALL_TRACE();
-    reinterpret_cast<JerryContext*>(this)->SetEmbedderData(index, value);
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+    assert(ctx->IsContextObject());
+    ctx->ContextSetEmbedderData(index, value);
 }
 
 void* Context::SlowGetAlignedPointerFromEmbedderData(int index) {
     V8_CALL_TRACE();
-    return reinterpret_cast<JerryContext*>(this)->GetEmbedderData(index);
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+    assert(ctx->IsContextObject());
+    return ctx->ContextGetEmbedderData(index);
 }
 
 /* HandleScope */
@@ -550,17 +550,28 @@ internal::Object** HandleScope::CreateHandle(internal::Isolate* isolate, interna
     if (V8_UNLIKELY(value == NULL)) {
         return reinterpret_cast<internal::Object**>(value);
     }
+    JerryIsolate* iso = JerryIsolate::fromV8(isolate);
 
     JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(value);
     switch (jhandle->type()) {
         case JerryHandle::FunctionTemplate:
         case JerryHandle::ObjectTemplate:
-            reinterpret_cast<JerryIsolate*>(isolate)->AddTemplate(reinterpret_cast<JerryTemplate*>(jhandle));
+            iso->AddTemplate(reinterpret_cast<JerryTemplate*>(jhandle));
+            break;
+        case JerryHandle::GlobalValue: {
+            // In this case a "global" object is copied to a Local<T>, we'll do a copy here and push it to the scope
+            // A "global" (Persistent/PersistentBase) should never be in a handle scope
+            JerryHandle* jcopy = reinterpret_cast<JerryValue*>(jhandle)->Copy();
+            iso->AddToHandleScope(jcopy);
+            break;
+        }
+        case JerryHandle::Value:
+            if (!JerryIsolate::fromV8(isolate)->HasEternal(reinterpret_cast<JerryValue*>(jhandle))) {
+                iso->AddToHandleScope(jhandle);
+            }
             break;
         default:
-            if (!JerryIsolate::fromV8(isolate)->HasEternal(reinterpret_cast<JerryValue*>(jhandle))) {
-                reinterpret_cast<JerryIsolate*>(isolate)->AddToHandleScope(jhandle);
-            }
+            abort();
             break;
     }
     return reinterpret_cast<internal::Object**>(jhandle);
@@ -955,7 +966,7 @@ Local<Context> Object::CreationContext(void) {
     V8_CALL_TRACE();
     JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
 
-    JerryContext* jctx = jobj->GetObjectCreationContext();
+    JerryValue* jctx = jobj->GetObjectCreationContext();
 
     // TODO: remove the hack:
     if (jctx == NULL) {
@@ -963,7 +974,7 @@ Local<Context> Object::CreationContext(void) {
     }
 
     // Copy the context
-    RETURN_HANDLE(Context, GetIsolate(), new JerryContext(*jctx));
+    RETURN_HANDLE(Context, GetIsolate(), jctx->Copy());
 }
 
 Maybe<bool> Object::Set(Local<Context> context, Local<Value> key, Local<Value> value) {

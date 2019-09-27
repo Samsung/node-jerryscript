@@ -16,7 +16,6 @@
 #include <pthread.h>
 #endif
 
-class JerryContext;
 class JerryHandle;
 class JerryHandleScope;
 enum JerryHandleScopeType : int;
@@ -49,9 +48,9 @@ public:
     bool HasError(void);
     JerryValue* GetRawError(void) { return m_current_error; }
 
-    void PushContext(JerryContext* context);
-    void PopContext(JerryContext* context);
-    JerryContext* CurrentContext(void);
+    void PushContext(JerryValue* context);
+    void PopContext(JerryValue* context);
+    JerryValue* CurrentContext(void);
 
     void PushHandleScope(JerryHandleScopeType type, void* handle_scope);
     void PopHandleScope(void* handle_scope);
@@ -112,7 +111,7 @@ private:
     friend class v8::Locker;
 
     std::deque<JerryHandleScope*> m_handleScopes;
-    std::deque<JerryContext*> m_contexts;
+    std::deque<JerryValue*> m_contexts;
     std::vector<JerryTemplate*> m_templates;
     std::vector<JerryValue*> m_eternals;
     std::vector<JerryValue*> m_weakrefs;
