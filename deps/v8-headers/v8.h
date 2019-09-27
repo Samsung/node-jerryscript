@@ -10353,6 +10353,8 @@ int64_t Isolate::AdjustAmountOfExternalAllocatedMemory(
 }
 
 Local<Value> Context::GetEmbedderData(int index) {
+  // TODO: revert to original
+/*
 #ifndef V8_ENABLE_CHECKS
   typedef internal::Object O;
   typedef internal::HeapObject HO;
@@ -10364,16 +10366,22 @@ Local<Value> Context::GetEmbedderData(int index) {
 #else
   return SlowGetEmbedderData(index);
 #endif
+*/
+  return SlowGetEmbedderData(index);
 }
 
 
 void* Context::GetAlignedPointerFromEmbedderData(int index) {
+  // TODO: revert to original
+/*
 #ifndef V8_ENABLE_CHECKS
   typedef internal::Internals I;
   return I::ReadEmbedderData<void*>(this, index);
 #else
   return SlowGetAlignedPointerFromEmbedderData(index);
 #endif
+*/
+  return SlowGetAlignedPointerFromEmbedderData(index);
 }
 
 void V8::SetAllowCodeGenerationFromStringsCallback(
