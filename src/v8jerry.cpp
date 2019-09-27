@@ -1543,14 +1543,14 @@ MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source,
     V8_CALL_TRACE();
     std::vector<jerry_char_t> sourceString;
     sourceString.resize(source->Utf8Length());
-    source->WriteUtf8((char*)&sourceString[0], source->Utf8Length(), 0, 0);
+    source->WriteUtf8((char*)&sourceString[0], source->Utf8Length(), 0, String::NO_NULL_TERMINATION);
 
     std::vector<jerry_char_t> originStr;
     if (origin != NULL) {
         v8::Local<v8::String> originData = origin->ResourceName().As<v8::String>();
 
         originStr.resize(originData->Utf8Length());
-        originData->WriteUtf8((char*)&originStr[0], originStr.size(), 0, 0);
+        originData->WriteUtf8((char*)&originStr[0], originStr.size(), 0, String::NO_NULL_TERMINATION);
     }
 
     jerry_value_t scriptFunction = jerry_parse(&originStr[0], originStr.size(), &sourceString[0], sourceString.size(), JERRY_PARSE_NO_OPTS);
