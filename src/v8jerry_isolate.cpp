@@ -362,7 +362,9 @@ void JerryIsolate::RemoveAsWeak(JerryValue* value) {
 void JerryIsolate::AddExternalStringResource(v8::String::ExternalStringResource* resource) {
     std::vector<v8::String::ExternalStringResource*>::iterator iter = std::find(m_ext_str_res.begin(), m_ext_str_res.end(), resource);
 
-    assert(iter == m_ext_str_res.end());
+    if (iter != m_ext_str_res.end()) {
+        return;
+    }
 
     m_ext_str_res.push_back(resource);
 }
