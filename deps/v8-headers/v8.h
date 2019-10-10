@@ -330,6 +330,9 @@ class Local {
   friend class Context;
   friend class Isolate;
   friend class Promise;
+  friend class UnboundScript;
+  friend class ScriptCompiler;
+  friend class Debug;
   // ^^
 
   friend class Object;
@@ -9372,11 +9375,14 @@ void PersistentBase<T>::RegisterExternalReference(Isolate* isolate) const {
 
 template <class T>
 void PersistentBase<T>::MarkIndependent() {
+    // TODO: Revert to original if possible:
+/*
   typedef internal::Internals I;
   if (this->IsEmpty()) return;
   I::UpdateNodeFlag(reinterpret_cast<internal::Object**>(this->val_),
                     true,
                     I::kNodeIsIndependentShift);
+*/
 }
 
 template <class T>
@@ -9390,21 +9396,28 @@ void PersistentBase<T>::MarkActive() {
 
 template <class T>
 void PersistentBase<T>::SetWrapperClassId(uint16_t class_id) {
+    // TODO: Revert to original if possible:
+/*
   typedef internal::Internals I;
   if (this->IsEmpty()) return;
   internal::Object** obj = reinterpret_cast<internal::Object**>(this->val_);
   uint8_t* addr = reinterpret_cast<uint8_t*>(obj) + I::kNodeClassIdOffset;
   *reinterpret_cast<uint16_t*>(addr) = class_id;
+*/
 }
 
 
 template <class T>
 uint16_t PersistentBase<T>::WrapperClassId() const {
+    // TODO: Revert to original if possible:
+/*
   typedef internal::Internals I;
   if (this->IsEmpty()) return 0;
   internal::Object** obj = reinterpret_cast<internal::Object**>(this->val_);
   uint8_t* addr = reinterpret_cast<uint8_t*>(obj) + I::kNodeClassIdOffset;
   return *reinterpret_cast<uint16_t*>(addr);
+*/
+  return 0;
 }
 
 
@@ -9459,11 +9472,13 @@ void ReturnValue<T>::Set(double i) {
 template<typename T>
 void ReturnValue<T>::Set(int32_t i) {
   TYPE_CHECK(T, Integer);
-  typedef internal::Internals I;
+  // TODO: Revert to original if possible:
+/*  typedef internal::Internals I;
   if (V8_LIKELY(I::IsValidSmi(i))) {
     *value_ = I::IntToSmi(i);
     return;
   }
+*/
   Set(Integer::New(GetIsolate(), i));
 }
 
@@ -9471,11 +9486,13 @@ template<typename T>
 void ReturnValue<T>::Set(uint32_t i) {
   TYPE_CHECK(T, Integer);
   // Can't simply use INT32_MAX here for whatever reason.
-  bool fits_into_int32_t = (i & (1U << 31)) == 0;
+  // TODO: Revert to original if possible:
+/*  bool fits_into_int32_t = (i & (1U << 31)) == 0;
   if (V8_LIKELY(fits_into_int32_t)) {
     Set(static_cast<int32_t>(i));
     return;
   }
+*/
   Set(Integer::NewFromUnsigned(GetIsolate(), i));
 }
 
