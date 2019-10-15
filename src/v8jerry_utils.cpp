@@ -46,6 +46,7 @@ typedef struct {
                       ECMA_OBJECT_FLAG_EXTENSIBLE or ECMA_OBJECT_FLAG_NON_CLOSURE
       refs : 10 bit (max 1023) */
   uint16_t type_flags_refs;
+  /* snippet from JerryScript code */
 } header_ecma_object_t;
 
 static void *ecma_get_pointer_from_ecma_value (ecma_value_t value) {
@@ -61,6 +62,11 @@ static bool collect_objects(const jerry_value_t object, void *user_data_p) {
     return true;
 }
 
+static bool ecam_have_ref(const jerry_value_t value) {
+    header_ecma_object_t* header = reinterpret_cast<header_ecma_object_t*>(ecma_get_pointer_from_ecma_value(value));
+    return header->type_flags_refs >= ECMA_OBJECT_REF_ONE;
+}
+
 void JerryForceCleanup(void) {
     jerry_gc(JERRY_GC_PRESSURE_HIGH);
 
@@ -68,8 +74,8 @@ void JerryForceCleanup(void) {
     jerry_objects_foreach(collect_objects, &objects);
 
     for (size_t idx = 0; idx < objects.size(); idx++) {
-        bool is_builtin = ecma_get_object_is_builtin((void*)(objects[idx] & ~0x3u));
-        if (!is_builtin) {
+        bool is_builtin = ecma_get_object_is_builtin(ecma_get_pointer_from_ecma_value(objects[idx]));
+        if (!is_builtin && ecam_have_ref(objects[idx])) {
             jerry_release_value(objects[idx]);
         }
     }
