@@ -2095,8 +2095,19 @@ void Template::Set(v8::Local<v8::Name> name, v8::Local<v8::Data> data, v8::Prope
 
     // Here we copy the values as the template's internl elements will do a release on them
     JerryValue* key = reinterpret_cast<JerryValue*>(*name)->Copy();
-    // TODO: maybe this should not be a JerryValue?
-    JerryValue* value = reinterpret_cast<JerryValue*>(*data)->Copy();
+    JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(*data);
+
+    JerryValue* value;
+    switch (jhandle->type()) {
+        case JerryHandle::Value: value = reinterpret_cast<JerryValue*>(jhandle)->Copy(); break;
+        case JerryHandle::FunctionTemplate: {
+            JerryFunctionTemplate* jtmplt = reinterpret_cast<JerryFunctionTemplate*>(jhandle);
+            value = jtmplt->GetFunction()->Copy();
+            break;
+        }
+        default:
+            assert(false && "Unkonwn Type");
+    }
 
     templt->Set(key, value, attributes);
 }
