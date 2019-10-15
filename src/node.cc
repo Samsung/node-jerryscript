@@ -4148,6 +4148,8 @@ inline int Start(Isolate* isolate, IsolateData* isolate_data,
   __lsan_do_leak_check();
 #endif
 
+  isolate->RequestGarbageCollectionForTesting(Isolate::kFullGarbageCollection);
+
   return exit_code;
 }
 
