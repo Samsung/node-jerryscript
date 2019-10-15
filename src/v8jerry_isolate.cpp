@@ -62,6 +62,16 @@ namespace v8 {
     }
 }
 
+void JerryIsolate::RunWeakCleanup(void) {
+    for (std::vector<JerryValue*>::reverse_iterator it = m_weakrefs.rbegin();
+        it != m_weakrefs.rend();
+        it++) {
+        // The weak callback will delete the JerryValue*
+        (*it)->RunWeakCleanup();
+    }
+    m_weakrefs.clear();
+}
+
 void JerryIsolate::Dispose(void) {
     for (std::vector<JerryTemplate*>::reverse_iterator it = m_templates.rbegin();
         it != m_templates.rend();
@@ -78,12 +88,6 @@ void JerryIsolate::Dispose(void) {
 
     for (std::vector<JerryValue*>::iterator it = m_eternals.begin();
         it != m_eternals.end();
-        it++) {
-        delete *it;
-    }
-
-    for (std::vector<JerryValue*>::iterator it = m_weakrefs.begin();
-        it != m_weakrefs.end();
         it++) {
         delete *it;
     }
@@ -120,6 +124,8 @@ void JerryIsolate::Dispose(void) {
         delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kFalseValueRootIndex]);
         delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kEmptyStringRootIndex]);
     }
+
+    JerryForceCleanup();
 
     jerry_cleanup();
 
@@ -340,7 +346,7 @@ bool JerryIsolate::HasEternal(JerryValue* value) {
 bool JerryIsolate::HasAsWeak(JerryValue* value) {
     std::vector<JerryValue*>::iterator iter = std::find(m_weakrefs.begin(), m_weakrefs.end(), value);
 
-    return iter == m_weakrefs.end();
+    return iter != m_weakrefs.end();
 }
 
 void JerryIsolate::AddAsWeak(JerryValue* value) {
@@ -348,9 +354,11 @@ void JerryIsolate::AddAsWeak(JerryValue* value) {
 
     std::vector<JerryValue*>::iterator iter = std::find(m_eternals.begin(), m_eternals.end(), value);
     // Just eternal objects can have weak reference.
-    assert(iter != m_eternals.end());
+    //assert(iter != m_eternals.end());
+    if (iter != m_eternals.end()) {
+        m_eternals.erase(iter);
+    }
 
-    m_eternals.erase(iter);
     m_weakrefs.push_back(value);
 }
 

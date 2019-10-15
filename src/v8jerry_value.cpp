@@ -16,6 +16,10 @@ static jerry_object_native_info_t JerryV8ExternalTypeInfo = {
 };
 
 static void JerryV8WeakCallback(void* data) {
+    if (data == NULL) {
+        return;
+    }
+
     JerryV8WeakReferenceData* weak_cb_data = static_cast<JerryV8WeakReferenceData*>(data);
 
     void* parameter = NULL;
@@ -25,10 +29,14 @@ static void JerryV8WeakCallback(void* data) {
         embedder_fields = reinterpret_cast<void**>(weak_cb_data->data);
     } else {
         parameter = weak_cb_data->data;
+        embedder_fields = new void*[v8::kEmbedderFieldsInWeakCallback];
     }
 
     v8::WeakCallbackInfo<void> info(v8::Isolate::GetCurrent(), parameter, embedder_fields, &weak_cb_data->callback);
     weak_cb_data->callback(info);
+
+    delete [] embedder_fields;
+    delete weak_cb_data;
 };
 
 static jerry_object_native_info_t JerryV8WeakReferenceInfo = {
@@ -291,7 +299,8 @@ JerryValue* JerryValue::TryCreateValue(JerryIsolate* iso, jerry_value_t value) {
 }
 
 bool JerryValue::IsWeakReferenced() {
-    return jerry_get_object_native_pointer(m_value, NULL, &JerryV8WeakReferenceInfo);
+    void* data_p = NULL;
+    return jerry_get_object_native_pointer(m_value, &data_p, &JerryV8WeakReferenceInfo) && data_p != NULL;
 }
 
 void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data) {

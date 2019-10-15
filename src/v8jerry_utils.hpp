@@ -17,4 +17,6 @@ private:
     jerry_value_t m_method;
 };
 
+void JerryForceCleanup(void);
+
 #endif

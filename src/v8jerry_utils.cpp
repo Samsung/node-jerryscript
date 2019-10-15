@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 JerryPolyfill::JerryPolyfill(const char* name, const char* fn_args, const char* fn_body)
     : m_method(JerryPolyfill::BuildMethod(name, fn_args, fn_body))
@@ -28,4 +29,48 @@ jerry_value_t JerryPolyfill::BuildMethod(const char* name, const char* fn_args, 
     }
 
     return method;
+}
+
+
+// TODO: remove these layering violations (this is a Jerry internal method, should not be visible here)
+extern "C" bool ecma_get_object_is_builtin(void* obj);
+#define ECMA_OBJECT_REF_ONE (1u << 6)
+#define ECMA_OBJECT_MAX_REF (0x3ffu << 6)
+#define ECMA_VALUE_TYPE_MASK 0x7u
+typedef uint32_t ecma_value_t;
+
+typedef struct {
+  /** type : 4 bit : ecma_object_type_t or ecma_lexical_environment_type_t
+                     depending on ECMA_OBJECT_FLAG_BUILT_IN_OR_LEXICAL_ENV
+      flags : 2 bit : ECMA_OBJECT_FLAG_BUILT_IN_OR_LEXICAL_ENV,
+                      ECMA_OBJECT_FLAG_EXTENSIBLE or ECMA_OBJECT_FLAG_NON_CLOSURE
+      refs : 10 bit (max 1023) */
+  uint16_t type_flags_refs;
+} header_ecma_object_t;
+
+static void *ecma_get_pointer_from_ecma_value (ecma_value_t value) {
+  void *ptr = (void *) (uintptr_t) ((value) & ~ECMA_VALUE_TYPE_MASK);
+  return ptr;
+}
+
+static bool collect_objects(const jerry_value_t object, void *user_data_p) {
+    std::vector<jerry_value_t>* objects = reinterpret_cast<std::vector<jerry_value_t>*>(user_data_p);
+
+    objects->push_back(object);
+
+    return true;
+}
+
+void JerryForceCleanup(void) {
+    jerry_gc(JERRY_GC_PRESSURE_HIGH);
+
+    std::vector<jerry_value_t> objects;
+    jerry_objects_foreach(collect_objects, &objects);
+
+    for (size_t idx = 0; idx < objects.size(); idx++) {
+        bool is_builtin = ecma_get_object_is_builtin((void*)(objects[idx] & ~0x3u));
+        if (!is_builtin) {
+            jerry_release_value(objects[idx]);
+        }
+    }
 }

@@ -407,6 +407,10 @@ void Isolate::CancelTerminateExecution(void) {
     JerryIsolate::fromV8(this)->CancelTerminate();
 }
 
+void Isolate::RequestGarbageCollectionForTesting(GarbageCollectionType type) {
+    JerryIsolate::GetCurrent()->RunWeakCleanup();
+}
+
 int64_t Isolate::AdjustAmountOfExternalAllocatedMemoryCustom(int64_t change_in_bytes) {
     V8_CALL_TRACE();
     // TODO: what to do?
