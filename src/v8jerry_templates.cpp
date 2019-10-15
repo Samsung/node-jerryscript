@@ -161,6 +161,17 @@ JerryValue* JerryFunctionTemplate::GetFunction(void) {
         InstallProperties(jfunction);
 
         m_function = new JerryValue(jfunction);
+
+        // Install the function prototype if there is any
+        if (m_prototype_template != NULL) {
+            JerryValue* new_instance = JerryValue::NewObject();
+            m_prototype_template->InstallProperties(new_instance->value());
+
+            JerryValue proto_string(jerry_create_string((const jerry_char_t*)"prototype"));
+
+            m_function->SetProperty(&proto_string, new_instance);
+            delete new_instance;
+        }
     }
 
     return m_function;

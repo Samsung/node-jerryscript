@@ -2053,6 +2053,9 @@ Local<Function> FunctionTemplate::GetFunction() {
 
 void FunctionTemplate::SetClassName(Local<String> name) {
     V8_CALL_TRACE();
+    JerryFunctionTemplate* tmplt = reinterpret_cast<JerryFunctionTemplate*>(this);
+    // Implicitly create an empty prototype object
+    JerryObjectTemplate* obj_template = tmplt->PrototypeTemplate();
     // TODO: This should be used as the constructor's name. Skip this for now.
 }
 
