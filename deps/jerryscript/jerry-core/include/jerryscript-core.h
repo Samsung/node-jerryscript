@@ -545,9 +545,20 @@ bool jerry_foreach_object_property (const jerry_value_t obj_val, jerry_object_pr
                                     void *user_data_p);
 
 /**
- * Promise resolve/reject functions.
+ * Promise functions.
  */
 jerry_value_t jerry_resolve_or_reject_promise (jerry_value_t promise, jerry_value_t argument, bool is_resolve);
+
+typedef enum
+{
+  JERRY_PROMISE_STATE_NONE = 0u,
+  JERRY_PROMISE_STATE_PENDING,
+  JERRY_PROMISE_STATE_FULFILLED,
+  JERRY_PROMISE_STATE_REJECTED,
+} jerry_promise_state_t;
+
+jerry_value_t jerry_get_promise_result (const jerry_value_t promise);
+jerry_promise_state_t jerry_get_promise_state (const jerry_value_t promise);
 
 /**
  * Symbol functions.
