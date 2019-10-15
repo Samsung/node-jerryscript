@@ -543,7 +543,6 @@ void Context::Exit() {
 
 Local<Object> Context::Global() {
     V8_CALL_TRACE();
-    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
     RETURN_HANDLE(Object, GetIsolate(), new JerryValue(jerry_get_global_object()));
 }
 
@@ -652,7 +651,7 @@ internal::Object** EscapableHandleScope::Escape(internal::Object** value) {
 
 /* SealHandleScope */
 SealHandleScope::SealHandleScope(Isolate* isolate)
-    : isolate_(reinterpret_cast<v8::internal::Isolate* const>(isolate))
+    : isolate_(reinterpret_cast<v8::internal::Isolate*>(isolate))
 {
     V8_CALL_TRACE();
     JerryIsolate::fromV8(isolate_)->PushHandleScope(JerryHandleScopeType::Sealed, this);
@@ -1298,8 +1297,6 @@ Maybe<bool> Object::HasOwnProperty(Local<Context> ctx, Local<Name> key) {
     JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
     JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
 
-    JerryIsolate* iso = JerryIsolate::GetCurrent();
-
     jerry_value_t has_prop = jerry_has_own_property(jobject->value(), jkey->value());
     bool property_exists = jerry_get_boolean_value(has_prop);
     jerry_release_value(property_exists);
@@ -1696,7 +1693,7 @@ int String::WriteOneByte(uint8_t* buffer, int start, int length, int options) co
 
     jerry_size_t str_length = jerry_get_string_length(jvalue->value());
 
-    if ((length == -1) || (start + length > str_length)) {
+    if ((length == -1) || ((jerry_size_t)(start + length) > str_length)) {
         length = str_length - start;
     }
 
@@ -1715,7 +1712,7 @@ int String::Write(uint16_t* buffer, int start, int length, int options) const {
 
     jerry_size_t str_length = jerry_get_utf8_string_length(jvalue->value());
 
-    if ((length == -1) || (start + length > str_length)) {
+    if ((length == -1) || ((jerry_size_t)(start + length) > str_length)) {
         length = str_length - start;
     }
 
@@ -2054,8 +2051,8 @@ Local<Function> FunctionTemplate::GetFunction() {
 void FunctionTemplate::SetClassName(Local<String> name) {
     V8_CALL_TRACE();
     JerryFunctionTemplate* tmplt = reinterpret_cast<JerryFunctionTemplate*>(this);
-    // Implicitly create an empty prototype object
-    JerryObjectTemplate* obj_template = tmplt->PrototypeTemplate();
+    // Trigger creation of the prototype object if it was not done yet:
+    (void)tmplt->PrototypeTemplate();
     // TODO: This should be used as the constructor's name. Skip this for now.
 }
 
@@ -2375,6 +2372,7 @@ Promise::PromiseState Promise::State(void) {
         case JERRY_PROMISE_STATE_PENDING: return Promise::kPending;
         case JERRY_PROMISE_STATE_FULFILLED: return Promise::kFulfilled;
         case JERRY_PROMISE_STATE_REJECTED: return Promise::kRejected;
+        default: break;
     }
 
     // TODO: what to return?

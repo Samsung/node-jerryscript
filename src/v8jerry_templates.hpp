@@ -111,8 +111,8 @@ struct AccessorEntry {
         : name(name)
         , data(data)
         , settings(settings)
-        , attribute(attribute)
         , is_named(false)
+        , attribute(attribute)
     {
         this->getter.stringed = getter;
         this->setter.stringed = setter;
@@ -127,8 +127,8 @@ struct AccessorEntry {
         : name(name)
         , data(data)
         , settings(settings)
-        , attribute(attribute)
         , is_named(true)
+        , attribute(attribute)
     {
         this->getter.named = getter;
         this->setter.named = setter;
