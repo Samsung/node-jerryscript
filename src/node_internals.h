@@ -86,7 +86,7 @@ struct sockaddr;
     V(buffer)                                                                 \
     V(cares_wrap)                                                             \
     V(config)                                                                 \
-    /*V(contextify)*/                                                             \
+    V(contextify)                                                             \
     V(fs)                                                                     \
     V(fs_event_wrap)                                                          \
     /*V(http2)*/                                                                  \
