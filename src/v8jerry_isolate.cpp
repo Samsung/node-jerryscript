@@ -14,7 +14,6 @@ JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
 JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     m_terminated = false;
     jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
-    jerry_port_default_set_abort_on_fail(true);
     m_fatalErrorCallback = nullptr;
 
     m_fn_map_new = new JerryPolyfill("new_map", "", "return new Map();");

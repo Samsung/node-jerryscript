@@ -6,10 +6,9 @@
     {
       'target_name': 'v8',
       'type': 'static_library',
-      'dependencies': ['deps/jerry/jerry.gyp:jerry'],
+      'dependencies': ['deps/jerryscript.gyp:jerry'],
       'include_dirs+': [
         'deps/v8-headers',
-        'deps/jerry',
         '<(DEPTH)',
         '<(SHARED_INTERMEDIATE_DIR)'
       ],
