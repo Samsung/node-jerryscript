@@ -192,7 +192,10 @@ void JerryIsolate::SetError(JerryValue* error) {
             msg[copied] = static_cast<jerry_char_t>('\0');
 
             std::cerr << "# " << idx << ": " << (const char*)&msg[0] << std::endl;
+
+            jerry_release_value(property);
         }
+        jerry_release_value(stack_trace);
     }
 }
 
