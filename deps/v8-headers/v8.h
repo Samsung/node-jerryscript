@@ -8201,6 +8201,9 @@ class V8_EXPORT V8 {
  private:
   V8();
 
+  /* TODO: remove */
+  static bool IsWeak(internal::Object** handle);
+
   static internal::Object** GlobalizeReference(internal::Isolate* isolate,
                                                internal::Object** handle);
   static internal::Object** CopyPersistent(internal::Object** handle);
@@ -9305,12 +9308,15 @@ bool PersistentBase<T>::IsNearDeath() const {
 }
 
 
+
 template <class T>
 bool PersistentBase<T>::IsWeak() const {
-  typedef internal::Internals I;
+  // TODO: revert to original
+  //typedef internal::Internals I;
   if (this->IsEmpty()) return false;
-  return I::GetNodeState(reinterpret_cast<internal::Object**>(this->val_)) ==
-      I::kNodeStateIsWeakValue;
+  return V8::IsWeak(reinterpret_cast<internal::Object**>(this->val_));
+  /*return I::GetNodeState(reinterpret_cast<internal::Object**>(this->val_)) ==
+      I::kNodeStateIsWeakValue;*/
 }
 
 
@@ -9598,8 +9604,11 @@ Local<Object> FunctionCallbackInfo<T>::Holder() const {
 
 template <typename T>
 Local<Value> FunctionCallbackInfo<T>::NewTarget() const {
+  // TODO: revert to original:
+  //return Local<Value>(
+  //    reinterpret_cast<Value*>(&implicit_args_[kNewTargetIndex]));
   return Local<Value>(
-      reinterpret_cast<Value*>(&implicit_args_[kNewTargetIndex]));
+      reinterpret_cast<Value*>(implicit_args_[kNewTargetIndex]));
 }
 
 template <typename T>

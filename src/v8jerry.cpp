@@ -166,6 +166,11 @@ void V8::MakeWeak(v8::internal::Object** global_handle, void* data,
     object->MakeWeak(weak_callback, type, data);
 }
 
+bool V8::IsWeak(internal::Object** global_handle) {
+    JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(global_handle);
+    return JerryHandle::IsValueType(jhandle) && (reinterpret_cast<JerryValue*>(global_handle)->IsWeakReferenced());
+}
+
 void* V8::ClearWeak(internal::Object** global_handle) {
     JerryValue* object = reinterpret_cast<JerryValue*> (global_handle);
 
