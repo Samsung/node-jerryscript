@@ -307,10 +307,9 @@ void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8
     assert(IsWeakReferenced() == false);
 
     JerryV8WeakReferenceData* weak_data = new JerryV8WeakReferenceData(weak_callback, type, data);
-    JerryValue* object_copy = Copy();
-    jerry_set_object_native_pointer(object_copy->value(), weak_data, &JerryV8WeakReferenceInfo);
+    jerry_set_object_native_pointer(value(), weak_data, &JerryV8WeakReferenceInfo);
 
-    JerryIsolate::GetCurrent()->AddAsWeak(object_copy);
+    JerryIsolate::GetCurrent()->AddAsWeak(this);
 }
 
 void* JerryValue::ClearWeak() {
