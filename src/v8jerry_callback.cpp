@@ -202,12 +202,13 @@ private:
 
         values[v8::FunctionCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(handlerData->function_template->external())); /* data; */
         values[v8::FunctionCallbackInfo<T>::kCalleeIndex] = NULL; /* callee; */
-        values[v8::FunctionCallbackInfo<T>::kNewTargetIndex] = NULL; /* new_target; */
+        values[v8::FunctionCallbackInfo<T>::kNewTargetIndex] = new JerryValue(jerry_acquire_value(this_val)); /* new_target; */
 
         // HandleScope will do the cleanup for us at a later stage
         JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kHolderIndex]);
         JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kReturnValueIndex]);
         JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kDataIndex]);
+        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kNewTargetIndex]);
 
         return values;
     }
