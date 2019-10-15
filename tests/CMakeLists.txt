@@ -14,6 +14,7 @@ add_test(test_hello.cpp)
 
 add_test(arraybuffer.cpp)
 add_test(handle_scope.cpp)
+add_test(local_alloc.cpp)
 add_test(object.cpp)
 add_test(object_template.cpp)
 add_test(script.cpp)
