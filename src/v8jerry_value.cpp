@@ -308,3 +308,14 @@ void* JerryValue::ClearWeak() {
 
     return weak_data->data;
 }
+
+void JerryValue::RunWeakCleanup() {
+    assert(IsWeakReferenced() == true);
+
+    JerryV8WeakReferenceData* weak_data;
+    jerry_get_object_native_pointer (m_value, reinterpret_cast<void**>(&weak_data), &JerryV8WeakReferenceInfo);
+    jerry_set_object_native_pointer (m_value, NULL, &JerryV8WeakReferenceInfo);
+    //jerry_delete_object_native_pointer(m_value, &JerryV8WeakReferenceInfo);
+
+    JerryV8WeakReferenceInfo.free_cb(weak_data);
+}

@@ -178,22 +178,36 @@ void* V8::ClearWeak(internal::Object** global_handle) {
 }
 
 void V8::DisposeGlobal(internal::Object** global_handle) {
-    JerryValue* object = reinterpret_cast<JerryValue*> (global_handle);
+    JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(global_handle);
 
-    if (object->IsWeakReferenced()) {
-        object->ClearWeak();
+    if (JerryHandle::IsValueType(jhandle)) {
+        JerryValue* object = reinterpret_cast<JerryValue*> (global_handle);
+
+        if (object->IsWeakReferenced()) {
+            object->RunWeakCleanup();
+            JerryIsolate::GetCurrent()->RemoveAsWeak(object);
+            //object->ClearWeak();
+        }
+
+        delete object;
     }
-
-    delete object;
 }
 
 internal::Object** V8::GlobalizeReference(internal::Isolate* isolate, internal::Object** handle) {
     JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(handle);
-    assert(jhandle->type() == JerryHandle::Value);
 
-    JerryValue* jcopy = reinterpret_cast<JerryValue*>(jhandle)->CopyToGlobal();
+    JerryHandle* result;
+    switch (jhandle->type()) {
+        case JerryHandle::GlobalValue:
+        case JerryHandle::Value: result = reinterpret_cast<JerryValue*>(jhandle)->CopyToGlobal(); break;
+        case JerryHandle::ObjectTemplate:
+        case JerryHandle::FunctionTemplate: result = jhandle; break;
+        default:
+            assert(false && "Unkown Handle type detected");
+    }
 
-    return reinterpret_cast<internal::Object**>(jcopy);
+
+    return reinterpret_cast<internal::Object**>(result);
 }
 
 /* Locker */
@@ -568,6 +582,7 @@ internal::Object** HandleScope::CreateHandle(internal::Isolate* isolate, interna
             // A "global" (Persistent/PersistentBase) should never be in a handle scope
             JerryHandle* jcopy = reinterpret_cast<JerryValue*>(jhandle)->Copy();
             iso->AddToHandleScope(jcopy);
+            return reinterpret_cast<internal::Object**>(jcopy);
             break;
         }
         case JerryHandle::Value:

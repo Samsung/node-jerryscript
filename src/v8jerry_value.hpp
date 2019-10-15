@@ -176,6 +176,8 @@ public:
     void MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data);
     bool IsWeakReferenced();
     void* ClearWeak();
+    void RunWeakCleanup();
+
 
     static void CreateInternalFields(jerry_value_t target, int field_count);
     JerryV8InternalFieldData* GetInternalFieldData(int idx);

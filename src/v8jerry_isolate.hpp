@@ -38,6 +38,7 @@ public:
     bool IsTerminated(void) const { return m_terminated; }
     void Terminate(void) { m_terminated = true; }
 
+    void RunWeakCleanup(void);
     void Dispose(void);
 
     void PushTryCatch(void* try_catch_obj);
