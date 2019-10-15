@@ -40,6 +40,7 @@ public:
     void Exit(void);
     bool IsTerminated(void) const { return m_terminated; }
     void Terminate(void) { m_terminated = true; }
+    void CancelTerminate(void) { m_terminated = false; }
 
     void RunWeakCleanup(void);
     void Dispose(void);
