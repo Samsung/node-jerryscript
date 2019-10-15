@@ -24,6 +24,9 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     m_fn_object_assign = new JerryPolyfill("object_assign", "value", "return Object.assign({}, value);");
     m_fn_conversion_failer =
         new JerryPolyfill("conv_fail", "", "this.toString = this.valueOf = function() { throw new TypeError('Invalid usage'); }");
+    m_fn_get_own_prop = new JerryPolyfill("get_own_prop", "key", "return Object.getOwnPropertyDescriptor(this, key);");
+    m_fn_get_own_names = new JerryPolyfill("get_own_names", "", "return Object.getOwnPropertyNames(this);");
+    m_fn_get_names = new JerryPolyfill("get_names", "", "var names = []; for (var name in this) { names.push(name); } return names;");
 
     InitalizeSlots();
 
@@ -104,6 +107,9 @@ void JerryIsolate::Dispose(void) {
     delete m_fn_map_set;
     delete m_fn_object_assign;
     delete m_fn_conversion_failer;
+    delete m_fn_get_own_prop;
+    delete m_fn_get_own_names;
+    delete m_fn_get_names;
 
     // Release slots
     {

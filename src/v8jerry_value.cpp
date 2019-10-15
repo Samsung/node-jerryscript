@@ -63,6 +63,13 @@ JerryValue* JerryValue::GetPropertyIdx(uint32_t idx) {
     return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);
 }
 
+JerryValue* JerryValue::GetOwnPropertyDescriptor(const JerryValue& jkey) const {
+    jerry_value_t key = jkey.value();
+    jerry_value_t descriptor = JerryIsolate::GetCurrent()->HelperGetOwnPropDesc().Call(m_value, &key, 1);
+
+    return new JerryValue(descriptor);
+}
+
 static const jerry_object_native_info_t JerryV8ObjectContextTypeInfo = {
     /* native_pointer stores JerryContext (aka JerryValue*) which will be freed via the handlescope */
     .free_cb = NULL

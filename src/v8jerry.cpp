@@ -401,6 +401,12 @@ void Isolate::TerminateExecution(void) {
     JerryIsolate::fromV8(this)->Terminate();
 }
 
+void Isolate::CancelTerminateExecution(void) {
+    V8_CALL_TRACE();
+    // TODO: maybe disable all JS calls somehow?
+    JerryIsolate::fromV8(this)->CancelTerminate();
+}
+
 int64_t Isolate::AdjustAmountOfExternalAllocatedMemoryCustom(int64_t change_in_bytes) {
     V8_CALL_TRACE();
     // TODO: what to do?
@@ -550,6 +556,36 @@ void* Context::SlowGetAlignedPointerFromEmbedderData(int index) {
     assert(ctx->IsContextObject());
     return ctx->ContextGetEmbedderData(index);
 }
+
+static int kContextSecurityTokenIdx = 2;
+
+void Context::SetSecurityToken(Local<Value> value) {
+    V8_CALL_TRACE();
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+
+    ctx->SetInternalField(kContextSecurityTokenIdx, reinterpret_cast<JerryValue*>(*value));
+}
+
+Local<Value> Context::GetSecurityToken() {
+    V8_CALL_TRACE();
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+    JerryValue* prop = ctx->GetInternalField<JerryValue*>(kContextSecurityTokenIdx);
+    RETURN_HANDLE(Value, GetIsolate(), prop);
+}
+
+void Context::SetEmbedderData(int index, Local<Value> value) {
+    V8_CALL_TRACE();
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+    ctx->SetInternalField(index, reinterpret_cast<JerryValue*>(*value));
+}
+
+Local<Value> Context::SlowGetEmbedderData(int index) {
+    V8_CALL_TRACE();
+    JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+    JerryValue* data = ctx->GetInternalField<JerryValue*>(index);
+    RETURN_HANDLE(Value, GetIsolate(), data);
+}
+
 
 /* HandleScope */
 HandleScope::HandleScope(Isolate* isolate)
@@ -702,6 +738,12 @@ Local<Object> Value::ToObject(Isolate* isolate) const {
     V8_CALL_TRACE();
     JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToObject();
     RETURN_HANDLE(Object, isolate, result);
+}
+
+MaybeLocal<Integer> Value::ToInteger(Local<Context> context) const {
+    V8_CALL_TRACE();
+    JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+    RETURN_HANDLE(Integer, context->GetIsolate(), result);
 }
 
 bool Value::IsBoolean() const {
@@ -976,6 +1018,80 @@ void* External::Value() const {
     return reinterpret_cast<const JerryValue*>(this)->GetExternalData();
 }
 
+/* PropertyDescriptor */
+
+struct PropertyDescriptor::PrivateData {
+    bool enumerable : 1;
+    bool has_enumerable : 1;
+    bool configurable : 1;
+    bool has_configurable : 1;
+    bool writable : 1;
+    bool has_writable : 1;
+    Local<Value> value;
+    Local<Value> get;
+    Local<Value> set;
+
+    PrivateData()
+        : enumerable(false)
+        , has_enumerable(false)
+        , configurable(false)
+        , has_configurable(false)
+        , writable(false)
+        , has_writable(false)
+    {}
+};
+
+PropertyDescriptor::PropertyDescriptor()
+    : private_(new PrivateData())
+{
+}
+
+PropertyDescriptor::PropertyDescriptor(Local<Value> value, bool writable)
+    : private_(new PrivateData())
+{
+    private_->value = value;
+    private_->has_writable = true;
+    private_->writable = writable;
+}
+
+PropertyDescriptor::PropertyDescriptor(v8::Local<v8::Value> get, v8::Local<v8::Value> set)
+    : private_(new PrivateData())
+{
+    private_->get = get;
+    private_->set = set;
+}
+
+Local<Value> PropertyDescriptor::value() const { return private_->value; }
+bool PropertyDescriptor::has_value() const { return !private_->value.IsEmpty(); }
+
+Local<Value> PropertyDescriptor::get() const { return private_->get; }
+bool PropertyDescriptor::has_get() const { return !private_->get.IsEmpty(); }
+Local<Value> PropertyDescriptor::set() const { return private_->set; }
+bool PropertyDescriptor::has_set() const { return !private_->set.IsEmpty(); }
+
+void PropertyDescriptor::set_enumerable(bool enumerable) {
+    private_->enumerable = enumerable;
+    private_->has_enumerable = true;
+}
+
+bool PropertyDescriptor::enumerable() const { return private_->enumerable; }
+bool PropertyDescriptor::has_enumerable() const { return private_->has_enumerable; }
+
+void PropertyDescriptor::set_configurable(bool configurable) {
+    private_->configurable = configurable;
+    private_->has_configurable = true;
+}
+
+bool PropertyDescriptor::configurable() const { return private_->configurable; }
+bool PropertyDescriptor::has_configurable() const { return private_->has_configurable; }
+
+bool PropertyDescriptor::writable() const { return private_->writable; }
+bool PropertyDescriptor::has_writable() const { return private_->has_writable; }
+
+PropertyDescriptor::~PropertyDescriptor() {
+    delete reinterpret_cast<PrivateData*>(private_);
+}
+
 /* Object */
 Local<Object> Object::New(Isolate* isolate) {
     V8_CALL_TRACE();
@@ -1091,6 +1207,102 @@ Maybe<bool> Object::SetPrivate(Local<Context> context, Local<Private> key, Local
                     reinterpret_cast<JerryValue*>(*value)));
 }
 
+MaybeLocal<Value> Object::GetOwnPropertyDescriptor(Local<Context> context, Local<Name> key) {
+    V8_CALL_TRACE();
+    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+    JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+    JerryValue* property_object = jobject->GetOwnPropertyDescriptor(*jkey);
+    RETURN_HANDLE(Value, context->GetIsolate(), property_object);
+}
+
+Local<Array> Object::GetOwnPropertyNames() {
+    V8_CALL_TRACE();
+    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+
+    JerryIsolate* iso = JerryIsolate::GetCurrent();
+    jerry_value_t props = iso->HelperGetOwnPropNames().Call(jobject->value(), NULL, 0);
+
+    RETURN_HANDLE(Array, JerryIsolate::toV8(iso), new JerryValue(props));
+}
+
+Local<Array> Object::GetPropertyNames() {
+    V8_CALL_TRACE();
+    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+
+    JerryIsolate* iso = JerryIsolate::GetCurrent();
+
+    jerry_value_t props = iso->HelperGetNames().Call(jobject->value(), NULL, 1);
+
+    RETURN_HANDLE(Array, JerryIsolate::toV8(iso), new JerryValue(props));
+}
+
+MaybeLocal<Value> Object::GetRealNamedProperty(Local<Context> ctx, Local<Name> key) {
+    V8_CALL_TRACE();
+    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+    JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+    jerry_value_t property = jerry_get_property(jobject->value(), jkey->value());
+
+    JerryValue* result = NULL;
+    if (!jerry_value_is_error(property)) {
+        result = new JerryValue(property);
+    } else {
+        jerry_release_value(property);
+    }
+
+    RETURN_HANDLE(Value, ctx->GetIsolate(), result);
+}
+
+Maybe<PropertyAttribute> Object::GetRealNamedPropertyAttributes(Local<Context> ctx, Local<Name> key) {
+    V8_CALL_TRACE();
+    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+    JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+    int attributes = PropertyAttribute::None;
+
+    jerry_value_t target_object = jerry_acquire_value(jobject->value());
+    bool found = false;
+    do {
+        jerry_property_descriptor_t prop_desc;
+        jerry_init_property_descriptor_fields(&prop_desc);
+
+        found = jerry_get_own_property_descriptor(target_object, jkey->value(), &prop_desc);
+
+        if (found) {
+            if (prop_desc.is_writable_defined && !prop_desc.is_writable) { attributes |= PropertyAttribute::ReadOnly; }
+            if (prop_desc.is_enumerable_defined && !prop_desc.is_enumerable) { attributes |= PropertyAttribute::DontEnum; }
+            if (prop_desc.is_configurable_defined && !prop_desc.is_configurable) { attributes |= PropertyAttribute::DontDelete; }
+        } else {
+            jerry_value_t new_target_object = jerry_get_prototype(target_object);
+            jerry_release_value(target_object);
+
+            target_object = new_target_object;
+        }
+
+        jerry_free_property_descriptor_fields(&prop_desc);
+    } while (!found && !jerry_value_is_null(target_object));
+
+    jerry_release_value(target_object);
+
+    return found ? Just((PropertyAttribute)attributes) : Nothing<PropertyAttribute>();
+}
+
+Maybe<bool> Object::HasOwnProperty(Local<Context> ctx, Local<Name> key) {
+    V8_CALL_TRACE();
+
+    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+    JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+    JerryIsolate* iso = JerryIsolate::GetCurrent();
+
+    jerry_value_t has_prop = jerry_has_own_property(jobject->value(), jkey->value());
+    bool property_exists = jerry_get_boolean_value(has_prop);
+    jerry_release_value(property_exists);
+
+    return Just(property_exists);
+}
+
 Maybe<bool> Object::DefineOwnProperty(Local<Context> context, Local<Name> key, Local<Value> value, PropertyAttribute attributes) {
     V8_CALL_TRACE();
     JerryValue* obj = reinterpret_cast<JerryValue*> (this);
@@ -1119,6 +1331,49 @@ Maybe<bool> Object::DefineOwnProperty(Local<Context> context, Local<Name> key, L
     return Just(isOk);
 }
 
+Maybe<bool> Object::DefineProperty(Local<Context> context, Local<Name> key, PropertyDescriptor& descriptor) {
+    V8_CALL_TRACE();
+    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+    JerryValue* jname = reinterpret_cast<JerryValue*>(*key);
+
+    jerry_property_descriptor_t prop_desc;
+    jerry_init_property_descriptor_fields(&prop_desc);
+
+
+    if (descriptor.has_value()) {
+        prop_desc.is_value_defined = true;
+        prop_desc.value = jerry_acquire_value(reinterpret_cast<JerryValue*>(*descriptor.value())->value());
+    }
+    if (descriptor.has_get()) {
+        prop_desc.is_get_defined = true;
+        prop_desc.getter = jerry_acquire_value(reinterpret_cast<JerryValue*>(*descriptor.get())->value());
+    }
+    if (descriptor.has_set()) {
+        prop_desc.is_set_defined = true;
+        prop_desc.setter = jerry_acquire_value(reinterpret_cast<JerryValue*>(*descriptor.set())->value());
+    }
+    if (descriptor.has_enumerable()) {
+        prop_desc.is_enumerable_defined = true;
+        prop_desc.is_enumerable = descriptor.enumerable();
+    }
+    if (descriptor.has_writable()) {
+        prop_desc.is_writable_defined = true;
+        prop_desc.is_writable = descriptor.writable();
+    }
+    if (descriptor.has_configurable()) {
+        prop_desc.is_configurable_defined = true;
+        prop_desc.is_configurable = descriptor.configurable();
+    }
+
+    jerry_value_t result = jerry_define_own_property(jobject->value(), jname->value(), &prop_desc);
+    bool property_set = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+    jerry_release_value(result);
+
+    jerry_free_property_descriptor_fields(&prop_desc);
+
+    return Just(property_set);
+}
+
 Maybe<bool> Object::SetPrototype(Local<Context> context, Local<v8::Value> prototype) {
     V8_CALL_TRACE();
     return Just(SetPrototype(prototype));
@@ -1134,6 +1389,14 @@ bool Object::SetPrototype(Local<Value> prototype) {
     jerry_release_value(result);
 
     return isOk;
+}
+
+Local<Value> Object::GetPrototype() {
+    V8_CALL_TRACE();
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+
+    JerryValue* jproto = new JerryValue(jerry_get_prototype(jobj->value()));
+    RETURN_HANDLE(Value, JerryIsolate::toV8(JerryIsolate::GetCurrent()), jproto);
 }
 
 Isolate* Object::GetIsolate() {
@@ -1217,6 +1480,12 @@ Local<Object> Object::Clone(void) {
     jerry_value_t result = JerryIsolate::fromV8(GetIsolate())->HelperObjectAssign().Call(jerry_create_undefined(), &arg, 1);
 
     RETURN_HANDLE(Object, GetIsolate(), new JerryValue(result));
+}
+
+Local<String> Object::GetConstructorName(void) {
+    V8_CALL_TRACE();
+    // TODO: add implementation
+    return Local<String>();
 }
 
 /* Array */
@@ -1569,7 +1838,64 @@ Local<String> String::Concat(Local<String> left, Local<String> right) {
 
 void String::VerifyExternalStringResource(String::ExternalStringResource* resource) const {}
 
+/* UnboundScript */
+Local<Script> UnboundScript::BindToCurrentContext() {
+    V8_CALL_TRACE();
+    JerryValue* code = reinterpret_cast<JerryValue*>(this);
+    RETURN_HANDLE(Script, JerryIsolate::toV8(JerryIsolate::GetCurrent()), code->Copy());
+}
+
 /* Script */
+ScriptCompiler::CachedData::CachedData(const uint8_t* data, int length, BufferPolicy buffer_policy)
+    : data(data)
+    , length(length)
+    , rejected(false)
+    , buffer_policy(buffer_policy) {
+    V8_CALL_TRACE();
+}
+
+ScriptCompiler::CachedData::~CachedData() {
+    V8_CALL_TRACE();
+    if (buffer_policy == BufferOwned) {
+        delete [] data;
+    }
+}
+
+MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(Isolate* isolate, Source* source, CompileOptions options) {
+    V8_CALL_TRACE();
+    if (options == ScriptCompiler::kProduceCodeCache) {
+        String::Utf8Value text(source->source_string);
+        uint8_t* copy = new uint8_t[text.length()];
+        memcpy(copy, *text, text.length());
+        source->cached_data = new ScriptCompiler::CachedData((const uint8_t*) copy, text.length());
+    } else if (options == ScriptCompiler::kConsumeCodeCache) {
+        String::Utf8Value text(source->source_string);
+        CachedData* data = source->cached_data;
+        if (data->length != text.length() || memcmp(data->data, (const uint8_t*) *text, text.length())) {
+            data->rejected = true;
+        }
+    }
+    return CompileUnbound(isolate, source, options);
+}
+
+
+Local<UnboundScript> ScriptCompiler::CompileUnbound(Isolate* isolate, Source* source, CompileOptions options /* = kNoCompileOptions */) {
+    V8_CALL_TRACE();
+    Local<String> file = source->resource_name.IsEmpty() ? source->resource_name.As<String>() : source->resource_name->ToString(isolate);
+
+    String::Utf8Value text(source->source_string);
+    String::Utf8Value fileName(file);
+
+    jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
+                                               file->Utf8Length(),
+                                               (const jerry_char_t*)*text,
+                                               source->source_string->Utf8Length(),
+                                               JERRY_PARSE_NO_OPTS);
+
+    JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
+    RETURN_HANDLE(UnboundScript, isolate, result);
+}
+
 MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source, ScriptOrigin* origin /* = nullptr */) {
     V8_CALL_TRACE();
     std::vector<jerry_char_t> sourceString;
@@ -2125,6 +2451,17 @@ void TracingController::RemoveTraceStateObserver(v8::TracingController::TraceSta
 } // namespace tracing
 } // namespace platform
 /* Dummy tracing END*/
+
+/* Debug */
+bool Debug::SetDebugEventListener(Isolate* isolate, Debug::EventCallback that, Local<Value> data) {
+    V8_CALL_TRACE();
+    return false;
+}
+
+Local<Context> Debug::GetDebugContext(v8::Isolate* isolate) {
+    V8_CALL_TRACE();
+    RETURN_HANDLE(Context, isolate, JerryValue::NewContextObject(JerryIsolate::fromV8(isolate)));
+}
 
 /* DebugBreak */
 void Debug::DebugBreak(Isolate*) {

@@ -96,6 +96,8 @@ public:
     JerryValue* GetProperty(JerryValue* key);
     JerryValue* GetPropertyIdx(uint32_t idx);
 
+    JerryValue* GetOwnPropertyDescriptor(const JerryValue& jkey) const;
+
     bool IsString() const { return jerry_value_is_string(m_value); }
     bool IsBoolean() const { return jerry_value_is_boolean(m_value); }
     bool IsFalse() const { return jerry_value_is_boolean(m_value) && !jerry_get_boolean_value(m_value); }

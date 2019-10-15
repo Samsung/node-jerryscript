@@ -32,6 +32,9 @@ public:
     const JerryPolyfill& HelperIsMap(void) const { return *m_fn_is_map; }
     const JerryPolyfill& HelperIsSet(void) const { return *m_fn_is_set; }
     const JerryPolyfill& HelperConversionFailer(void) const { return *m_fn_conversion_failer; }
+    const JerryPolyfill& HelperGetOwnPropDesc(void) const { return *m_fn_get_own_prop; }
+    const JerryPolyfill& HelperGetOwnPropNames(void) const { return *m_fn_get_own_names; }
+    const JerryPolyfill& HelperGetNames(void) const { return *m_fn_get_names; }
 
     void Enter(void);
     void Exit(void);
@@ -124,6 +127,9 @@ private:
     JerryPolyfill* m_fn_map_set;
     JerryPolyfill* m_fn_object_assign;
     JerryPolyfill* m_fn_conversion_failer;
+    JerryPolyfill* m_fn_get_own_prop;
+    JerryPolyfill* m_fn_get_own_names;
+    JerryPolyfill* m_fn_get_names;
 
     JerryValue* m_magic_string_stack;
 
