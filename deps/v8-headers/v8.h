@@ -9512,28 +9512,28 @@ void ReturnValue<T>::Set(bool value) {
   } else {
     root_index = I::kFalseValueRootIndex;
   }
-  *value_ = *I::GetRoot(GetIsolate(), root_index);
+  *value_ = reinterpret_cast<internal::Object*>(I::GetRoot(GetIsolate(), root_index));
 }
 
 template<typename T>
 void ReturnValue<T>::SetNull() {
   TYPE_CHECK(T, Primitive);
   typedef internal::Internals I;
-  *value_ = *I::GetRoot(GetIsolate(), I::kNullValueRootIndex);
+  *value_ = reinterpret_cast<internal::Object*>(I::GetRoot(GetIsolate(), I::kNullValueRootIndex));
 }
 
 template<typename T>
 void ReturnValue<T>::SetUndefined() {
   TYPE_CHECK(T, Primitive);
   typedef internal::Internals I;
-  *value_ = *I::GetRoot(GetIsolate(), I::kUndefinedValueRootIndex);
+  *value_ = reinterpret_cast<internal::Object*>(I::GetRoot(GetIsolate(), I::kUndefinedValueRootIndex));
 }
 
 template<typename T>
 void ReturnValue<T>::SetEmptyString() {
   TYPE_CHECK(T, String);
   typedef internal::Internals I;
-  *value_ = *I::GetRoot(GetIsolate(), I::kEmptyStringRootIndex);
+  *value_ = reinterpret_cast<internal::Object*>(I::GetRoot(GetIsolate(), I::kEmptyStringRootIndex));
 }
 
 template <typename T>
