@@ -5,12 +5,15 @@
   'targets': [
     {
       'target_name': 'v8',
+      'dependencies_traverse': 1,
       'type': 'static_library',
-      'dependencies': ['deps/jerryscript.gyp:jerry'],
+      'dependencies': [
+        'deps/jerryscript.gyp:jerrysource',
+        'deps/jerryscript.gyp:jerry',
+      ],
       'include_dirs+': [
         'deps/v8-headers',
         '<(DEPTH)',
-        '<(SHARED_INTERMEDIATE_DIR)'
       ],
       'direct_dependent_settings': {
         'defines': [ 'V8JERRY' ],
