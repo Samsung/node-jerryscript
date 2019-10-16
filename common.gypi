@@ -50,7 +50,8 @@
       }],
 
       ['node_use_jerry=="true"', {
-        'v8_base': '<(PRODUCT_DIR)/deps/libjerry.a',
+        'obj_dir%': '<(PRODUCT_DIR)/obj.target',
+        'v8_base': '<(PRODUCT_DIR)/obj.target/deps/jerry-v8/deps/libjerry.a',
       }],
 
       ['OS == "win"', {
