@@ -3,12 +3,15 @@
 #include <v8-profiler.h>
 #include <libplatform/libplatform.h>
 
+#include <algorithm>
 #include <cassert>
+#include <codecvt>
 #include <cstring>
 #include <deque>
+#include <locale>
 #include <stack>
+#include <string>
 #include <vector>
-#include <algorithm>
 
 #include "jerryscript.h"
 #include "jerryscript-port-default.h"
@@ -1606,14 +1609,12 @@ ScriptOrigin Message::GetScriptOrigin() const {
 MaybeLocal<String> String::NewFromOneByte(
     Isolate* isolate, unsigned char const* data, v8::NewStringType type, int length /* = -1 */) {
     V8_CALL_TRACE();
-    // TODO: what is the diff between the OneByte/TwoByte/Utf8 etc.?
     return String::NewFromUtf8(isolate, (const char*)data, (String::NewStringType)type, length);
 }
 
 Local<String> String::NewFromOneByte(
     Isolate* isolate, unsigned char const* data, String::NewStringType type /* = kNormalString */, int length /* = -1 */) {
     V8_CALL_TRACE();
-    // TODO: what is the diff between the OneByte/TwoByte/Utf8 etc.?
     return String::NewFromUtf8(isolate, (const char*)data, (String::NewStringType)type, length);
 }
 
@@ -1641,9 +1642,14 @@ MaybeLocal<String> String::NewFromUtf8(
     return String::NewFromUtf8(isolate, data, (String::NewStringType)type, length);
 }
 
-/* Two-byte strings are not supported. Fallback to UTF-8. */
+/* Two-byte strings are not supported directly convert it to UTF-8. */
 MaybeLocal<String> String::NewFromTwoByte(Isolate* isolate, const uint16_t* data, v8::NewStringType type, int length) {
-    return String::NewFromUtf8(isolate, (const char*)data, (String::NewStringType)type, length);
+    // Possible todo: remove the UTF16->UTF8 conversion
+    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
+    std::string dest = convert.to_bytes(reinterpret_cast<const char16_t*>(data),
+                                        reinterpret_cast<const char16_t*>(data + length));
+
+    return String::NewFromUtf8(isolate, dest.c_str(), (String::NewStringType)type, dest.size());
 }
 
 /* External strings are not supported yet. */
