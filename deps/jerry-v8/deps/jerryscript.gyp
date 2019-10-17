@@ -58,6 +58,12 @@
       'sources': [
         '<@(generated_sources)',
       ],
+      'cflags': [
+        '-std=c99',
+        '-pedantic',
+        '-mfpmath=sse',
+        '-msse2',
+      ],
       'conditions': [
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
