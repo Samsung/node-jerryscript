@@ -109,9 +109,9 @@ struct AccessorEntry {
                   v8::AccessControl settings,
                   v8::PropertyAttribute attribute)
         : name(name)
+        , is_named(false)
         , data(data)
         , settings(settings)
-        , is_named(false)
         , attribute(attribute)
     {
         this->getter.stringed = getter;
@@ -125,9 +125,9 @@ struct AccessorEntry {
                   v8::AccessControl settings,
                   v8::PropertyAttribute attribute)
         : name(name)
+        , is_named(true)
         , data(data)
         , settings(settings)
-        , is_named(true)
         , attribute(attribute)
     {
         this->getter.named = getter;

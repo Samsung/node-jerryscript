@@ -35,8 +35,8 @@ void JerryTemplate::InstallProperties(const jerry_value_t target) {
             }
         }
 
-        bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
         /* TODO: check isOK? */
+        // bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
         jerry_release_value(result);
     }
 }
