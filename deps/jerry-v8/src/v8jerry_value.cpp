@@ -210,7 +210,7 @@ void JerryValue::ContextSetEmbedderData(int index, void* value) {
 
     JerryV8ContextData* ctx = ContextGetData();
 
-    if (ctx->embedderData.size() <= index) {
+    if ((int)ctx->embedderData.size() <= index) {
         ctx->embedderData.resize(index + 1);
     }
     ctx->embedderData[index] = value;
@@ -221,7 +221,7 @@ void* JerryValue::ContextGetEmbedderData(int index) {
 
     JerryV8ContextData* ctx = ContextGetData();
 
-    if (V8_UNLIKELY(ctx->embedderData.size() < index)) {
+    if (V8_UNLIKELY((int)ctx->embedderData.size() < index)) {
         return NULL;
     }
 
