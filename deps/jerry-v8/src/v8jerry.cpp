@@ -87,6 +87,10 @@ public:
 
 } // namespace base
 
+void V8::SetEntropySource(EntropySource source) {
+    V8_CALL_TRACE();
+}
+
 void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
     V8_CALL_TRACE();
 }
