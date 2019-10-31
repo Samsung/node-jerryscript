@@ -4148,7 +4148,10 @@ inline int Start(Isolate* isolate, IsolateData* isolate_data,
   __lsan_do_leak_check();
 #endif
 
+#ifdef V8JERRY
+  // TODO: remove if weak reference handling is supported in JerryScript.
   isolate->RequestGarbageCollectionForTesting(Isolate::kFullGarbageCollection);
+#endif
 
   return exit_code;
 }
