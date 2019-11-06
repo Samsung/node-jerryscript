@@ -14,16 +14,21 @@
  */
 
 #include "ecma-alloc.h"
+#include "ecma-array-object.h"
 #include "ecma-builtins.h"
+#include "ecma-builtin-helpers.h"
 #include "ecma-conversion.h"
 #include "ecma-exceptions.h"
 #include "ecma-function-object.h"
 #include "ecma-gc.h"
 #include "ecma-globals.h"
 #include "ecma-helpers.h"
+#include "ecma-iterator-object.h"
 #include "ecma-lex-env.h"
 #include "ecma-objects.h"
+#include "ecma-spread-object.h"
 #include "ecma-try-catch-macro.h"
+#include "jcontext.h"
 #include "opcodes.h"
 #include "vm-defines.h"
 
@@ -38,20 +43,15 @@
  * 'Variable declaration' opcode handler.
  *
  * See also: ECMA-262 v5, 10.5 - Declaration binding instantiation (block 8).
- *
- * @return ecma value
- *         Returned value is simple and so need not be freed.
- *         However, ecma_free_value may be called for it, but it is a no-op.
  */
-ecma_value_t
-vm_var_decl (vm_frame_ctx_t *frame_ctx_p, /**< interpreter context */
-             ecma_string_t *var_name_str_p) /**< variable name */
+inline void JERRY_ATTR_ALWAYS_INLINE
+vm_var_decl (ecma_object_t *lex_env_p, /**< target lexical environment */
+             ecma_string_t *var_name_str_p, /**< variable name */
+             bool is_configurable_bindings) /**< true if the binding can be deleted */
 {
-  if (!ecma_op_has_binding (frame_ctx_p->lex_env_p, var_name_str_p))
+  if (!ecma_op_has_binding (lex_env_p, var_name_str_p))
   {
-    const bool is_configurable_bindings = frame_ctx_p->is_eval_code;
-
-    ecma_value_t completion_value = ecma_op_create_mutable_binding (frame_ctx_p->lex_env_p,
+    ecma_value_t completion_value = ecma_op_create_mutable_binding (lex_env_p,
                                                                     var_name_str_p,
                                                                     is_configurable_bindings);
 
@@ -60,12 +60,35 @@ vm_var_decl (vm_frame_ctx_t *frame_ctx_p, /**< interpreter context */
     /* Skipping SetMutableBinding as we have already checked that there were not
      * any binding with specified name in current lexical environment
      * and CreateMutableBinding sets the created binding's value to undefined */
-    JERRY_ASSERT (ecma_is_value_undefined (ecma_op_get_binding_value (frame_ctx_p->lex_env_p,
+    JERRY_ASSERT (ecma_is_value_undefined (ecma_op_get_binding_value (lex_env_p,
                                                                       var_name_str_p,
                                                                       vm_is_strict_mode ())));
   }
-  return ECMA_VALUE_EMPTY;
 } /* vm_var_decl */
+
+/**
+ * Set var binding to a function literal value.
+ */
+inline void JERRY_ATTR_ALWAYS_INLINE
+vm_set_var (ecma_object_t *lex_env_p, /**< target lexical environment */
+            ecma_string_t *var_name_str_p, /**< variable name */
+            bool is_strict, /**< true, if the engine is in strict mode */
+            ecma_value_t lit_value) /**< function value */
+{
+  ecma_value_t put_value_result;
+  put_value_result = ecma_op_put_value_lex_env_base (lex_env_p, var_name_str_p, is_strict, lit_value);
+
+  JERRY_ASSERT (ecma_is_value_boolean (put_value_result)
+                || ecma_is_value_empty (put_value_result)
+                || ECMA_IS_VALUE_ERROR (put_value_result));
+
+  if (ECMA_IS_VALUE_ERROR (put_value_result))
+  {
+    ecma_free_value (JERRY_CONTEXT (error_value));
+  }
+
+  ecma_free_value (lit_value);
+} /* vm_set_var */
 
 /**
  * 'typeof' opcode handler.
@@ -92,8 +115,7 @@ opfunc_set_accessor (bool is_getter, /**< is getter accessor */
 {
   ecma_object_t *object_p = ecma_get_object_from_value (object);
 
-  JERRY_ASSERT (ecma_get_object_type (object_p) != ECMA_OBJECT_TYPE_ARRAY
-                || !((ecma_extended_object_t *) object_p)->u.array.is_fast_mode);
+  JERRY_ASSERT (!ecma_op_object_is_fast_array (object_p));
 
   ecma_property_t *property_p = ecma_find_named_property (object_p, accessor_name_p);
 
@@ -255,6 +277,193 @@ opfunc_for_in (ecma_value_t left_value, /**< left value */
 
   return NULL;
 } /* opfunc_for_in */
+
+#if ENABLED (JERRY_ES2015)
+/**
+ * 'VM_OC_APPEND_ARRAY' opcode handler specialized for spread objects
+ *
+ * @return ECMA_VALUE_ERROR - if the operation failed
+ *         ECMA_VALUE_EMPTY, otherwise
+ */
+static ecma_value_t JERRY_ATTR_NOINLINE
+opfunc_append_to_spread_array (ecma_value_t *stack_top_p, /**< current stack top */
+                               uint16_t values_length) /**< number of elements to set */
+{
+  JERRY_ASSERT (!(values_length & OPFUNC_HAS_SPREAD_ELEMENT));
+
+  ecma_object_t *array_obj_p = ecma_get_object_from_value (stack_top_p[-1]);
+  JERRY_ASSERT (ecma_get_object_type (array_obj_p) == ECMA_OBJECT_TYPE_ARRAY);
+
+  ecma_extended_object_t *ext_array_obj_p = (ecma_extended_object_t *) array_obj_p;
+  uint32_t old_length = ext_array_obj_p->u.array.length;
+
+  for (uint32_t i = 0, j = old_length; i < values_length; i++)
+  {
+    if (ecma_is_value_array_hole (stack_top_p[i]))
+    {
+      continue;
+    }
+    if (ecma_op_is_spread_object (stack_top_p[i]))
+    {
+      ecma_value_t ret_value = ECMA_VALUE_ERROR;
+      ecma_object_t *spread_object_p = ecma_get_object_from_value (stack_top_p[i]);
+      ecma_value_t spread_value = ecma_op_spread_object_get_spreaded_element (spread_object_p);
+
+      ecma_value_t iterator = ecma_op_get_iterator (spread_value, ECMA_VALUE_EMPTY);
+
+      if (!ECMA_IS_VALUE_ERROR (iterator))
+      {
+        while (true)
+        {
+          ecma_value_t next = ecma_op_iterator_step (iterator);
+
+          if (ECMA_IS_VALUE_ERROR (next))
+          {
+            break;
+          }
+
+          if (ecma_is_value_false (next))
+          {
+            j--;
+            ret_value = ECMA_VALUE_EMPTY;
+            break;
+          }
+
+          ecma_value_t value = ecma_op_iterator_value (next);
+
+          ecma_free_value (next);
+
+          if (ECMA_IS_VALUE_ERROR (value))
+          {
+            break;
+          }
+
+          ecma_value_t put_comp;
+          put_comp = ecma_builtin_helper_def_prop_by_index (array_obj_p,
+                                                            i + j,
+                                                            value,
+                                                            ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE);
+
+          j++;
+          JERRY_ASSERT (ecma_is_value_true (put_comp));
+          ecma_free_value (value);
+        }
+      }
+
+      ecma_free_value (iterator);
+      ecma_free_value (spread_value);
+
+      if (ECMA_IS_VALUE_ERROR (ret_value))
+      {
+        for (uint32_t k = i; k < values_length; k++)
+        {
+          ecma_free_value (stack_top_p[k]);
+        }
+
+        return ret_value;
+      }
+      else
+      {
+        ecma_deref_object (spread_object_p);
+      }
+    }
+    else
+    {
+      ecma_value_t put_comp = ecma_builtin_helper_def_prop_by_index (array_obj_p,
+                                                                     i + j,
+                                                                     stack_top_p[i],
+                                                                     ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE);
+      JERRY_ASSERT (ecma_is_value_true (put_comp));
+      ecma_free_value (stack_top_p[i]);
+    }
+  }
+
+  return ECMA_VALUE_EMPTY;
+} /* opfunc_append_to_spread_array */
+#endif /* ENABLED (JERRY_ES2015) */
+
+/**
+ * 'VM_OC_APPEND_ARRAY' opcode handler, for setting array object properties
+ *
+ * @return ECMA_VALUE_ERROR - if the operation failed
+ *         ECMA_VALUE_EMPTY, otherwise
+ */
+ecma_value_t JERRY_ATTR_NOINLINE
+opfunc_append_array (ecma_value_t *stack_top_p, /**< current stack top */
+                     uint16_t values_length) /**< number of elements to set
+                                              *   with potential OPFUNC_HAS_SPREAD_ELEMENT flag */
+{
+#if ENABLED (JERRY_ES2015)
+  if (values_length >= OPFUNC_HAS_SPREAD_ELEMENT)
+  {
+    return opfunc_append_to_spread_array (stack_top_p, (uint16_t) (values_length & ~OPFUNC_HAS_SPREAD_ELEMENT));
+  }
+#endif /* ENABLED (JERRY_ES2015) */
+
+  ecma_object_t *array_obj_p = ecma_get_object_from_value (stack_top_p[-1]);
+  JERRY_ASSERT (ecma_get_object_type (array_obj_p) == ECMA_OBJECT_TYPE_ARRAY);
+
+  ecma_extended_object_t *ext_array_obj_p = (ecma_extended_object_t *) array_obj_p;
+  uint32_t old_length = ext_array_obj_p->u.array.length;
+
+  if (JERRY_LIKELY (ecma_op_array_is_fast_array (ext_array_obj_p)))
+  {
+    uint32_t filled_holes = 0;
+    ecma_value_t *values_p = ecma_fast_array_extend (array_obj_p, old_length + values_length);
+
+    for (uint32_t i = 0; i < values_length; i++)
+    {
+      values_p[old_length + i] = stack_top_p[i];
+
+      if (!ecma_is_value_array_hole (stack_top_p[i]))
+      {
+        filled_holes++;
+
+        if (ecma_is_value_object (stack_top_p[i]))
+        {
+          ecma_deref_object (ecma_get_object_from_value (stack_top_p[i]));
+        }
+      }
+    }
+
+    ext_array_obj_p->u.array.u.hole_count -= filled_holes * ECMA_FAST_ARRAY_HOLE_ONE;
+
+    if (JERRY_UNLIKELY ((values_length - filled_holes) > ECMA_FAST_ARRAY_MAX_NEW_HOLES_COUNT))
+    {
+      ecma_fast_array_convert_to_normal (array_obj_p);
+    }
+  }
+  else
+  {
+    for (uint32_t i = 0; i < values_length; i++)
+    {
+      if (!ecma_is_value_array_hole (stack_top_p[i]))
+      {
+        ecma_string_t *index_str_p = ecma_new_ecma_string_from_uint32 (old_length + i);
+
+        ecma_property_value_t *prop_value_p;
+
+        prop_value_p = ecma_create_named_data_property (array_obj_p,
+                                                        index_str_p,
+                                                        ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE,
+                                                        NULL);
+
+        ecma_deref_ecma_string (index_str_p);
+        prop_value_p->value = stack_top_p[i];
+
+        if (ecma_is_value_object (stack_top_p[i]))
+        {
+          ecma_free_value (stack_top_p[i]);
+        }
+
+      }
+
+      ext_array_obj_p->u.array.length = old_length + values_length;
+    }
+  }
+
+  return ECMA_VALUE_EMPTY;
+} /* opfunc_append_array */
 
 /**
  * @}

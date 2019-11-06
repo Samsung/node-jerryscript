@@ -14,6 +14,7 @@
  */
 
 #include "ecma-alloc.h"
+#include "ecma-array-object.h"
 #include "ecma-gc.h"
 #include "ecma-globals.h"
 #include "ecma-helpers.h"
@@ -54,8 +55,8 @@ JERRY_STATIC_ASSERT (ECMA_OBJECT_FLAG_EXTENSIBLE == (ECMA_OBJECT_FLAG_BUILT_IN_O
 JERRY_STATIC_ASSERT (ECMA_OBJECT_REF_ONE == (ECMA_OBJECT_FLAG_EXTENSIBLE << 1),
                      ecma_object_ref_one_must_follow_the_extensible_flag);
 
-JERRY_STATIC_ASSERT ((ECMA_OBJECT_MAX_REF | (ECMA_OBJECT_REF_ONE - 1)) == UINT16_MAX,
-                     ecma_object_max_ref_does_not_fill_the_remaining_bits);
+JERRY_STATIC_ASSERT (((ECMA_OBJECT_MAX_REF + ECMA_OBJECT_REF_ONE) | (ECMA_OBJECT_REF_ONE - 1)) == UINT16_MAX,
+                      ecma_object_max_ref_does_not_fill_the_remaining_bits);
 
 JERRY_STATIC_ASSERT (ECMA_PROPERTY_TYPE_DELETED == (ECMA_DIRECT_STRING_MAGIC << ECMA_PROPERTY_NAME_TYPE_SHIFT),
                      ecma_property_type_deleted_must_have_magic_string_name_type);
@@ -138,12 +139,12 @@ ecma_create_object_lex_env (ecma_object_t *outer_lexical_environment_p, /**< out
                             ecma_object_t *binding_obj_p, /**< binding object */
                             ecma_lexical_environment_type_t type) /**< type of the new lexical environment */
 {
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
   JERRY_ASSERT (type == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND
                 || type == ECMA_LEXICAL_ENVIRONMENT_SUPER_OBJECT_BOUND);
-#else /* !ENABLED (JERRY_ES2015_CLASS) */
+#else /* !ENABLED (JERRY_ES2015) */
   JERRY_ASSERT (type == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND);
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   JERRY_ASSERT (binding_obj_p != NULL
                 && !ecma_is_lexical_environment (binding_obj_p));
@@ -308,12 +309,12 @@ ecma_get_lex_env_binding_object (const ecma_object_t *object_p) /**< object-boun
 {
   JERRY_ASSERT (object_p != NULL);
   JERRY_ASSERT (ecma_is_lexical_environment (object_p));
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
   JERRY_ASSERT (ecma_get_lex_env_type (object_p) == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND
                 || ecma_get_lex_env_type (object_p) == ECMA_LEXICAL_ENVIRONMENT_SUPER_OBJECT_BOUND);
-#else /* !ENABLED (JERRY_ES2015_CLASS) */
+#else /* !ENABLED (JERRY_ES2015) */
   JERRY_ASSERT (ecma_get_lex_env_type (object_p) == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND);
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   return ECMA_GET_NON_NULL_POINTER (ecma_object_t, object_p->u1.bound_object_cp);
 } /* ecma_get_lex_env_binding_object */
@@ -473,8 +474,7 @@ ecma_create_named_data_property (ecma_object_t *object_p, /**< object */
 {
   JERRY_ASSERT (object_p != NULL && name_p != NULL);
   JERRY_ASSERT (ecma_is_lexical_environment (object_p)
-              || ecma_get_object_type (object_p) != ECMA_OBJECT_TYPE_ARRAY
-              || !((ecma_extended_object_t *) object_p)->u.array.is_fast_mode);
+                || !ecma_op_object_is_fast_array (object_p));
   JERRY_ASSERT (ecma_find_named_property (object_p, name_p) == NULL);
   JERRY_ASSERT ((prop_attributes & ~ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE) == 0);
 
@@ -502,8 +502,7 @@ ecma_create_named_accessor_property (ecma_object_t *object_p, /**< object */
 {
   JERRY_ASSERT (object_p != NULL && name_p != NULL);
   JERRY_ASSERT (ecma_is_lexical_environment (object_p)
-              || ecma_get_object_type (object_p) != ECMA_OBJECT_TYPE_ARRAY
-              || !((ecma_extended_object_t *) object_p)->u.array.is_fast_mode);
+                || !ecma_op_object_is_fast_array (object_p));
   JERRY_ASSERT (ecma_find_named_property (object_p, name_p) == NULL);
   JERRY_ASSERT ((prop_attributes & ~ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE) == 0);
 
@@ -537,8 +536,7 @@ ecma_find_named_property (ecma_object_t *obj_p, /**< object to find property in 
   JERRY_ASSERT (obj_p != NULL);
   JERRY_ASSERT (name_p != NULL);
   JERRY_ASSERT (ecma_is_lexical_environment (obj_p)
-                || ecma_get_object_type (obj_p) != ECMA_OBJECT_TYPE_ARRAY
-                || !((ecma_extended_object_t *) obj_p)->u.array.is_fast_mode);
+                || !ecma_op_object_is_fast_array (obj_p));
 
   ecma_property_t *property_p = NULL;
 
@@ -696,8 +694,7 @@ ecma_get_named_data_property (ecma_object_t *obj_p, /**< object to find property
   JERRY_ASSERT (obj_p != NULL);
   JERRY_ASSERT (name_p != NULL);
   JERRY_ASSERT (ecma_is_lexical_environment (obj_p)
-                || ecma_get_object_type (obj_p) != ECMA_OBJECT_TYPE_ARRAY
-                || !((ecma_extended_object_t *) obj_p)->u.array.is_fast_mode);
+                || !ecma_op_object_is_fast_array (obj_p));
 
   ecma_property_t *property_p = ecma_find_named_property (obj_p, name_p);
 

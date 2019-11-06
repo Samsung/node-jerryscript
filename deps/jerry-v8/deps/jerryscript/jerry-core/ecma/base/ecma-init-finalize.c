@@ -35,6 +35,10 @@
 void
 ecma_init (void)
 {
+#if (JERRY_GC_MARK_LIMIT != 0)
+  JERRY_CONTEXT (ecma_gc_mark_recursion_limit) = JERRY_GC_MARK_LIMIT;
+#endif /* (JERRY_GC_MARK_LIMIT != 0) */
+
   ecma_init_global_lex_env ();
 
 #if ENABLED (JERRY_PROPRETY_HASHMAP)

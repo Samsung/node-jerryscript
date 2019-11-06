@@ -34,13 +34,33 @@ test_promise_resolve_success (void)
     jerry_release_value (promise_result);
   }
 
+  jerry_value_t resolve_value = jerry_create_object ();
+  {
+    jerry_value_t obj_key = jerry_create_string ((const jerry_char_t *) "key_one");
+    jerry_value_t set_result = jerry_set_property (resolve_value, obj_key, jerry_create_number (3));
+    TEST_ASSERT (jerry_value_is_boolean (set_result) && (jerry_get_boolean_value (set_result) == true));
+    jerry_release_value (set_result);
+    jerry_release_value (obj_key);
+  }
+
   // A resolved promise should have the result of from the resolve call and a fulfilled state
   {
-    jerry_value_t resolve_result = jerry_resolve_or_reject_promise (my_promise, jerry_create_number (3), true);
+    jerry_value_t resolve_result = jerry_resolve_or_reject_promise (my_promise, resolve_value, true);
+
+    // Release "old" value of resolve.
+    jerry_release_value (resolve_value);
 
     jerry_value_t promise_result = jerry_get_promise_result (my_promise);
-    TEST_ASSERT (jerry_value_is_number (promise_result));
-    TEST_ASSERT (jerry_get_number_value (promise_result) == 3.0);
+    {
+      TEST_ASSERT (jerry_value_is_object (promise_result));
+      jerry_value_t obj_key = jerry_create_string ((const jerry_char_t *) "key_one");
+      jerry_value_t get_result = jerry_get_property (promise_result, obj_key);
+      TEST_ASSERT (jerry_value_is_number (get_result));
+      TEST_ASSERT (jerry_get_number_value (get_result) == 3.0);
+
+      jerry_release_value (get_result);
+      jerry_release_value (obj_key);
+    }
 
     jerry_promise_state_t promise_state = jerry_get_promise_state (my_promise);
     TEST_ASSERT (promise_state == JERRY_PROMISE_STATE_FULFILLED);
@@ -55,8 +75,16 @@ test_promise_resolve_success (void)
     jerry_value_t resolve_result = jerry_resolve_or_reject_promise (my_promise, jerry_create_number (50), false);
 
     jerry_value_t promise_result = jerry_get_promise_result (my_promise);
-    TEST_ASSERT (jerry_value_is_number (promise_result));
-    TEST_ASSERT (jerry_get_number_value (promise_result) == 3.0);
+    {
+      TEST_ASSERT (jerry_value_is_object (promise_result));
+      jerry_value_t obj_key = jerry_create_string ((const jerry_char_t *) "key_one");
+      jerry_value_t get_result = jerry_get_property (promise_result, obj_key);
+      TEST_ASSERT (jerry_value_is_number (get_result));
+      TEST_ASSERT (jerry_get_number_value (get_result) == 3.0);
+
+      jerry_release_value (get_result);
+      jerry_release_value (obj_key);
+    }
 
     jerry_promise_state_t promise_state = jerry_get_promise_state (my_promise);
     TEST_ASSERT (promise_state == JERRY_PROMISE_STATE_FULFILLED);
@@ -127,8 +155,7 @@ test_promise_resolve_fail (void)
 static void
 test_promise_from_js (void)
 {
-  const jerry_char_t test_source[] =
-    "(new Promise(function(rs ,rj) { rs(30); })).then(function(v) { return v + 1; })";
+  const jerry_char_t test_source[] = "(new Promise(function(rs, rj) { rs(30); })).then(function(v) { return v + 1; })";
 
   jerry_value_t parsed_code_val = jerry_parse (NULL,
                                                0,

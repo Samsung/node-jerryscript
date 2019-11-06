@@ -105,6 +105,7 @@ typedef enum
   ECMA_PARSE_HAS_IMPL_SUPER = (1u << 4), /**< the current context has implicit parent class */
   ECMA_PARSE_HAS_STATIC_SUPER = (1u << 5), /**< the current context is a static class method */
   ECMA_PARSE_EVAL = (1u << 6), /**< eval is called */
+  ECMA_PARSE_MODULE = (1u << 7), /**< module is parsed */
 } ecma_parse_opts_t;
 
 /**
@@ -188,6 +189,7 @@ enum
   ECMA_VALUE_REGISTER_REF = ECMA_MAKE_VALUE (8), /**< register reference,
                                                   *   a special "base" value for vm */
   ECMA_VALUE_IMPLICIT_CONSTRUCTOR = ECMA_MAKE_VALUE (9), /**< special value for bound class constructors */
+  ECMA_VALUE_UNINITIALIZED = ECMA_MAKE_VALUE (10), /**< a special value for uninitialized let/const declarations */
 };
 
 #if !ENABLED (JERRY_NUMBER_TYPE_FLOAT64)
@@ -327,9 +329,9 @@ typedef enum
                                        *   that are not indices */
   ECMA_LIST_ENUMERABLE = (1 << 1), /**< exclude non-enumerable properties */
   ECMA_LIST_PROTOTYPE = (1 << 2), /**< list properties from prototype chain */
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   ECMA_LIST_SYMBOLS = (1 << 3), /**< list symbol properties only */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
   ECMA_LIST_CONVERT_FAST_ARRAYS = (1 << 4), /**< after listing the properties convert
                                              *   the fast access mode array back to normal array */
 } ecma_list_properties_options_t;
@@ -602,15 +604,15 @@ typedef enum
 {
   ECMA_OBJECT_TYPE_GENERAL = 0, /**< all objects that are not belongs to the sub-types below. */
   ECMA_OBJECT_TYPE_CLASS = 1, /**< Objects with class property */
-  ECMA_OBJECT_TYPE_FUNCTION = 2, /**< Function objects (15.3), created through 13.2 routine */
-  ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION = 3, /**< External (host) function object */
-  ECMA_OBJECT_TYPE_ARRAY = 4, /**< Array object (15.4) */
-  ECMA_OBJECT_TYPE_BOUND_FUNCTION = 5, /**< Function objects (15.3), created through 15.3.4.5 routine */
-  ECMA_OBJECT_TYPE_PSEUDO_ARRAY  = 6, /**< Array-like object, such as Arguments object (10.6) */
-#if ENABLED (JERRY_ES2015_ARROW_FUNCTION)
-  ECMA_OBJECT_TYPE_ARROW_FUNCTION = 7, /**< arrow function objects */
-#endif /* ENABLED (JERRY_ES2015_ARROW_FUNCTION) */
-
+  ECMA_OBJECT_TYPE_ARRAY = 2, /**< Array object (15.4) */
+  ECMA_OBJECT_TYPE_PSEUDO_ARRAY  = 3, /**< Array-like object, such as Arguments object (10.6) */
+  /* Note: these 4 types must be in this order. See IsCallable operation.  */
+  ECMA_OBJECT_TYPE_FUNCTION = 4, /**< Function objects (15.3), created through 13.2 routine */
+#if ENABLED (JERRY_ES2015)
+  ECMA_OBJECT_TYPE_ARROW_FUNCTION = 5, /**< arrow function objects */
+#endif /* ENABLED (JERRY_ES2015) */
+  ECMA_OBJECT_TYPE_BOUND_FUNCTION = 6, /**< Function objects (15.3), created through 15.3.4.5 routine */
+  ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION = 7, /**< External (host) function object */
   /* Types between 13-15 cannot have a built-in flag. See ecma_lexical_environment_type_t. */
 
   ECMA_OBJECT_TYPE__MAX /**< maximum value */
@@ -628,7 +630,8 @@ typedef enum
   ECMA_PSEUDO_SET_ITERATOR = 4, /**< Set iterator object (ECMAScript v6, 23.2.5.1) */
   ECMA_PSEUDO_MAP_ITERATOR = 5, /**< Map iterator object (ECMAScript v6, 23.1.5.1) */
   ECMA_PSEUDO_STRING_ITERATOR = 6, /**< String iterator object (ECMAScript v6, 22.1.5.1) */
-  ECMA_PSEUDO_ARRAY__MAX = ECMA_PSEUDO_STRING_ITERATOR /**< maximum value */
+  ECMA_PSEUDO_SPREAD_OBJECT = 7, /**< spread object */
+  ECMA_PSEUDO_ARRAY__MAX = ECMA_PSEUDO_SPREAD_OBJECT /**< maximum value */
 } ecma_pseudo_array_type_t;
 
 /**
@@ -709,19 +712,32 @@ typedef enum
 /**
  * Non closure flag for debugger.
  */
-#if ENABLED (JERRY_DEBUGGER)
-#define ECMA_OBJECT_FLAG_NON_CLOSURE 0x20
-#endif /* ENABLED (JERRY_DEBUGGER) */
+#define ECMA_OBJECT_FLAG_BLOCK ECMA_OBJECT_FLAG_EXTENSIBLE
+
+/**
+ * Bitshift index for an ecma-object reference count field
+ */
+#define ECMA_OBJECT_REF_SHIFT 6
+
+/**
+ * Bitmask for an ecma-object reference count field
+ */
+#define ECMA_OBJECT_REF_MASK (((1u << 10) - 1) << ECMA_OBJECT_REF_SHIFT)
 
 /**
  * Value for increasing or decreasing the object reference counter.
  */
-#define ECMA_OBJECT_REF_ONE (1u << 6)
+#define ECMA_OBJECT_REF_ONE (1u << ECMA_OBJECT_REF_SHIFT)
 
 /**
- * Maximum value of the object reference counter (1023).
+ * Represents non-visited white object
  */
-#define ECMA_OBJECT_MAX_REF (0x3ffu << 6)
+#define ECMA_OBJECT_NON_VISITED (0x3ffu << ECMA_OBJECT_REF_SHIFT)
+
+/**
+ * Maximum value of the object reference counter (1022).
+ */
+#define ECMA_OBJECT_MAX_REF (ECMA_OBJECT_NON_VISITED - ECMA_OBJECT_REF_ONE)
 
 /**
  * Description of ECMA-object or lexical environment
@@ -732,8 +748,8 @@ typedef struct
   /** type : 4 bit : ecma_object_type_t or ecma_lexical_environment_type_t
                      depending on ECMA_OBJECT_FLAG_BUILT_IN_OR_LEXICAL_ENV
       flags : 2 bit : ECMA_OBJECT_FLAG_BUILT_IN_OR_LEXICAL_ENV,
-                      ECMA_OBJECT_FLAG_EXTENSIBLE or ECMA_OBJECT_FLAG_NON_CLOSURE
-      refs : 10 bit (max 1023) */
+                      ECMA_OBJECT_FLAG_EXTENSIBLE or ECMA_OBJECT_FLAG_BLOCK
+      refs : 10 bit (max 1022) */
   uint16_t type_flags_refs;
 
   /** next in the object chain maintained by the garbage collector */
@@ -822,10 +838,13 @@ typedef struct
     struct
     {
       uint32_t length; /**< length property value */
-      ecma_property_t length_prop; /**< length property */
-      bool is_fast_mode; /**< true - if the array is a fast access mode array
-                          *   false - otherwise */
-      uint8_t hole_count; /**< Number of array holes in a fast access mode array */
+      union
+      {
+        ecma_property_t length_prop; /**< length property */
+        uint32_t hole_count; /**< number of array holes in a fast access mode array
+                              *   multiplied ECMA_FAST_ACCESS_HOLE_ONE */
+      } u;
+
     } array;
 
     /**
@@ -848,6 +867,7 @@ typedef struct
         ecma_value_t lex_env_cp; /**< for arguments: lexical environment */
         ecma_value_t arraybuffer; /**< for typedarray: internal arraybuffer */
         ecma_value_t iterated_value; /**< for %Iterator%: [[IteratedObject]] property */
+        ecma_value_t spread_value; /**< for spread object: spreaded element */
       } u2;
     } pseudo_array;
 
@@ -885,7 +905,6 @@ typedef struct
 #define ECMA_FAST_ARRAY_ALIGN_LENGTH(length) \
   (uint32_t) ((((length)) + ECMA_FAST_ARRAY_ALIGNMENT - 1) / ECMA_FAST_ARRAY_ALIGNMENT * ECMA_FAST_ARRAY_ALIGNMENT)
 
-
 /**
  * Compiled byte code data.
  */
@@ -913,7 +932,7 @@ typedef struct
 
 #endif /* ENABLED (JERRY_SNAPSHOT_EXEC) */
 
-#if ENABLED (JERRY_ES2015_ARROW_FUNCTION)
+#if ENABLED (JERRY_ES2015)
 
 /**
  * Description of arrow function objects.
@@ -939,7 +958,7 @@ typedef struct
 
 #endif /* ENABLED (JERRY_SNAPSHOT_EXEC) */
 
-#endif /* ENABLED (JERRY_ES2015_ARROW_FUNCTION) */
+#endif /* ENABLED (JERRY_ES2015) */
 
 #if ENABLED (JERRY_ES2015_BUILTIN_MAP) || ENABLED (JERRY_ES2015_BUILTIN_SET)
 /**
@@ -1148,6 +1167,26 @@ typedef union
  * See also: ECMA_262 v5, 15.7.3.2
  */
 # define ECMA_NUMBER_MAX_VALUE (FLT_MAX)
+/**
+ * Number.EPSILON
+ *
+ * See also: ECMA_262 v6, 20.1.2.1
+ */
+# define  ECMA_NUMBER_EPSILON ((ecma_number_t) 1.1920928955078125e-7)
+
+/**
+ * Number.MAX_SAFE_INTEGER
+ *
+ * See also: ECMA_262 v6, 20.1.2.6
+ */
+# define ECMA_NUMBER_MAX_SAFE_INTEGER ((ecma_number_t) 0xFFFFFF)
+
+/**
+ * Number.MIN_SAFE_INTEGER
+ *
+ * See also: ECMA_262 v6, 20.1.2.8
+ */
+# define ECMA_NUMBER_MIN_SAFE_INTEGER ((ecma_number_t) -0xFFFFFF)
 #elif ENABLED (JERRY_NUMBER_TYPE_FLOAT64)
 /**
  * Number.MAX_VALUE (i.e., the maximum value of ecma-number)
@@ -1155,29 +1194,36 @@ typedef union
  * See also: ECMA_262 v5, 15.7.3.2
  */
 # define ECMA_NUMBER_MAX_VALUE ((ecma_number_t) 1.7976931348623157e+308)
+
 /**
  * Number.MIN_VALUE (i.e., the smallest positive value of ecma-number)
  *
  * See also: ECMA_262 v5, 15.7.3.3
  */
 # define ECMA_NUMBER_MIN_VALUE ((ecma_number_t) 5e-324)
-#endif /* !ENABLED (JERRY_NUMBER_TYPE_FLOAT64) */
-#if ENABLED (JERRY_ES2015_BUILTIN)
+
 /**
  * Number.EPSILON
  *
  * See also: ECMA_262 v6, 20.1.2.1
  */
 # define  ECMA_NUMBER_EPSILON ((ecma_number_t) 2.2204460492503130808472633361816e-16)
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
-#if ENABLED (JERRY_ES2015_BUILTIN)
+
 /**
  * Number.MAX_SAFE_INTEGER
  *
- * See also: ECMA_262 v6, 20.1.2.1
+ * See also: ECMA_262 v6, 20.1.2.6
  */
 # define ECMA_NUMBER_MAX_SAFE_INTEGER ((ecma_number_t) 0x1FFFFFFFFFFFFF)
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+
+/**
+ * Number.MIN_SAFE_INTEGER
+ *
+ * See also: ECMA_262 v6, 20.1.2.8
+ */
+# define ECMA_NUMBER_MIN_SAFE_INTEGER ((ecma_number_t) -0x1FFFFFFFFFFFFF)
+#endif /* !ENABLED (JERRY_NUMBER_TYPE_FLOAT64) */
+
 /**
  * Euler number
  */

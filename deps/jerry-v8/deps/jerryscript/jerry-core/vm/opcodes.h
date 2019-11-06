@@ -31,7 +31,7 @@
  */
 typedef enum
 {
-  NUMBER_ARITHMETIC_SUBSTRACTION, /**< substraction */
+  NUMBER_ARITHMETIC_SUBTRACTION, /**< subtraction */
   NUMBER_ARITHMETIC_MULTIPLICATION, /**< multiplication */
   NUMBER_ARITHMETIC_DIVISION, /**< division */
   NUMBER_ARITHMETIC_REMAINDER, /**< remainder calculation */
@@ -51,8 +51,16 @@ typedef enum
   NUMBER_BITWISE_NOT, /**< bitwise NOT calculation */
 } number_bitwise_logic_op;
 
-ecma_value_t
-vm_var_decl (vm_frame_ctx_t *frame_ctx_p, ecma_string_t *var_name_str_p);
+/**
+ * The stack contains spread object during the upcoming APPEND_ARRAY operation
+ */
+#define OPFUNC_HAS_SPREAD_ELEMENT (1 << 8)
+
+void
+vm_var_decl (ecma_object_t *lex_env_p, ecma_string_t *var_name_str_p, bool is_configurable_bindings);
+
+void
+vm_set_var (ecma_object_t *lex_env_p, ecma_string_t *var_name_str_p, bool is_strict, ecma_value_t lit_value);
 
 ecma_value_t
 opfunc_equality (ecma_value_t left_value, ecma_value_t right_value);
@@ -92,6 +100,9 @@ vm_op_delete_var (ecma_value_t name_literal, ecma_object_t *lex_env_p);
 
 ecma_collection_t *
 opfunc_for_in (ecma_value_t left_value, ecma_value_t *result_obj_p);
+
+ecma_value_t
+opfunc_append_array (ecma_value_t *stack_top_p, uint16_t values_length);
 
 /**
  * @}

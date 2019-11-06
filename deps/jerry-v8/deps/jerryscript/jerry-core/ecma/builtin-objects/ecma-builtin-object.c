@@ -24,6 +24,7 @@
 #include "ecma-objects.h"
 #include "ecma-objects-general.h"
 #include "jrt.h"
+#include "ecma-builtin-object.h"
 
 #define ECMA_BUILTINS_INTERNAL
 #include "ecma-builtins-internal.h"
@@ -55,6 +56,7 @@ enum
   ECMA_OBJECT_ROUTINE_GET_PROTOTYPE_OF,
   ECMA_OBJECT_ROUTINE_SET_PROTOTYPE_OF,
   ECMA_OBJECT_ROUTINE_ASSIGN,
+  ECMA_OBJECT_ROUTINE_IS,
 };
 
 #define BUILTIN_INC_HEADER_NAME "ecma-builtin-object.inc.h"
@@ -122,7 +124,7 @@ ecma_builtin_object_dispatch_construct (const ecma_value_t *arguments_list_p, /*
  * @return ecma value
  *         Returned value must be freed with ecma_free_value.
  */
-static ecma_value_t
+ecma_value_t
 ecma_builtin_object_object_get_prototype_of (ecma_value_t arg) /**< routine's argument */
 {
   ecma_value_t ret_value = ECMA_VALUE_EMPTY;
@@ -247,7 +249,7 @@ ecma_set_prototype_of (ecma_value_t o_value, /**< O */
  * @return ecma value
  *         Returned value must be freed with ecma_free_value.
  */
-static ecma_value_t
+ecma_value_t
 ecma_builtin_object_object_set_prototype_of (ecma_value_t arg1, /**< routine's first argument */
                                              ecma_value_t arg2) /**< routine's second argument */
 {
@@ -292,7 +294,7 @@ ecma_builtin_object_object_get_own_property_names (ecma_object_t *obj_p) /**< ro
   return ecma_builtin_helper_object_get_properties (obj_p, ECMA_LIST_NO_OPTS);
 } /* ecma_builtin_object_object_get_own_property_names */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
 /**
  * The Object object's 'getOwnPropertySymbols' routine
  *
@@ -307,7 +309,7 @@ ecma_builtin_object_object_get_own_property_symbols (ecma_object_t *obj_p) /**< 
 {
   return ecma_builtin_helper_object_get_properties (obj_p, ECMA_LIST_SYMBOLS);
 } /* ecma_builtin_object_object_get_own_property_symbols */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * The Object object's 'seal' routine
@@ -441,7 +443,7 @@ ecma_builtin_object_object_freeze (ecma_object_t *obj_p) /**< routine's argument
  * @return ecma value
  *         Returned value must be freed with ecma_free_value.
  */
-static ecma_value_t
+ecma_value_t
 ecma_builtin_object_object_prevent_extensions (ecma_object_t *obj_p) /**< routine's argument */
 {
   ecma_set_object_extensible (obj_p, false);
@@ -521,7 +523,7 @@ ecma_builtin_object_frozen_or_sealed_helper (ecma_object_t *obj_p, /**< routine'
  * @return ecma value
  *         Returned value must be freed with ecma_free_value.
  */
-static ecma_value_t
+ecma_value_t
 ecma_builtin_object_object_is_extensible (ecma_object_t *obj_p) /**< routine's argument */
 {
   return ecma_make_boolean_value (ecma_get_object_extensible (obj_p));
@@ -551,7 +553,7 @@ ecma_builtin_object_object_keys (ecma_object_t *obj_p) /**< routine's argument *
  * @return ecma value
  *         Returned value must be freed with ecma_free_value.
  */
-static ecma_value_t
+ecma_value_t
 ecma_builtin_object_object_get_own_property_descriptor (ecma_object_t *obj_p, /**< routine's first argument */
                                                         ecma_string_t *name_str_p) /**< routine's second argument */
 {
@@ -724,7 +726,7 @@ ecma_builtin_object_object_create (ecma_value_t arg1, /**< routine's first argum
  * @return ecma value
  *         Returned value must be freed with ecma_free_value.
  */
-static ecma_value_t
+ecma_value_t
 ecma_builtin_object_object_define_property (ecma_object_t *obj_p, /**< routine's first argument */
                                             ecma_string_t *name_str_p, /**< routine's second argument */
                                             ecma_value_t arg3) /**< routine's third argument */
@@ -875,6 +877,25 @@ ecma_builtin_object_object_assign (const ecma_value_t arguments_list_p[], /**< a
 } /* ecma_builtin_object_object_assign */
 #endif /* ENABLED (JERRY_ES2015_BUILTIN) */
 
+#if ENABLED (JERRY_ES2015_BUILTIN)
+/**
+ * The Object object's 'is' routine
+ *
+ * See also:
+ *          ECMA-262 v6, 19.1.2.10
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value.
+ */
+static ecma_value_t
+ecma_builtin_object_object_is (ecma_value_t arg1, /**< routine's first argument */
+                               ecma_value_t arg2) /**< routine's second argument */
+{
+  return ecma_op_same_value (arg1, arg2) ? ECMA_VALUE_TRUE : ECMA_VALUE_FALSE;
+} /* ecma_builtin_object_object_is */
+#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+
+
 /**
  * Dispatcher of the built-in's routines
  *
@@ -915,6 +936,10 @@ ecma_builtin_object_dispatch_routine (uint16_t builtin_routine_id, /**< built-in
     case ECMA_OBJECT_ROUTINE_ASSIGN:
     {
       return ecma_builtin_object_object_assign (arguments_list_p, arguments_number);
+    }
+    case ECMA_OBJECT_ROUTINE_IS:
+    {
+      return ecma_builtin_object_object_is (arg1, arg2);
     }
 #endif /* ENABLED (JERRY_ES2015_BUILTIN) */
     default:
@@ -983,12 +1008,12 @@ ecma_builtin_object_dispatch_routine (uint16_t builtin_routine_id, /**< built-in
     {
       return ecma_builtin_object_object_get_own_property_names (obj_p);
     }
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
     case ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_SYMBOLS:
     {
       return ecma_builtin_object_object_get_own_property_symbols (obj_p);
     }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
     case ECMA_OBJECT_ROUTINE_KEYS:
     {
       return ecma_builtin_object_object_keys (obj_p);

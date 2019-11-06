@@ -16,7 +16,7 @@ function f() {
     return 'foo';
 }
 assert ((function() {
-    if (1 === 0) {
+    if (1 === 1) {
         function f() {
             return 'bar';
         }
