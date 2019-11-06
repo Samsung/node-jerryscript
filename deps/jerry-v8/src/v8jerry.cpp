@@ -241,7 +241,7 @@ Locker::~Locker() {
 
 /* ArrayBuffer & Allocator */
 void delete_external_array_buffer(void* ptr) {
-    delete [] static_cast<uint8_t*> (ptr);
+    free(static_cast<uint8_t*> (ptr));
 }
 
 Local<ArrayBuffer> ArrayBuffer::New(Isolate* isolate, void* data, size_t byte_length, ArrayBufferCreationMode mode) {
