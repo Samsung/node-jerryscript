@@ -32,7 +32,13 @@ void JerryHandleScope::AddHandle(JerryHandle* jvalue) {
     m_handles.push_back(jvalue);
 }
 
-void JerryHandleScope::RemoveHandle(JerryHandle* jvalue) {
-    // TODO: check if it really exists
-    m_handles.erase(std::find(m_handles.begin(), m_handles.end(), jvalue));
+bool JerryHandleScope::RemoveHandle(JerryHandle* jvalue) {
+    std::vector<JerryHandle*>::iterator it = std::find(m_handles.begin(), m_handles.end(), jvalue);
+
+    if (it == m_handles.end()) {
+        return false;
+    }
+
+    m_handles.erase(it);
+    return true;
 }
