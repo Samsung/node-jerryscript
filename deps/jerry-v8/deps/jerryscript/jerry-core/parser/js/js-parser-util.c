@@ -85,6 +85,51 @@ parser_emit_two_bytes (parser_context_t *context_p, /**< context */
   } \
   (context_p)->byte_code.last_p->bytes[(context_p)->byte_code.last_position++] = (uint8_t) (byte)
 
+#if ENABLED (JERRY_PARSER_DUMP_BYTE_CODE)
+
+/**
+ * Print literal corresponding to the current index
+ */
+static void
+parser_print_literal (parser_context_t *context_p, /**< context */
+                      uint16_t literal_index) /**< index of literal */
+{
+  parser_scope_stack *scope_stack_p = context_p->scope_stack_p;
+  parser_scope_stack *scope_stack_end_p = scope_stack_p + context_p->scope_stack_top;
+  int32_t scope_literal_index = -1;
+
+  while (scope_stack_p < scope_stack_end_p)
+  {
+    scope_stack_end_p--;
+
+    if (literal_index == scope_stack_end_p->map_to)
+    {
+      scope_literal_index = scope_stack_end_p->map_from;
+    }
+  }
+
+  if (literal_index < PARSER_REGISTER_START)
+  {
+    JERRY_DEBUG_MSG (scope_literal_index != -1 ? " IDX:%d->" : " idx:%d->", literal_index);
+    lexer_literal_t *literal_p = PARSER_GET_LITERAL (literal_index);
+    util_print_literal (literal_p);
+    return;
+  }
+
+  if (scope_literal_index == -1)
+  {
+    JERRY_DEBUG_MSG (" reg:%d", (int) (literal_index - PARSER_REGISTER_START));
+    return;
+  }
+
+  JERRY_DEBUG_MSG (" REG:%d->", (int) (literal_index - PARSER_REGISTER_START));
+
+  lexer_literal_t *literal_p = PARSER_GET_LITERAL (scope_stack_end_p->map_from);
+  util_print_literal (literal_p);
+} /* parser_print_literal */
+
+#endif /* ENABLED (JERRY_PARSER_DUMP_BYTE_CODE) */
+
 /**
  * Append the current byte code to the stream
  */
@@ -181,26 +226,16 @@ parser_flush_cbc (parser_context_t *context_p) /**< context */
 
     if (flags & (CBC_HAS_LITERAL_ARG | CBC_HAS_LITERAL_ARG2))
     {
-      uint16_t literal_index = context_p->last_cbc.literal_index;
-      lexer_literal_t *literal_p = PARSER_GET_LITERAL (literal_index);
-      JERRY_DEBUG_MSG (" idx:%d->", literal_index);
-      util_print_literal (literal_p);
+      parser_print_literal (context_p, context_p->last_cbc.literal_index);
     }
 
     if (flags & CBC_HAS_LITERAL_ARG2)
     {
-      uint16_t literal_index = context_p->last_cbc.value;
-      lexer_literal_t *literal_p = PARSER_GET_LITERAL (literal_index);
-      JERRY_DEBUG_MSG (" idx:%d->", literal_index);
-      util_print_literal (literal_p);
+      parser_print_literal (context_p, context_p->last_cbc.value);
 
       if (!(flags & CBC_HAS_LITERAL_ARG))
       {
-        literal_index = context_p->last_cbc.third_literal_index;
-
-        literal_p = PARSER_GET_LITERAL (literal_index);
-        JERRY_DEBUG_MSG (" idx:%d->", literal_index);
-        util_print_literal (literal_p);
+        parser_print_literal (context_p, context_p->last_cbc.third_literal_index);
       }
     }
 
@@ -275,6 +310,29 @@ parser_emit_cbc_literal (parser_context_t *context_p, /**< context */
   context_p->last_cbc.literal_type = LEXER_UNUSED_LITERAL;
   context_p->last_cbc.literal_object_type = LEXER_LITERAL_OBJECT_ANY;
 } /* parser_emit_cbc_literal */
+
+/**
+ * Append a byte code with a literal and value argument
+ */
+void
+parser_emit_cbc_literal_value (parser_context_t *context_p, /**< context */
+                               uint16_t opcode, /**< opcode */
+                               uint16_t literal_index, /**< literal index */
+                               uint16_t value) /**< value */
+{
+  JERRY_ASSERT (PARSER_ARGS_EQ (opcode, CBC_HAS_LITERAL_ARG | CBC_HAS_LITERAL_ARG2));
+
+  if (context_p->last_cbc_opcode != PARSER_CBC_UNAVAILABLE)
+  {
+    parser_flush_cbc (context_p);
+  }
+
+  context_p->last_cbc_opcode = opcode;
+  context_p->last_cbc.literal_index = literal_index;
+  context_p->last_cbc.literal_type = LEXER_UNUSED_LITERAL;
+  context_p->last_cbc.literal_object_type = LEXER_LITERAL_OBJECT_ANY;
+  context_p->last_cbc.value = value;
+} /* parser_emit_cbc_literal_value */
 
 /**
  * Append a byte code with the current literal argument
@@ -754,6 +812,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Maximum number of literals reached.";
     }
+    case PARSER_ERR_SCOPE_STACK_LIMIT_REACHED:
+    {
+      return "Maximum depth of scope stack reached.";
+    }
     case PARSER_ERR_ARGUMENT_LIMIT_REACHED:
     {
       return "Maximum number of function arguments reached.";
@@ -761,10 +823,6 @@ parser_error_to_string (parser_error_t error) /**< error code */
     case PARSER_ERR_STACK_LIMIT_REACHED:
     {
       return "Maximum function stack size reached.";
-    }
-    case PARSER_ERR_REGISTER_LIMIT_REACHED:
-    {
-      return "Maximum number of registers is reached.";
     }
     case PARSER_ERR_INVALID_CHARACTER:
     {
@@ -898,24 +956,6 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Case statement must be in a switch block.";
     }
-#if ENABLED (JERRY_ES2015_CLASS)
-    case PARSER_ERR_MULTIPLE_CLASS_CONSTRUCTORS:
-    {
-      return "Multiple constructors are not allowed.";
-    }
-    case PARSER_ERR_CLASS_CONSTRUCTOR_AS_ACCESSOR:
-    {
-      return "Class constructor may not be an accessor.";
-    }
-    case PARSER_ERR_CLASS_STATIC_PROTOTYPE:
-    {
-      return "Classes may not have a static property called 'prototype'.";
-    }
-    case PARSER_ERR_UNEXPECTED_SUPER_REFERENCE:
-    {
-      return "Super is not allowed to be used here.";
-    }
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
     case PARSER_ERR_LEFT_PAREN_EXPECTED:
     {
       return "Expected '(' token.";
@@ -932,12 +972,6 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Expected ']' token.";
     }
-#if ENABLED (JERRY_ES2015_TEMPLATE_STRINGS)
-    case PARSER_ERR_RIGHT_BRACE_EXPECTED:
-    {
-      return "Expected '}' token.";
-    }
-#endif /* ENABLED (JERRY_ES2015_TEMPLATE_STRINGS) */
     case PARSER_ERR_COLON_EXPECTED:
     {
       return "Expected ':' token.";
@@ -954,12 +988,6 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Expected 'in' token.";
     }
-#if ENABLED (JERRY_ES2015_FOR_OF)
-    case PARSER_ERR_OF_EXPECTED:
-    {
-      return "Expected 'of' token.";
-    }
-#endif /* ENABLED (JERRY_ES2015_FOR_OF) */
     case PARSER_ERR_WHILE_EXPECTED:
     {
       return "While expected for do-while loop.";
@@ -1044,24 +1072,6 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Duplicated label.";
     }
-#if ((ENABLED (JERRY_ES2015_FUNCTION_PARAMETER_INITIALIZER)) \
-     || (ENABLED (JERRY_ES2015_FUNCTION_REST_PARAMETER)))
-    case PARSER_ERR_DUPLICATED_ARGUMENT_NAMES:
-    {
-      return "Duplicated function argument names are not allowed here.";
-    }
-#endif /* ((ENABLED (JERRY_ES2015_FUNCTION_PARAMETER_INITIALIZER))
-           || (ENABLED (JERRY_ES2015_FUNCTION_REST_PARAMETER))) */
-#if ENABLED (JERRY_ES2015_FUNCTION_PARAMETER_INITIALIZER)
-    case PARSER_ERR_FORMAL_PARAM_AFTER_REST_PARAMETER:
-    {
-      return "Rest parameter must be the last formal parameter.";
-    }
-    case PARSER_ERR_REST_PARAMETER_DEFAULT_INITIALIZER:
-    {
-      return "Rest parameter may not have a default initializer.";
-    }
-#endif /* ENABLED (JERRY_ES2015_FUNCTION_PARAMETER_INITIALIZER) */
     case PARSER_ERR_OBJECT_PROPERTY_REDEFINED:
     {
       return "Property of object literal redefined.";
@@ -1070,7 +1080,52 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Non-strict argument definition.";
     }
-
+#if ENABLED (JERRY_ES2015)
+    case PARSER_ERR_VARIABLE_REDECLARED:
+    {
+      return "Local variable is redeclared.";
+    }
+    case PARSER_ERR_MISSING_ASSIGN_AFTER_CONST:
+    {
+      return "Value assignment is expected after a const declaration.";
+    }
+    case PARSER_ERR_MULTIPLE_CLASS_CONSTRUCTORS:
+    {
+      return "Multiple constructors are not allowed.";
+    }
+    case PARSER_ERR_CLASS_CONSTRUCTOR_AS_ACCESSOR:
+    {
+      return "Class constructor may not be an accessor.";
+    }
+    case PARSER_ERR_CLASS_STATIC_PROTOTYPE:
+    {
+      return "Classes may not have a static property called 'prototype'.";
+    }
+    case PARSER_ERR_UNEXPECTED_SUPER_REFERENCE:
+    {
+      return "Super is not allowed to be used here.";
+    }
+    case PARSER_ERR_RIGHT_BRACE_EXPECTED:
+    {
+      return "Expected '}' token.";
+    }
+    case PARSER_ERR_OF_EXPECTED:
+    {
+      return "Expected 'of' token.";
+    }
+    case PARSER_ERR_DUPLICATED_ARGUMENT_NAMES:
+    {
+      return "Duplicated function argument names are not allowed here.";
+    }
+    case PARSER_ERR_FORMAL_PARAM_AFTER_REST_PARAMETER:
+    {
+      return "Rest parameter must be the last formal parameter.";
+    }
+    case PARSER_ERR_REST_PARAMETER_DEFAULT_INITIALIZER:
+    {
+      return "Rest parameter may not have a default initializer.";
+    }
+#endif /* ENABLED (JERRY_ES2015) */
 #if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
     case PARSER_ERR_FILE_NOT_FOUND:
     {

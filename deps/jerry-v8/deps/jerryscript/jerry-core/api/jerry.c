@@ -79,6 +79,17 @@ JERRY_STATIC_ASSERT (((ECMA_PROMISE_STATE_PENDING + 1) == JERRY_PROMISE_STATE_PE
                      promise_internal_state_matches_external);
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_PROMISE) */
 
+/**
+ * Offset between internal and external arithmetic operator types
+ */
+#define ECMA_NUMBER_ARITHMETIC_OP_API_OFFSET (JERRY_BIN_OP_SUB - NUMBER_ARITHMETIC_SUBTRACTION)
+
+JERRY_STATIC_ASSERT (((NUMBER_ARITHMETIC_SUBTRACTION + ECMA_NUMBER_ARITHMETIC_OP_API_OFFSET) == JERRY_BIN_OP_SUB)
+                     && ((NUMBER_ARITHMETIC_MULTIPLICATION + ECMA_NUMBER_ARITHMETIC_OP_API_OFFSET) == JERRY_BIN_OP_MUL)
+                     && ((NUMBER_ARITHMETIC_DIVISION + ECMA_NUMBER_ARITHMETIC_OP_API_OFFSET) == JERRY_BIN_OP_DIV)
+                     && ((NUMBER_ARITHMETIC_REMAINDER + ECMA_NUMBER_ARITHMETIC_OP_API_OFFSET) == JERRY_BIN_OP_REM),
+                     number_arithmetics_operation_type_matches_external);
+
 #if !ENABLED (JERRY_PARSER) && !ENABLED (JERRY_SNAPSHOT_EXEC)
 #error "JERRY_SNAPSHOT_EXEC must be enabled if JERRY_PARSER is disabled!"
 #endif /* !ENABLED (JERRY_PARSER) && !ENABLED (JERRY_SNAPSHOT_EXEC) */
@@ -819,12 +830,12 @@ jerry_value_is_symbol (const jerry_value_t value) /**< api value */
 {
   jerry_assert_api_available ();
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   return ecma_is_value_symbol (value);
-#else /* !ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#else /* !ENABLED (JERRY_ES2015) */
   JERRY_UNUSED (value);
   return false;
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 } /* jerry_value_is_symbol */
 
 /**
@@ -878,12 +889,12 @@ jerry_value_get_type (const jerry_value_t value) /**< input value to check */
     {
       return JERRY_TYPE_STRING;
     }
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
     case LIT_MAGIC_STRING_SYMBOL:
     {
       return JERRY_TYPE_SYMBOL;
     }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
     case LIT_MAGIC_STRING_FUNCTION:
     {
       return JERRY_TYPE_FUNCTION;
@@ -948,9 +959,9 @@ jerry_is_feature_enabled (const jerry_feature_t feature) /**< feature to check *
 #if ENABLED (JERRY_ES2015_BUILTIN_PROMISE)
           || feature == JERRY_FEATURE_PROMISE
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_PROMISE) */
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
           || feature == JERRY_FEATURE_SYMBOL
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 #if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
           || feature == JERRY_FEATURE_TYPEDARRAY
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
@@ -1026,6 +1037,17 @@ jerry_binary_operation (jerry_binary_operation_t op, /**< operation */
 
       ecma_object_t *proto_obj_p = ecma_get_object_from_value (rhs);
       return jerry_return (ecma_op_object_has_instance (proto_obj_p, lhs));
+    }
+    case JERRY_BIN_OP_ADD:
+    {
+      return jerry_return (opfunc_addition (lhs, rhs));
+    }
+    case JERRY_BIN_OP_SUB:
+    case JERRY_BIN_OP_MUL:
+    case JERRY_BIN_OP_DIV:
+    case JERRY_BIN_OP_REM:
+    {
+      return jerry_return (do_number_arithmetic (op - ECMA_NUMBER_ARITHMETIC_OP_API_OFFSET, lhs, rhs));
     }
     default:
     {
@@ -1296,7 +1318,13 @@ jerry_value_to_string (const jerry_value_t value) /**< input value */
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (error_value_msg_p)));
   }
 
-  return jerry_return (ecma_op_to_string (value));
+  ecma_string_t *str_p = ecma_op_to_string (value);
+  if (JERRY_UNLIKELY (str_p == NULL))
+  {
+    return ecma_create_error_reference_from_context ();
+  }
+
+  return jerry_return (ecma_make_string_value (str_p));
 } /* jerry_value_to_string */
 
 /**
@@ -1646,11 +1674,11 @@ jerry_create_symbol (const jerry_value_t value) /**< api value */
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
   }
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   return jerry_return (ecma_op_create_symbol (&value, 1));
-#else /* !ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#else /* !ENABLED (JERRY_ES2015) */
   return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG ("Symbol is not supported.")));
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 } /* jerry_create_symbol */
 
 /**
@@ -1712,18 +1740,19 @@ jerry_get_array_length (const jerry_value_t value) /**< api value */
 {
   jerry_assert_api_available ();
 
-  if (!jerry_value_is_array (value))
+  if (!jerry_value_is_object (value))
   {
     return 0;
   }
 
-  ecma_value_t len_value = ecma_op_object_get_by_magic_id (ecma_get_object_from_value (value),
-                                                           LIT_MAGIC_STRING_LENGTH);
+  ecma_object_t *object_p = ecma_get_object_from_value (value);
 
-  jerry_length_t length = ecma_number_to_uint32 (ecma_get_number_from_value (len_value));
-  ecma_free_value (len_value);
+  if (JERRY_LIKELY (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY))
+  {
+    return ecma_array_get_length (object_p);
+  }
 
-  return length;
+  return 0;
 } /* jerry_get_array_length */
 
 /**
@@ -2005,6 +2034,46 @@ jerry_has_own_property (const jerry_value_t obj_val, /**< object value */
 } /* jerry_has_own_property */
 
 /**
+ * Checks whether the object has the given internal property.
+ *
+ * @return true  - if the internal property exists
+ *         false - otherwise
+ */
+bool
+jerry_has_internal_property (const jerry_value_t obj_val, /**< object value */
+                             const jerry_value_t prop_name_val) /**< property name value */
+{
+  jerry_assert_api_available ();
+
+  if (!ecma_is_value_object (obj_val)
+      || !ecma_is_value_prop_name (prop_name_val))
+  {
+    return false;
+  }
+
+  ecma_object_t *obj_p = ecma_get_object_from_value (obj_val);
+
+  ecma_string_t *internal_string_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_API_INTERNAL);
+
+  if (ecma_op_object_is_fast_array (obj_p))
+  {
+    return false;
+  }
+
+  ecma_property_t *property_p = ecma_find_named_property (obj_p, internal_string_p);
+
+  if (property_p == NULL)
+  {
+    return false;
+  }
+
+  ecma_object_t *internal_object_p = ecma_get_object_from_value (ECMA_PROPERTY_VALUE_PTR (property_p)->value);
+  property_p = ecma_find_named_property (internal_object_p, ecma_get_prop_name_from_value (prop_name_val));
+
+  return property_p != NULL;
+} /* jerry_has_internal_property */
+
+/**
  * Delete a property from an object.
  *
  * @return true  - if property was deleted successfully
@@ -2055,6 +2124,53 @@ jerry_delete_property_by_index (const jerry_value_t obj_val, /**< object value *
 } /* jerry_delete_property_by_index */
 
 /**
+ * Delete an internal property from an object.
+ *
+ * @return true  - if property was deleted successfully
+ *         false - otherwise
+ */
+bool
+jerry_delete_internal_property (const jerry_value_t obj_val, /**< object value */
+                                const jerry_value_t prop_name_val) /**< property name value */
+{
+  jerry_assert_api_available ();
+
+  if (!ecma_is_value_object (obj_val)
+      || !ecma_is_value_prop_name (prop_name_val))
+  {
+    return false;
+  }
+
+  ecma_object_t *obj_p = ecma_get_object_from_value (obj_val);
+
+  ecma_string_t *internal_string_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_API_INTERNAL);
+
+  if (ecma_op_object_is_fast_array (obj_p))
+  {
+    return true;
+  }
+
+  ecma_property_t *property_p = ecma_find_named_property (obj_p, internal_string_p);
+
+  if (property_p == NULL)
+  {
+    return true;
+  }
+
+  ecma_object_t *internal_object_p = ecma_get_object_from_value (ECMA_PROPERTY_VALUE_PTR (property_p)->value);
+  property_p = ecma_find_named_property (internal_object_p, ecma_get_prop_name_from_value (prop_name_val));
+
+  if (property_p == NULL)
+  {
+    return true;
+  }
+
+  ecma_delete_property (internal_object_p, ECMA_PROPERTY_VALUE_PTR (property_p));
+
+  return true;
+} /* jerry_delete_internal_property */
+
+/**
  * Get value of a property to the specified object with the given name.
  *
  * Note:
@@ -2100,12 +2216,59 @@ jerry_get_property_by_index (const jerry_value_t obj_val, /**< object value */
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
   }
 
-  ecma_string_t *str_idx_p = ecma_new_ecma_string_from_uint32 (index);
-  ecma_value_t ret_value = ecma_op_object_get (ecma_get_object_from_value (obj_val), str_idx_p);
-  ecma_deref_ecma_string (str_idx_p);
+  ecma_value_t ret_value = ecma_op_object_get_by_uint32_index (ecma_get_object_from_value (obj_val), index);
 
   return jerry_return (ret_value);
 } /* jerry_get_property_by_index */
+
+/**
+ * Get value of an internal property to the specified object with the given name.
+ *
+ * Note:
+ *      returned value must be freed with jerry_release_value, when it is no longer needed.
+ *
+ * @return value of the internal property - if the internal property exists
+ *         undefined value - if the internal does not property exists
+ *         value marked with error flag - otherwise
+ */
+jerry_value_t
+jerry_get_internal_property (const jerry_value_t obj_val, /**< object value */
+                             const jerry_value_t prop_name_val) /**< property name value */
+{
+  jerry_assert_api_available ();
+
+  if (!ecma_is_value_object (obj_val)
+      || !ecma_is_value_prop_name (prop_name_val))
+  {
+    return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
+  }
+
+  ecma_object_t *obj_p = ecma_get_object_from_value (obj_val);
+
+  ecma_string_t *internal_string_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_API_INTERNAL);
+
+  if (ecma_op_object_is_fast_array (obj_p))
+  {
+    return jerry_return (ECMA_VALUE_UNDEFINED);
+  }
+
+  ecma_property_t *property_p = ecma_find_named_property (obj_p, internal_string_p);
+
+  if (property_p == NULL)
+  {
+    return jerry_return (ECMA_VALUE_UNDEFINED);
+  }
+
+  ecma_object_t *internal_object_p = ecma_get_object_from_value (ECMA_PROPERTY_VALUE_PTR (property_p)->value);
+  property_p = ecma_find_named_property (internal_object_p, ecma_get_prop_name_from_value (prop_name_val));
+
+  if (property_p == NULL)
+  {
+    return jerry_return (ECMA_VALUE_UNDEFINED);
+  }
+
+  return jerry_return (ecma_copy_value (ECMA_PROPERTY_VALUE_PTR (property_p)->value));
+} /* jerry_get_internal_property */
 
 /**
  * Set a property to the specified object with the given name.
@@ -2158,15 +2321,85 @@ jerry_set_property_by_index (const jerry_value_t obj_val, /**< object value */
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
   }
 
-  ecma_string_t *str_idx_p = ecma_new_ecma_string_from_uint32 ((uint32_t) index);
-  ecma_value_t ret_value = ecma_op_object_put (ecma_get_object_from_value (obj_val),
-                                               str_idx_p,
-                                               value_to_set,
-                                               true);
-  ecma_deref_ecma_string (str_idx_p);
+  ecma_value_t ret_value = ecma_op_object_put_by_uint32_index (ecma_get_object_from_value (obj_val),
+                                                               index,
+                                                               value_to_set,
+                                                               true);
 
   return jerry_return (ret_value);
 } /* jerry_set_property_by_index */
+
+/**
+ * Set an internal property to the specified object with the given name.
+ *
+ * Note:
+ *      - the property cannot be accessed from the JavaScript context, only from the public API
+ *      - returned value must be freed with jerry_release_value, when it is no longer needed.
+ *
+ * @return true value - if the operation was successful
+ *         value marked with error flag - otherwise
+ */
+bool
+jerry_set_internal_property (const jerry_value_t obj_val, /**< object value */
+                             const jerry_value_t prop_name_val, /**< property name value */
+                             const jerry_value_t value_to_set) /**< value to set */
+{
+  jerry_assert_api_available ();
+
+  if (ecma_is_value_error_reference (value_to_set)
+      || !ecma_is_value_object (obj_val)
+      || !ecma_is_value_prop_name (prop_name_val))
+  {
+    return false;
+  }
+
+  ecma_object_t *obj_p = ecma_get_object_from_value (obj_val);
+
+  ecma_string_t *internal_string_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_API_INTERNAL);
+
+  if (ecma_op_object_is_fast_array (obj_p))
+  {
+    ecma_fast_array_convert_to_normal (obj_p);
+  }
+
+  ecma_property_t *property_p = ecma_find_named_property (obj_p, internal_string_p);
+  ecma_object_t *internal_object_p;
+
+  if (property_p == NULL)
+  {
+    ecma_property_value_t *value_p = ecma_create_named_data_property (obj_p,
+                                                                      internal_string_p,
+                                                                      ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE,
+                                                                      NULL);
+
+    internal_object_p = ecma_create_object (NULL, 0, ECMA_OBJECT_TYPE_GENERAL);
+    value_p->value = ecma_make_object_value (internal_object_p);
+    ecma_deref_object (internal_object_p);
+  }
+  else
+  {
+    internal_object_p = ecma_get_object_from_value (ECMA_PROPERTY_VALUE_PTR (property_p)->value);
+  }
+
+  ecma_string_t *prop_name_p = ecma_get_prop_name_from_value (prop_name_val);
+  property_p = ecma_find_named_property (internal_object_p, prop_name_p);
+
+  if (property_p == NULL)
+  {
+    ecma_property_value_t *value_p = ecma_create_named_data_property (internal_object_p,
+                                                                      prop_name_p,
+                                                                      ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE,
+                                                                      NULL);
+
+    value_p->value = ecma_copy_value_if_not_object (value_to_set);
+  }
+  else
+  {
+    ecma_named_data_property_assign_value (internal_object_p, ECMA_PROPERTY_VALUE_PTR (property_p), value_to_set);
+  }
+
+  return true;
+} /* jerry_set_internal_property */
 
 /**
  * Initialize property descriptor.
@@ -2469,8 +2702,16 @@ jerry_call_function (const jerry_value_t func_obj_val, /**< function object to c
 {
   jerry_assert_api_available ();
 
-  if (jerry_value_is_function (func_obj_val))
+  if (jerry_value_is_function (func_obj_val) && !ecma_is_value_error_reference (this_val))
   {
+    for (jerry_size_t i = 0; i < args_count; i++)
+    {
+      if (ecma_is_value_error_reference (args_p[i]))
+      {
+        return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (error_value_msg_p)));
+      }
+    }
+
     return jerry_invoke_function (false, func_obj_val, this_val, args_p, args_count);
   }
 
@@ -2496,6 +2737,14 @@ jerry_construct_object (const jerry_value_t func_obj_val, /**< function object t
 
   if (jerry_value_is_constructor (func_obj_val))
   {
+    for (jerry_size_t i = 0; i < args_count; i++)
+    {
+      if (ecma_is_value_error_reference (args_p[i]))
+      {
+        return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (error_value_msg_p)));
+      }
+    }
+
     ecma_value_t this_val = ECMA_VALUE_UNDEFINED;
     return jerry_invoke_function (true, func_obj_val, this_val, args_p, args_count);
   }
@@ -2831,6 +3080,11 @@ jerry_resolve_or_reject_promise (jerry_value_t promise, /**< the promise value *
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
   }
 
+  if (ecma_is_value_error_reference (argument))
+  {
+    return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (error_value_msg_p)));
+  }
+
   lit_magic_string_id_t prop_name = (is_resolve ? LIT_INTERNAL_MAGIC_STRING_RESOLVE_FUNCTION
                                                 : LIT_INTERNAL_MAGIC_STRING_REJECT_FUNCTION);
 
@@ -2862,14 +3116,15 @@ jerry_resolve_or_reject_promise (jerry_value_t promise, /**< the promise value *
 jerry_value_t
 jerry_get_promise_result (const jerry_value_t promise) /**< promise object to get the result from */
 {
+  jerry_assert_api_available ();
+
 #if ENABLED (JERRY_ES2015_BUILTIN_PROMISE)
   if (!jerry_value_is_promise (promise))
   {
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
   }
 
-  ecma_value_t result = ecma_promise_get_result (ecma_get_object_from_value (promise));
-  return result;
+  return ecma_promise_get_result (ecma_get_object_from_value (promise));
 #else /* !ENABLED (JERRY_ES2015_BUILTIN_PROMISE) */
   JERRY_UNUSED (promise);
   return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG ("Promise not supported.")));
@@ -2886,6 +3141,8 @@ jerry_get_promise_result (const jerry_value_t promise) /**< promise object to ge
 jerry_promise_state_t
 jerry_get_promise_state (const jerry_value_t promise) /**< promise object to get the state from */
 {
+  jerry_assert_api_available ();
+
 #if ENABLED (JERRY_ES2015_BUILTIN_PROMISE)
   if (!jerry_value_is_promise (promise))
   {
@@ -2918,7 +3175,7 @@ jerry_get_symbol_descriptive_string (const jerry_value_t symbol) /**< symbol val
 {
   jerry_assert_api_available ();
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   if (!ecma_is_value_symbol (symbol))
   {
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
@@ -2926,11 +3183,11 @@ jerry_get_symbol_descriptive_string (const jerry_value_t symbol) /**< symbol val
 
   /* Note: This operation cannot throw an error */
   return ecma_get_symbol_descriptive_string (symbol);
-#else /* !ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#else /* !ENABLED (JERRY_ES2015) */
   JERRY_UNUSED (symbol);
 
   return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG ("Symbol is not supported.")));
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 } /** jerry_get_symbol_descriptive_string */
 
 /**
@@ -3096,6 +3353,49 @@ jerry_get_backtrace (uint32_t max_depth) /**< depth limit of the backtrace */
 {
   return vm_get_backtrace (max_depth);
 } /* jerry_get_backtrace */
+
+/**
+ * Get the resource name (usually a file name) of the currently executed script or the given function object
+ *
+ * Note: returned value must be freed with jerry_release_value, when it is no longer needed
+ *
+ * @return JS string constructed from
+ *         - the currently executed function object's resource name, if the given value is undefined
+ *         - resource name of the function object, if the given value is a function object
+ *         - "<anonymous>", otherwise
+ */
+jerry_value_t
+jerry_get_resource_name (const jerry_value_t value) /**< jerry api value */
+{
+#if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM)
+  if (ecma_is_value_undefined (value))
+  {
+    if (JERRY_CONTEXT (vm_top_context_p) != NULL)
+    {
+      return ecma_copy_value (JERRY_CONTEXT (vm_top_context_p)->resource_name);
+    }
+  }
+#endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+#if ENABLED (JERRY_LINE_INFO)
+  else if (ecma_is_value_object (value))
+  {
+    ecma_object_t *obj_p = ecma_get_object_from_value (value);
+
+    if (ecma_get_object_type (obj_p) == ECMA_OBJECT_TYPE_FUNCTION
+        && !ecma_get_object_is_builtin (obj_p))
+    {
+      ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) obj_p;
+
+      const ecma_compiled_code_t *bytecode_data_p = ecma_op_function_get_compiled_code (ext_func_p);
+
+      return ecma_copy_value (ecma_op_resource_name (bytecode_data_p));
+    }
+  }
+#endif /* ENABLED (JERRY_LINE_INFO) */
+
+  JERRY_UNUSED (value);
+  return ecma_make_magic_string_value (LIT_MAGIC_STRING_RESOURCE_ANON);
+} /* jerry_get_resource_name */
 
 /**
  * Check if the given value is an ArrayBuffer object.
@@ -3329,6 +3629,59 @@ jerry_get_arraybuffer_pointer (const jerry_value_t array_buffer) /**< Array Buff
 
   return NULL;
 } /* jerry_get_arraybuffer_pointer */
+
+/**
+ * Get if the ArrayBuffer is detachable.
+ *
+ * @return boolean value - if success
+ *         value marked with error flag - otherwise
+ */
+jerry_value_t
+jerry_is_arraybuffer_detachable (const jerry_value_t value) /**< ArrayBuffer */
+{
+  jerry_assert_api_available ();
+
+#if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
+  if (ecma_is_arraybuffer (value))
+  {
+    ecma_object_t *buffer_p = ecma_get_object_from_value (value);
+    return ecma_arraybuffer_is_detachable (buffer_p) ? ECMA_VALUE_TRUE : ECMA_VALUE_FALSE;
+  }
+#else /* !ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
+  JERRY_UNUSED (value);
+#endif /* ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
+  return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG ("Expects an ArrayBuffer")));
+} /* jerry_is_arraybuffer_detachable */
+
+/**
+ * Detach the underlying data block from ArrayBuffer and set its bytelength to 0.
+ * This operation requires the ArrayBuffer to be external that created by
+ * `jerry_create_arraybuffer_external`.
+ *
+ * @return null value - if success
+ *         value marked with error flag - otherwise
+ */
+jerry_value_t
+jerry_detach_arraybuffer (const jerry_value_t value) /**< ArrayBuffer */
+{
+  jerry_assert_api_available ();
+
+#if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
+  if (ecma_is_arraybuffer (value))
+  {
+    ecma_object_t *buffer_p = ecma_get_object_from_value (value);
+    bool detached = ecma_arraybuffer_detach (buffer_p);
+    if (!detached)
+    {
+      return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG ("Expects a detachable ArrayBuffer.")));
+    }
+    return ECMA_VALUE_NULL;
+  }
+#else /* !ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
+  JERRY_UNUSED (value);
+#endif /* ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
+  return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG ("Expects an ArrayBuffer")));
+} /* jerry_detach_arraybuffer */
 
 /**
  * DataView related functions
@@ -3607,6 +3960,11 @@ jerry_create_typedarray_for_arraybuffer_sz (jerry_typedarray_type_t type_name, /
   jerry_assert_api_available ();
 
 #if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
+  if (ecma_is_value_error_reference (arraybuffer))
+  {
+    return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (error_value_msg_p)));
+  }
+
   ecma_builtin_id_t prototype_id = 0;
   ecma_typedarray_type_t id = 0;
   uint8_t element_size_shift = 0;
@@ -3659,6 +4017,11 @@ jerry_create_typedarray_for_arraybuffer (jerry_typedarray_type_t type_name, /**<
   jerry_assert_api_available ();
 
 #if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
+  if (ecma_is_value_error_reference (arraybuffer))
+  {
+    return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (error_value_msg_p)));
+  }
+
   jerry_length_t byteLength = jerry_get_arraybuffer_byte_length (arraybuffer);
   return jerry_create_typedarray_for_arraybuffer_sz (type_name, arraybuffer, 0, byteLength);
 #else /* !ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
@@ -3817,6 +4180,11 @@ jerry_json_stringify (const jerry_value_t object_to_stringify) /**< a jerry_obje
   jerry_assert_api_available ();
 #if ENABLED (JERRY_BUILTIN_JSON)
   ecma_value_t ret_value = ecma_builtin_json_string_from_object (object_to_stringify);
+
+  if (ecma_is_value_error_reference (object_to_stringify))
+  {
+    return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (error_value_msg_p)));
+  }
 
   if (ecma_is_value_undefined (ret_value))
   {

@@ -63,7 +63,7 @@ ecma_op_container_create (const ecma_value_t *arguments_list_p, /**< arguments l
 
   ecma_value_t set_value = ecma_make_object_value (object_p);
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   if (arguments_list_len == 0)
   {
     return set_value;
@@ -129,7 +129,7 @@ ecma_op_container_create (const ecma_value_t *arguments_list_p, /**< arguments l
 
       ecma_object_t *next_object_p = ecma_get_object_from_value (next_value);
 
-      ecma_value_t key = ecma_op_object_get (next_object_p, ecma_new_ecma_string_from_uint32 (0));
+      ecma_value_t key = ecma_op_object_get_by_uint32_index (next_object_p, 0);
 
       if (ECMA_IS_VALUE_ERROR (key))
       {
@@ -141,7 +141,7 @@ ecma_op_container_create (const ecma_value_t *arguments_list_p, /**< arguments l
         return key;
       }
 
-      ecma_value_t value = ecma_op_object_get (next_object_p, ecma_new_ecma_string_from_uint32 (1));
+      ecma_value_t value = ecma_op_object_get_by_uint32_index (next_object_p, 1);
 
       if (ECMA_IS_VALUE_ERROR (value))
       {
@@ -176,7 +176,7 @@ ecma_op_container_create (const ecma_value_t *arguments_list_p, /**< arguments l
 
   ecma_free_value (iter);
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   return set_value;
 } /* ecma_op_container_create */
@@ -247,8 +247,7 @@ ecma_op_container_to_key (ecma_value_t key_arg) /**< key argument */
     ecma_object_t *obj_p = ecma_get_object_from_value (key_arg);
     ecma_string_t *key_string_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_MAP_KEY);
 
-    if (ecma_get_object_type (obj_p) == ECMA_OBJECT_TYPE_ARRAY
-        && ((ecma_extended_object_t *) obj_p)->u.array.is_fast_mode)
+    if (ecma_op_object_is_fast_array (obj_p))
     {
       ecma_fast_array_convert_to_normal (obj_p);
     }

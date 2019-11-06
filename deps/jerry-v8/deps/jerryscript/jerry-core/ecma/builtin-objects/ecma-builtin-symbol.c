@@ -27,7 +27,7 @@
  #include "jcontext.h"
  #include "jrt.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
 
 #define ECMA_BUILTINS_INTERNAL
 #include "ecma-builtins-internal.h"
@@ -198,18 +198,16 @@ ecma_builtin_symbol_for (ecma_value_t this_arg, /**< this argument */
                          ecma_value_t key) /**< key string */
 {
   JERRY_UNUSED (this_arg);
-  ecma_value_t string_desc = ecma_op_to_string (key);
+  ecma_string_t *string_desc_p = ecma_op_to_string (key);
 
   /* 1. */
-  if (ECMA_IS_VALUE_ERROR (string_desc))
+  if (JERRY_UNLIKELY (string_desc_p == NULL))
   {
     /* 2. */
-    return string_desc;
+    return ECMA_VALUE_ERROR;
   }
-  /* 4-7. */
-  JERRY_ASSERT (ecma_is_value_string (string_desc));
 
-  return ecma_builtin_symbol_for_helper (string_desc);
+  return ecma_builtin_symbol_for_helper (ecma_make_string_value (string_desc_p));
 } /* ecma_builtin_symbol_for */
 
 /**
@@ -243,4 +241,4 @@ ecma_builtin_symbol_key_for (ecma_value_t this_arg, /**< this argument */
  * @}
  */
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */

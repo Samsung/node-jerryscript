@@ -25,12 +25,28 @@
  * @{
  */
 
+
 /**
- * Maximum number of array holes in a fast mode access array.
- * If the number of holes exceeds this limit, the array is converted back
+ * Maximum number of new array holes in a fast mode access array.
+ * If the number of new holes exceeds this limit, the array is converted back
  * to normal property list based array.
  */
-#define ECMA_FAST_ARRAY_MAX_HOLE_COUNT 32
+#define ECMA_FAST_ARRAY_MAX_NEW_HOLES_COUNT 32
+
+/**
+ * Bitshift index for fast array hole count representation
+ */
+#define ECMA_FAST_ARRAY_HOLE_SHIFT 8
+
+/**
+ * This number represents 1 array hole in underlying buffer of a fast acces mode array
+ */
+#define ECMA_FAST_ARRAY_HOLE_ONE (1 << ECMA_FAST_ARRAY_HOLE_SHIFT)
+
+/**
+ * Maximum number of array holes in a fast access mode array
+ */
+#define ECMA_FAST_ARRAY_MAX_HOLE_COUNT (1 << 24)
 
 /**
  * Flags for ecma_op_array_object_set_length
@@ -52,15 +68,24 @@ ecma_op_new_array_object (ecma_length_t length);
 ecma_object_t *
 ecma_op_new_fast_array_object (ecma_length_t length);
 
+bool
+ecma_op_object_is_fast_array (ecma_object_t *object_p);
+
+bool
+ecma_op_array_is_fast_array (ecma_extended_object_t *array_p);
+
 ecma_value_t *
 ecma_fast_array_extend (ecma_object_t *object_p, uint32_t new_lengt);
 
 bool
-ecma_fast_array_set_property (ecma_object_t *object_p, ecma_string_t *property_name_p, ecma_value_t value);
+ecma_fast_array_set_property (ecma_object_t *object_p, uint32_t index, ecma_value_t value);
 
 void
 ecma_array_object_delete_property (ecma_object_t *object_p, ecma_string_t *property_name_p,
                                    ecma_property_value_t *prop_value_p);
+
+uint32_t
+ecma_delete_fast_array_properties (ecma_object_t *object_p, uint32_t new_length);
 
 ecma_collection_t *
 ecma_fast_array_get_property_names (ecma_object_t *object_p, uint32_t opts);
@@ -72,11 +97,11 @@ ecma_value_t
 ecma_op_create_array_object (const ecma_value_t *arguments_list_p, ecma_length_t arguments_list_len,
                              bool is_treat_single_arg_as_length);
 
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
 ecma_value_t
 ecma_op_create_array_object_by_constructor (const ecma_value_t *arguments_list_p, ecma_length_t arguments_list_len,
                                             bool is_treat_single_arg_as_length, ecma_object_t *object_p);
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+#endif /* ENABLED (JERRY_ES2015) */
 
 ecma_value_t
 ecma_op_array_object_set_length (ecma_object_t *object_p, ecma_value_t new_value, uint32_t flags);
@@ -84,6 +109,8 @@ ecma_op_array_object_set_length (ecma_object_t *object_p, ecma_value_t new_value
 ecma_value_t
 ecma_op_array_object_define_own_property (ecma_object_t *object_p, ecma_string_t *property_name_p,
                                           const ecma_property_descriptor_t *property_desc_p);
+
+uint32_t ecma_array_get_length (ecma_object_t *array_p);
 
 void
 ecma_op_array_list_lazy_property_names (ecma_object_t *obj_p, bool separate_enumerable,

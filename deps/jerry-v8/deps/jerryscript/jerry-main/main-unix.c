@@ -459,6 +459,7 @@ init_engine (jerry_init_flag_t flags, /**< initialized flags for the engine */
   register_js_function ("assert", jerryx_handler_assert);
   register_js_function ("gc", jerryx_handler_gc);
   register_js_function ("print", jerryx_handler_print);
+  register_js_function ("resourceName", jerryx_handler_resource_name);
 } /* init_engine */
 
 int
@@ -499,7 +500,11 @@ main (int argc,
       }
       case OPT_VERSION:
       {
-        printf ("Version: %d.%d%s\n", JERRY_API_MAJOR_VERSION, JERRY_API_MINOR_VERSION, JERRY_COMMIT_HASH);
+        printf ("Version: %d.%d.%d%s\n",
+                JERRY_API_MAJOR_VERSION,
+                JERRY_API_MINOR_VERSION,
+                JERRY_API_PATCH_VERSION,
+                JERRY_COMMIT_HASH);
         return JERRY_STANDALONE_EXIT_CODE_OK;
       }
       case OPT_MEM_STATS:

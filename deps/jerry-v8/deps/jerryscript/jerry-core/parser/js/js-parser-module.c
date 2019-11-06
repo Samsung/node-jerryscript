@@ -347,7 +347,7 @@ parser_module_parse_export_clause (parser_context_t *context_p) /**< parser cont
     ecma_string_t *export_name_p = NULL;
     ecma_string_t *local_name_p = NULL;
 
-    lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_IDENT_LITERAL);
+    lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_NEW_IDENT_LITERAL);
 
     uint16_t local_name_index = context_p->lit_object.index;
     uint16_t export_name_index = PARSER_MAXIMUM_NUMBER_OF_LITERALS;
@@ -363,7 +363,7 @@ parser_module_parse_export_clause (parser_context_t *context_p) /**< parser cont
         parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
       }
 
-      lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_IDENT_LITERAL);
+      lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_NEW_IDENT_LITERAL);
 
       export_name_index = context_p->lit_object.index;
 
@@ -435,10 +435,18 @@ parser_module_parse_import_clause (parser_context_t *context_p) /**< parser cont
       parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
     }
 
+#if ENABLED (JERRY_ES2015)
+    if (context_p->next_scanner_info_p->source_p == context_p->source_p)
+    {
+      JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_ERR_REDECLARED);
+      parser_raise_error (context_p, PARSER_ERR_VARIABLE_REDECLARED);
+    }
+#endif /* ENABLED (JERRY_ES2015) */
+
     ecma_string_t *import_name_p = NULL;
     ecma_string_t *local_name_p = NULL;
 
-    lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_IDENT_LITERAL);
+    lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_NEW_IDENT_LITERAL);
 
     uint16_t import_name_index = context_p->lit_object.index;
     uint16_t local_name_index = PARSER_MAXIMUM_NUMBER_OF_LITERALS;
@@ -454,7 +462,15 @@ parser_module_parse_import_clause (parser_context_t *context_p) /**< parser cont
         parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
       }
 
-      lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_IDENT_LITERAL);
+#if ENABLED (JERRY_ES2015)
+      if (context_p->next_scanner_info_p->source_p == context_p->source_p)
+      {
+        JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_ERR_REDECLARED);
+        parser_raise_error (context_p, PARSER_ERR_VARIABLE_REDECLARED);
+      }
+#endif /* ENABLED (JERRY_ES2015) */
+
+      lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_NEW_IDENT_LITERAL);
 
       local_name_index = context_p->lit_object.index;
 

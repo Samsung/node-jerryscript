@@ -38,6 +38,7 @@ OPTIONS_PROFILE_MIN = ['--profile=minimal']
 OPTIONS_PROFILE_ES51 = [] # NOTE: same as ['--profile=es5.1']
 OPTIONS_PROFILE_ES2015 = ['--profile=es2015-subset']
 OPTIONS_STACK_LIMIT = ['--stack-limit=96']
+OPTIONS_GC_MARK_LIMIT = ['--gc-mark-limit=16']
 OPTIONS_DEBUG = ['--debug']
 OPTIONS_SNAPSHOT = ['--snapshot-save=on', '--snapshot-exec=on', '--jerry-cmdline-snapshot=on']
 OPTIONS_UNITTESTS = ['--unittests=on', '--jerry-cmdline=off', '--error-messages=on',
@@ -75,22 +76,23 @@ JERRY_UNITTESTS_OPTIONS = [
 # Test options for jerry-tests
 JERRY_TESTS_OPTIONS = [
     Options('jerry_tests-es2015_subset-debug',
-            OPTIONS_COMMON + OPTIONS_PROFILE_ES2015 + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT),
+            OPTIONS_COMMON + OPTIONS_PROFILE_ES2015 + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT + OPTIONS_GC_MARK_LIMIT),
     Options('jerry_tests-es5.1',
-            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_STACK_LIMIT),
+            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_STACK_LIMIT + OPTIONS_GC_MARK_LIMIT),
     Options('jerry_tests-es5.1-snapshot',
-            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_SNAPSHOT + OPTIONS_STACK_LIMIT,
+            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_SNAPSHOT + OPTIONS_STACK_LIMIT + OPTIONS_GC_MARK_LIMIT,
             ['--snapshot']),
     Options('jerry_tests-es5.1-debug',
-            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT),
+            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT + OPTIONS_GC_MARK_LIMIT),
     Options('jerry_tests-es5.1-debug-snapshot',
-            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_SNAPSHOT + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT,
-            ['--snapshot']),
+            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_SNAPSHOT + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT
+            + OPTIONS_GC_MARK_LIMIT, ['--snapshot']),
     Options('jerry_tests-es5.1-debug-cpointer_32bit',
-            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT
+            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT + OPTIONS_GC_MARK_LIMIT
             + ['--cpointer-32bit=on', '--mem-heap=1024']),
     Options('jerry_tests-es5.1-debug-external_context',
-            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT + ['--external-context=on']),
+            OPTIONS_COMMON + OPTIONS_PROFILE_ES51 + OPTIONS_DEBUG + OPTIONS_STACK_LIMIT + OPTIONS_GC_MARK_LIMIT
+            + ['--external-context=on']),
 ]
 
 # Test options for jerry-test-suite
@@ -169,6 +171,8 @@ JERRY_BUILDOPTIONS = [
             ['--jerry-cmdline-snapshot=on']),
     Options('buildoption_test-recursion_limit',
             OPTIONS_STACK_LIMIT),
+    Options('buildoption_test-gc-mark_limit',
+            OPTIONS_GC_MARK_LIMIT),
     Options('buildoption_test-single-source',
             ['--cmake-param=-DENABLE_ALL_IN_ONE_SOURCE=ON']),
 ]
@@ -323,7 +327,8 @@ def iterate_test_runner_jobs(jobs, options):
         else:
             tested_hashes[bin_hash] = build_dir_path
 
-        test_cmd = [settings.TEST_RUNNER_SCRIPT, bin_path]
+        test_cmd = get_platform_cmd_prefix()
+        test_cmd.extend([settings.TEST_RUNNER_SCRIPT, '--engine', bin_path])
 
         yield job, ret_build, test_cmd
 
@@ -373,6 +378,7 @@ def run_jerry_tests(options):
         if ret_build:
             break
 
+        test_cmd.append('--test-dir')
         test_cmd.append(settings.JERRY_TESTS_DIR)
 
         if options.quiet:
@@ -381,9 +387,9 @@ def run_jerry_tests(options):
         skip_list = []
 
         if '--profile=es2015-subset' in job.build_args:
-            skip_list.append(r"es5.1\/")
+            skip_list.append(os.path.join('es5.1', ''))
         else:
-            skip_list.append(r"es2015\/")
+            skip_list.append(os.path.join('es2015', ''))
 
         if options.skip_list:
             skip_list.append(options.skip_list)
@@ -405,10 +411,13 @@ def run_jerry_test_suite(options):
             break
 
         if '--profile=minimal' in job.build_args:
+            test_cmd.append('--test-list')
             test_cmd.append(settings.JERRY_TEST_SUITE_MINIMAL_LIST)
         elif '--profile=es2015-subset' in job.build_args:
+            test_cmd.append('--test-dir')
             test_cmd.append(settings.JERRY_TEST_SUITE_DIR)
         else:
+            test_cmd.append('--test-list')
             test_cmd.append(settings.JERRY_TEST_SUITE_ES51_LIST)
 
         if options.quiet:

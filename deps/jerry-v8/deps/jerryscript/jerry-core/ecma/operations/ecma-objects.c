@@ -134,10 +134,10 @@ ecma_op_object_get_own_property (ecma_object_t *object_p, /**< the object */
           property_ref_p->virtual_value = ecma_make_uint32_value (ext_object_p->u.array.length);
         }
 
-        return ext_object_p->u.array.length_prop;
+        return ext_object_p->u.array.u.length_prop & (ECMA_PROPERTY_TYPE_VIRTUAL | ECMA_PROPERTY_FLAG_WRITABLE);
       }
 
-      if (ext_object_p->u.array.is_fast_mode)
+      if (ecma_op_array_is_fast_array (ext_object_p))
       {
         uint32_t index = ecma_string_get_array_index (property_name_p);
 
@@ -171,14 +171,14 @@ ecma_op_object_get_own_property (ecma_object_t *object_p, /**< the object */
     case ECMA_OBJECT_TYPE_PSEUDO_ARRAY:
     {
       /* ES2015 9.4.5.1 */
-      if (ecma_is_typedarray (ecma_make_object_value (object_p)))
+      if (ecma_object_is_typedarray (object_p))
       {
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
         if (ecma_prop_name_is_symbol (property_name_p))
         {
           break;
         }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
         uint32_t array_index = ecma_string_get_array_index (property_name_p);
 
@@ -250,7 +250,7 @@ ecma_op_object_get_own_property (ecma_object_t *object_p, /**< the object */
           /* Get length virtual property. */
           const ecma_compiled_code_t *bytecode_data_p;
 
-#if ENABLED (JERRY_ES2015_ARROW_FUNCTION)
+#if ENABLED (JERRY_ES2015)
           if (type != ECMA_OBJECT_TYPE_ARROW_FUNCTION)
           {
             ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) object_p;
@@ -261,10 +261,10 @@ ecma_op_object_get_own_property (ecma_object_t *object_p, /**< the object */
             ecma_arrow_function_t *arrow_func_p = (ecma_arrow_function_t *) object_p;
             bytecode_data_p = ecma_op_arrow_function_get_compiled_code (arrow_func_p);
           }
-#else /* !ENABLED (JERRY_ES2015_ARROW_FUNCTION) */
+#else /* !ENABLED (JERRY_ES2015) */
           ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) object_p;
           bytecode_data_p = ecma_op_function_get_compiled_code (ext_func_p);
-#endif /* ENABLED (JERRY_ES2015_ARROW_FUNCTION) */
+#endif /* ENABLED (JERRY_ES2015) */
 
           uint32_t len;
           if (bytecode_data_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
@@ -492,7 +492,7 @@ ecma_op_object_find_own (ecma_value_t base_value, /**< base value */
         return ecma_make_uint32_value (ext_object_p->u.array.length);
       }
 
-      if (JERRY_LIKELY (ext_object_p->u.array.is_fast_mode))
+      if (JERRY_LIKELY (ecma_op_array_is_fast_array (ext_object_p)))
       {
         uint32_t index = ecma_string_get_array_index (property_name_p);
 
@@ -540,14 +540,14 @@ ecma_op_object_find_own (ecma_value_t base_value, /**< base value */
       }
 #if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
       /* ES2015 9.4.5.4 */
-      if (ecma_is_typedarray (ecma_make_object_value (object_p)))
+      if (ecma_object_is_typedarray (object_p))
       {
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
         if (ecma_prop_name_is_symbol (property_name_p))
         {
           break;
         }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
         uint32_t array_index = ecma_string_get_array_index (property_name_p);
 
@@ -602,7 +602,7 @@ ecma_op_object_find_own (ecma_value_t base_value, /**< base value */
         /* Get length virtual property. */
         const ecma_compiled_code_t *bytecode_data_p;
 
-#if ENABLED (JERRY_ES2015_ARROW_FUNCTION)
+#if ENABLED (JERRY_ES2015)
         if (type != ECMA_OBJECT_TYPE_ARROW_FUNCTION)
         {
           ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) object_p;
@@ -613,10 +613,10 @@ ecma_op_object_find_own (ecma_value_t base_value, /**< base value */
           ecma_arrow_function_t *arrow_func_p = (ecma_arrow_function_t *) object_p;
           bytecode_data_p = ecma_op_arrow_function_get_compiled_code (arrow_func_p);
         }
-#else /* !ENABLED (JERRY_ES2015_ARROW_FUNCTION) */
+#else /* !ENABLED (JERRY_ES2015) */
         ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) object_p;
         bytecode_data_p = ecma_op_function_get_compiled_code (ext_func_p);
-#endif /* ENABLED (JERRY_ES2015_ARROW_FUNCTION) */
+#endif /* ENABLED (JERRY_ES2015) */
 
         uint32_t len;
         if (bytecode_data_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
@@ -765,8 +765,7 @@ ecma_op_object_get_own_data_prop (ecma_object_t *object_p, /**< the object */
                                   ecma_string_t *property_name_p) /**< property name */
 {
   JERRY_ASSERT (ecma_is_lexical_environment (object_p)
-                || ecma_get_object_type (object_p) != ECMA_OBJECT_TYPE_ARRAY
-                || !((ecma_extended_object_t *) object_p)->u.array.is_fast_mode);
+                || !ecma_op_object_is_fast_array (object_p));
 
   ecma_value_t result = ecma_op_object_find_own (ecma_make_object_value (object_p),
                                                  object_p,
@@ -827,6 +826,102 @@ ecma_op_object_get (ecma_object_t *object_p, /**< the object */
 } /* ecma_op_object_get */
 
 /**
+ * [[Get]] operation of ecma object with the specified receiver
+ *
+ * This function returns the value of a named property, or undefined
+ * if the property is not found in the prototype chain. If the property
+ * is an accessor, it calls the "get" callback function and returns
+ * with its result (including error throws).
+ *
+ * See also:
+ *          ECMA-262 v5, 8.6.2; ECMA-262 v5, Table 8
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value
+ */
+ecma_value_t
+ecma_op_object_get_with_receiver (ecma_object_t *object_p, /**< the object */
+                                  ecma_string_t *property_name_p, /**< property name */
+                                  ecma_value_t receiver) /**< receiver to invoke getter function */
+{
+  while (true)
+  {
+    ecma_value_t value = ecma_op_object_find_own (receiver, object_p, property_name_p);
+
+    if (ecma_is_value_found (value))
+    {
+      return value;
+    }
+
+    if (object_p->u2.prototype_cp == JMEM_CP_NULL)
+    {
+      break;
+    }
+
+    object_p = ECMA_GET_NON_NULL_POINTER (ecma_object_t, object_p->u2.prototype_cp);
+  }
+
+  return ECMA_VALUE_UNDEFINED;
+} /* ecma_op_object_get_with_receiver */
+
+/**
+ * [[Get]] operation of ecma object specified for uint32_t property index
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value
+ */
+ecma_value_t
+ecma_op_object_get_by_uint32_index (ecma_object_t *object_p, /**< the object */
+                                    uint32_t index) /**< property index */
+{
+  if (JERRY_LIKELY (index <= ECMA_DIRECT_STRING_MAX_IMM))
+  {
+    return ecma_op_object_get (object_p, ECMA_CREATE_DIRECT_UINT32_STRING (index));
+  }
+
+  ecma_string_t *index_str_p = ecma_new_non_direct_string_from_uint32 (index);
+  ecma_value_t ret_value = ecma_op_object_get (object_p, index_str_p);
+  ecma_deref_ecma_string (index_str_p);
+
+  return ret_value;
+} /* ecma_op_object_get_by_uint32_index */
+
+/**
+ * Perform ToLength(O.[[Get]]("length")) operation
+ *
+ * The property is converted to uint32 during the operation
+ *
+ * @return ECMA_VALUE_ERROR - if there was any error during the operation
+ *         ECMA_VALUE_EMPTY - otherwise
+ */
+ecma_value_t
+ecma_op_object_get_length (ecma_object_t *object_p, /**< the object */
+                           uint32_t *length_p) /**< [out] length value converted to uint32 */
+{
+  if (JERRY_LIKELY (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY))
+  {
+    *length_p = ecma_array_get_length (object_p);
+    return ECMA_VALUE_EMPTY;
+  }
+
+#if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
+  if (ecma_object_is_typedarray (object_p))
+  {
+    *length_p = ecma_typedarray_get_length (object_p);
+    return ECMA_VALUE_EMPTY;
+  }
+#endif /* ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
+
+  ecma_value_t len_value = ecma_op_object_get_by_magic_id (object_p, LIT_MAGIC_STRING_LENGTH);
+  ecma_value_t len_number = ecma_op_to_length (len_value, length_p);
+  ecma_free_value (len_value);
+
+  JERRY_ASSERT (ECMA_IS_VALUE_ERROR (len_number) || ecma_is_value_empty (len_number));
+
+  return len_number;
+} /* ecma_op_object_get_length */
+
+/**
  * [[Get]] operation of ecma object where the property name is a magic string
  *
  * This function returns the value of a named property, or undefined
@@ -847,7 +942,7 @@ ecma_op_object_get_by_magic_id (ecma_object_t *object_p, /**< the object */
   return ecma_op_object_get (object_p, ecma_get_magic_string (property_id));
 } /* ecma_op_object_get_by_magic_id */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
 /**
  * [[Get]] operation of ecma object where the property is a well-known symbol
  *
@@ -919,7 +1014,7 @@ ecma_op_get_method_by_symbol_id (ecma_value_t value, /**< ecma value */
   /* 6. */
   return func;
 } /* ecma_op_get_method_by_symbol_id */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * [[Put]] ecma general object's operation specialized for uint32_ property index
@@ -1009,7 +1104,7 @@ ecma_op_object_put (ecma_object_t *object_p, /**< the object */
 
       if (ecma_string_is_length (property_name_p))
       {
-        if (ecma_is_property_writable (ext_object_p->u.array.length_prop))
+        if (ecma_is_property_writable (ext_object_p->u.array.u.length_prop))
         {
           return ecma_op_array_object_set_length (object_p, value, 0);
         }
@@ -1017,20 +1112,26 @@ ecma_op_object_put (ecma_object_t *object_p, /**< the object */
         return ecma_reject (is_throw);
       }
 
-      if (JERRY_LIKELY (ext_object_p->u.array.is_fast_mode))
+      if (JERRY_LIKELY (ecma_op_array_is_fast_array (ext_object_p)))
       {
         if (JERRY_UNLIKELY (!ecma_get_object_extensible (object_p)))
         {
           return ecma_reject (is_throw);
         }
 
-        if (ecma_fast_array_set_property (object_p, property_name_p, value))
+        uint32_t index = ecma_string_get_array_index (property_name_p);
+
+        if (JERRY_UNLIKELY (index == ECMA_STRING_NOT_ARRAY_INDEX))
+        {
+          ecma_fast_array_convert_to_normal (object_p);
+        }
+        else if (ecma_fast_array_set_property (object_p, index, value))
         {
           return ECMA_VALUE_TRUE;
         }
       }
 
-      JERRY_ASSERT (!(ext_object_p->u.array.is_fast_mode));
+      JERRY_ASSERT (!ecma_op_object_is_fast_array (object_p));
 
       break;
     }
@@ -1064,14 +1165,14 @@ ecma_op_object_put (ecma_object_t *object_p, /**< the object */
       }
 #if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
       /* ES2015 9.4.5.5 */
-      if (ecma_is_typedarray (ecma_make_object_value (object_p)))
+      if (ecma_object_is_typedarray (object_p))
       {
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
         if (ecma_prop_name_is_symbol (property_name_p))
         {
           break;
         }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
         uint32_t array_index = ecma_string_get_array_index (property_name_p);
 
@@ -1250,7 +1351,7 @@ ecma_op_object_put (ecma_object_t *object_p, /**< the object */
         if (index < UINT32_MAX
             && index >= ext_object_p->u.array.length)
         {
-          if (!ecma_is_property_writable (ext_object_p->u.array.length_prop))
+          if (!ecma_is_property_writable (ext_object_p->u.array.u.length_prop))
           {
             return ecma_reject (is_throw);
           }
@@ -1441,9 +1542,9 @@ ecma_op_object_define_own_property (ecma_object_t *obj_p, /**< the object */
     case ECMA_OBJECT_TYPE_GENERAL:
     case ECMA_OBJECT_TYPE_CLASS:
     case ECMA_OBJECT_TYPE_FUNCTION:
-#if ENABLED (JERRY_ES2015_ARROW_FUNCTION)
+#if ENABLED (JERRY_ES2015)
     case ECMA_OBJECT_TYPE_ARROW_FUNCTION:
-#endif /* ENABLED (JERRY_ES2015_ARROW_FUNCTION) */
+#endif /* ENABLED (JERRY_ES2015) */
     case ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION:
     case ECMA_OBJECT_TYPE_BOUND_FUNCTION:
     {
@@ -1477,16 +1578,16 @@ ecma_op_object_define_own_property (ecma_object_t *obj_p, /**< the object */
 #if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
       }
       /* ES2015 9.4.5.3 */
-      if (ecma_is_typedarray (ecma_make_object_value (obj_p)))
+      if (ecma_object_is_typedarray (obj_p))
       {
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
         if (ecma_prop_name_is_symbol (property_name_p))
         {
           return ecma_op_general_object_define_own_property (obj_p,
                                                              property_name_p,
                                                              property_desc_p);
         }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
         uint32_t array_index = ecma_string_get_array_index (property_name_p);
 
         if (array_index != ECMA_STRING_NOT_ARRAY_INDEX)
@@ -1693,14 +1794,9 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
   JERRY_ASSERT (obj_p != NULL
                 && !ecma_is_lexical_environment (obj_p));
 
-  if (ecma_get_object_type (obj_p) == ECMA_OBJECT_TYPE_ARRAY)
+  if (ecma_op_object_is_fast_array (obj_p))
   {
-    ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) obj_p;
-
-    if (ext_object_p->u.array.is_fast_mode)
-    {
-      return ecma_fast_array_get_property_names (obj_p, opts);
-    }
+    return ecma_fast_array_get_property_names (obj_p, opts);
   }
 
   ecma_collection_t *ret_p = ecma_new_collection ();
@@ -1711,9 +1807,9 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
   const bool is_enumerable_only = (opts & ECMA_LIST_ENUMERABLE) != 0;
   const bool is_array_indices_only = (opts & ECMA_LIST_ARRAY_INDICES) != 0;
   const bool is_with_prototype_chain = (opts & ECMA_LIST_PROTOTYPE) != 0;
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   const bool is_symbols_only = (opts & ECMA_LIST_SYMBOLS) != 0;
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   const size_t bitmap_row_size = sizeof (uint32_t) * JERRY_BITSINBYTE;
   const size_t names_hashes_bitmap_size = ECMA_OBJECT_HASH_BITMAP_SIZE / bitmap_row_size;
@@ -1730,10 +1826,10 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
 
     ecma_collection_t *prop_names_p = ecma_new_collection ();
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
     if (JERRY_LIKELY (!is_symbols_only))
     {
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
       if (obj_is_builtin)
       {
@@ -1749,7 +1845,7 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
           case ECMA_OBJECT_TYPE_PSEUDO_ARRAY:
           {
   #if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
-            if (ecma_is_typedarray (ecma_make_object_value (obj_p)))
+            if (ecma_object_is_typedarray (obj_p))
             {
               ecma_op_typedarray_list_lazy_property_names (obj_p, prop_names_p);
             }
@@ -1757,9 +1853,9 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
             break;
           }
           case ECMA_OBJECT_TYPE_FUNCTION:
-  #if ENABLED (JERRY_ES2015_ARROW_FUNCTION)
+  #if ENABLED (JERRY_ES2015)
           case ECMA_OBJECT_TYPE_ARROW_FUNCTION:
-  #endif /* ENABLED (JERRY_ES2015_ARROW_FUNCTION) */
+  #endif /* ENABLED (JERRY_ES2015) */
           {
             ecma_op_function_list_lazy_property_names (obj_p,
                                                        is_enumerable_only,
@@ -1811,9 +1907,9 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
           }
         }
       }
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
     }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
     ecma_value_t *buffer_p = prop_names_p->buffer_p;
 
@@ -1825,10 +1921,10 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
     {
       ecma_string_t *name_p = ecma_get_string_from_value (buffer_p[i]);
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
       /* Symbols are never lazy listed */
       JERRY_ASSERT (!ecma_prop_name_is_symbol (name_p));
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
       uint8_t hash = (uint8_t) ecma_string_hash (name_p);
       uint32_t bitmap_row = (uint32_t) (hash / bitmap_row_size);
@@ -1842,9 +1938,7 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
 
     jmem_cpointer_t prop_iter_cp = prototype_chain_iter_p->u1.property_list_cp;
 
-    if (ecma_get_object_type (prototype_chain_iter_p) == ECMA_OBJECT_TYPE_ARRAY
-        && ((ecma_extended_object_t *) prototype_chain_iter_p)->u.array.is_fast_mode
-        && prop_iter_cp != JMEM_CP_NULL)
+    if (ecma_op_object_is_fast_array (prototype_chain_iter_p) && prop_iter_cp != JMEM_CP_NULL)
     {
       ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) prototype_chain_iter_p;
 
@@ -1932,7 +2026,7 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
 
             if (!(is_enumerable_only && !ecma_is_property_enumerable (*property_p)))
             {
-  #if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+  #if ENABLED (JERRY_ES2015)
               /* If is_symbols_only is false and prop_name is symbol
                  we should skip the current property e.g. for-in.
 
@@ -1943,7 +2037,7 @@ ecma_op_object_get_property_names (ecma_object_t *obj_p, /**< object */
                 ecma_deref_ecma_string (name_p);
                 continue;
               }
-  #endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+  #endif /* ENABLED (JERRY_ES2015) */
 
               uint8_t hash = (uint8_t) ecma_string_hash (name_p);
               uint32_t bitmap_row = (uint32_t) (hash / bitmap_row_size);
@@ -2214,9 +2308,9 @@ ecma_object_check_class_name_is_object (ecma_object_t *obj_p) /**< object */
           || ecma_builtin_is (obj_p, ECMA_BUILTIN_ID_SET_ITERATOR_PROTOTYPE)
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_SET) */
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
           || ecma_builtin_is (obj_p, ECMA_BUILTIN_ID_SYMBOL_PROTOTYPE)
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 #if ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW)
           || ecma_builtin_is (obj_p, ECMA_BUILTIN_ID_DATAVIEW_PROTOTYPE)
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW) */
@@ -2292,9 +2386,9 @@ ecma_object_get_class_name (ecma_object_t *obj_p) /**< object */
       break;
     }
     case ECMA_OBJECT_TYPE_FUNCTION:
-#if ENABLED (JERRY_ES2015_ARROW_FUNCTION)
+#if ENABLED (JERRY_ES2015)
     case ECMA_OBJECT_TYPE_ARROW_FUNCTION:
-#endif /* ENABLED (JERRY_ES2015_ARROW_FUNCTION) */
+#endif /* ENABLED (JERRY_ES2015) */
     case ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION:
     case ECMA_OBJECT_TYPE_BOUND_FUNCTION:
     {
@@ -2316,6 +2410,12 @@ ecma_object_get_class_name (ecma_object_t *obj_p) /**< object */
             return LIT_MAGIC_STRING_MATH_UL;
           }
 #endif /* ENABLED (JERRY_BUILTIN_MATH) */
+#if ENABLED (JERRY_ES2015_BUILTIN_REFLECT)
+          case ECMA_BUILTIN_ID_REFLECT:
+          {
+            return LIT_MAGIC_STRING_REFLECT_UL;
+          }
+#endif /* ENABLED (JERRY_ES2015_BUILTIN_REFLECT) */
 #if ENABLED (JERRY_BUILTIN_JSON)
           case ECMA_BUILTIN_ID_JSON:
           {

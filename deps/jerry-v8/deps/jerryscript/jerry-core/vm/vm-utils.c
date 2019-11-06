@@ -70,7 +70,7 @@ vm_get_backtrace (uint32_t max_depth) /**< maximum backtrace depth, 0 = unlimite
 
   vm_frame_ctx_t *context_p = JERRY_CONTEXT (vm_top_context_p);
   ecma_object_t *array_p = ecma_get_object_from_value (result_array);
-  JERRY_ASSERT (((ecma_extended_object_t *) array_p)->u.array.is_fast_mode);
+  JERRY_ASSERT (ecma_op_object_is_fast_array (array_p));
   uint32_t index = 0;
 
   while (context_p != NULL)
@@ -98,10 +98,8 @@ vm_get_backtrace (uint32_t max_depth) /**< maximum backtrace depth, 0 = unlimite
     str_p = ecma_concat_ecma_strings (str_p, line_str_p);
     ecma_deref_ecma_string (line_str_p);
 
-    ecma_string_t *index_str_p = ecma_new_ecma_string_from_uint32 (index);
-    ecma_fast_array_set_property (array_p, index_str_p, ecma_make_string_value (str_p));
+    ecma_fast_array_set_property (array_p, index, ecma_make_string_value (str_p));
     ecma_deref_ecma_string (str_p);
-    ecma_deref_ecma_string (index_str_p);
 
     context_p = context_p->prev_context_p;
     index++;
