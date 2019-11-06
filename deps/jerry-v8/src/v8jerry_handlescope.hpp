@@ -22,7 +22,7 @@ public:
     ~JerryHandleScope();
 
     void AddHandle(JerryHandle* jvalue);
-    void RemoveHandle(JerryHandle* jvalue);
+    bool RemoveHandle(JerryHandle* jvalue);
 
     void* V8HandleScope(void) { return m_v8handle_scope; }
 

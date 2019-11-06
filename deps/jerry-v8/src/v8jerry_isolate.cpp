@@ -264,9 +264,14 @@ void JerryIsolate::EscapeHandle(JerryHandle* jvalue) {
     assert(m_handleScopes.size() > 1);
 
     std::deque<JerryHandleScope*>::reverse_iterator end = m_handleScopes.rbegin();
-    (*end)->RemoveHandle(jvalue);
-    ++end; // Step to a parent handleScope
-    (*end)->AddHandle(jvalue);
+    bool was_removed = (*end)->RemoveHandle(jvalue);
+    // If the handle was removed simply add it to the parent handle scope.
+    // However if it was not in the current handle scope (was not removed)
+    // then the value is a refernece to an enternal element, thus there is nothing to do.
+    if (was_removed) {
+        ++end; // Step to a parent handleScope
+        (*end)->AddHandle(jvalue);
+    }
 }
 
 void JerryIsolate::SealHandleScope(void* handle_scope) {
