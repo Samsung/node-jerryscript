@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
     // ArrayBuffer
     //
 
-    uint8_t* data = new uint8_t[ARRAY_SIZE];
+    uint8_t* data = (uint8_t*)malloc(sizeof(uint8_t) * ARRAY_SIZE);
     memset(data, 0, ARRAY_SIZE);
     data[0] = 1;
     data[1] = 1;
