@@ -3,6 +3,7 @@
 
 #include <deque>
 #include <vector>
+#include <unordered_map>
 
 #include <v8.h>
 
@@ -87,6 +88,9 @@ public:
 
     void AddExternalStringResource(v8::String::ExternalStringResource* resource);
 
+    void AddUTF16String(std::u16string*);
+    void RemoveUTF16String(uint16_t*);
+
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }
     static JerryIsolate* fromV8(v8::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
     static JerryIsolate* fromV8(v8::internal::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
@@ -121,6 +125,7 @@ private:
     std::vector<JerryValue*> m_eternals;
     std::vector<JerryValue*> m_weakrefs;
     std::vector<v8::String::ExternalStringResource*> m_ext_str_res;
+    std::unordered_map<uint16_t*, std::u16string*> m_utf16strs;
 
     JerryPolyfill* m_fn_map_new;
     JerryPolyfill* m_fn_is_map;
