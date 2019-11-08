@@ -389,3 +389,19 @@ void JerryIsolate::AddExternalStringResource(v8::String::ExternalStringResource*
 
     m_ext_str_res.push_back(resource);
 }
+
+void JerryIsolate::AddUTF16String(std::u16string* str) {
+    uint16_t* buffer = (uint16_t*) str->c_str();
+    assert(m_utf16strs.find(buffer) == m_utf16strs.end());
+
+    m_utf16strs[buffer] = str;
+}
+
+void JerryIsolate::RemoveUTF16String(uint16_t* buffer) {
+    std::unordered_map<uint16_t*, std::u16string*>::iterator iter = m_utf16strs.find(buffer);
+
+    assert(iter != m_utf16strs.end());
+
+    delete iter->second;
+    m_utf16strs.erase(iter);
+}

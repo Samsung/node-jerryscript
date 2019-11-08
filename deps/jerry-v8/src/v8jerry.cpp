@@ -1773,14 +1773,20 @@ String::Value::Value(Isolate* isolate, Local<v8::Value> v8Value)
         value = jvalue->value();
     }
 
-    length_ = jerry_get_utf8_string_length(value);
     uint32_t size = (uint32_t)jerry_get_utf8_string_size(value);
-
     char* buffer = new char[size + 1];
     jerry_string_to_utf8_char_buffer (value, (jerry_char_t *)buffer, size + 1);
     buffer[size] = '\0';
 
-    str_ = (uint16_t*) buffer;
+    // Possible todo: remove the UTF8->UTF16 conversion.
+    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+    std::u16string* wstring = new std::u16string(converter.from_bytes(buffer));
+
+    str_ = (uint16_t*) wstring->c_str();
+    length_ = wstring->length();
+
+    reinterpret_cast<JerryIsolate*>(isolate)->AddUTF16String(wstring);
+    delete buffer;
 
     if (!jvalue->IsString()) {
         jerry_release_value(value);
@@ -1825,7 +1831,7 @@ String::Utf8Value::~Utf8Value() {
 
 String::Value::~Value() {
     V8_CALL_TRACE();
-    delete [] str_;
+    reinterpret_cast<JerryIsolate*>(Isolate::GetCurrent())->RemoveUTF16String(str_);
 }
 
 Local<String> String::Concat(Local<String> left, Local<String> right) {
