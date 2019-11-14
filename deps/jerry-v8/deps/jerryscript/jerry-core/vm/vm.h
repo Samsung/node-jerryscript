@@ -125,7 +125,6 @@ typedef enum
 
   VM_OC_SET_GETTER,              /**< set getter */
   VM_OC_SET_SETTER,              /**< set setter */
-  VM_OC_PUSH_UNDEFINED_BASE,     /**< push undefined base */
   VM_OC_PUSH_ARRAY,              /**< push array */
   VM_OC_PUSH_ELISON,             /**< push elison */
   VM_OC_APPEND_ARRAY,            /**< append array */
@@ -202,9 +201,7 @@ typedef enum
   VM_OC_RIGHT_SHIFT,             /**< right shift */
   VM_OC_UNS_RIGHT_SHIFT,         /**< unsigned right shift */
 
-#if ENABLED (JERRY_ES2015)
   VM_OC_BLOCK_CREATE_CONTEXT,    /**< create lexical environment for blocks enclosed in braces */
-#endif /* ENABLED (JERRY_ES2015) */
   VM_OC_WITH,                    /**< with */
   VM_OC_FOR_IN_CREATE_CONTEXT,   /**< for in create context */
   VM_OC_FOR_IN_GET_NEXT,         /**< get next */
@@ -220,12 +217,16 @@ typedef enum
   VM_OC_BREAKPOINT_ENABLED,      /**< enabled breakpoint for debugger */
   VM_OC_BREAKPOINT_DISABLED,     /**< disabled breakpoint for debugger */
 #endif /* ENABLED (JERRY_DEBUGGER) */
-#if ENABLED (JERRY_LINE_INFO)
+#if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM)
   VM_OC_RESOURCE_NAME,           /**< resource name of the current function */
+#endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+#if ENABLED (JERRY_LINE_INFO)
   VM_OC_LINE,                    /**< line number of the next statement */
 #endif /* ENABLED (JERRY_LINE_INFO) */
 #if ENABLED (JERRY_ES2015)
+  VM_OC_INIT_LOCALS,             /**< call vm_init_loop() */
   VM_OC_ASSIGN_LET_CONST,        /**< assign values to let/const declarations */
+  VM_OC_CLONE_CONTEXT,           /**< clone lexical environment with let/const declarations */
   VM_OC_SET_COMPUTED_PROPERTY,   /**< set computed property */
 
   VM_OC_FOR_OF_CREATE_CONTEXT,   /**< for of create context */
@@ -246,6 +247,11 @@ typedef enum
   VM_OC_PUSH_CONSTRUCTOR_THIS,   /**< push 'this' inside a class constructor */
   VM_OC_CONSTRUCTOR_RET,         /**< explicit return from a class constructor */
   VM_OC_CREATE_SPREAD_OBJECT,    /**< create spread object */
+  VM_OC_GET_ITERATOR,            /**< GetIterator abstract operation */
+  VM_OC_ITERATOR_STEP,           /**< IteratorStep abstract operation */
+  VM_OC_DEFAULT_INITIALIZER,     /**< default initializer inside a pattern */
+  VM_OC_REST_INITIALIZER,        /**< create rest object inside an array pattern */
+  VM_OC_INITIALIZER_PUSH_PROP,   /**< push property for object initializer */
 #endif /* ENABLED (JERRY_ES2015) */
   VM_OC_NONE,                    /**< a special opcode for unsupported byte codes */
 } vm_oc_types;
@@ -259,14 +265,17 @@ typedef enum
   VM_OC_BREAKPOINT_ENABLED = VM_OC_NONE,      /**< enabled breakpoint for debugger is unused */
   VM_OC_BREAKPOINT_DISABLED = VM_OC_NONE,     /**< disabled breakpoint for debugger is unused */
 #endif /* !ENABLED (JERRY_DEBUGGER) */
-#if !ENABLED (JERRY_LINE_INFO)
+#if !ENABLED (JERRY_LINE_INFO) && !ENABLED (JERRY_ES2015_MODULE_SYSTEM)
   VM_OC_RESOURCE_NAME = VM_OC_NONE,           /**< resource name of the current function is unused */
+#endif /* !ENABLED (JERRY_LINE_INFO) && !ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+#if !ENABLED (JERRY_LINE_INFO)
   VM_OC_LINE = VM_OC_NONE,                    /**< line number of the next statement is unused */
 #endif /* !ENABLED (JERRY_LINE_INFO) */
 #if !ENABLED (JERRY_ES2015)
+  VM_OC_INIT_LOCALS = VM_OC_NONE,             /**< call vm_init_loop() */
   VM_OC_ASSIGN_LET_CONST = VM_OC_NONE,        /**< assign values to let/const declarations */
+  VM_OC_CLONE_CONTEXT = VM_OC_NONE,           /**< clone lexical environment with let/const declarations */
   VM_OC_SET_COMPUTED_PROPERTY = VM_OC_NONE,   /**< set computed property is unused */
-  VM_OC_BLOCK_CREATE_CONTEXT = VM_OC_NONE,    /**< create context for blocks enclosed in braces */
 
   VM_OC_FOR_OF_CREATE_CONTEXT = VM_OC_NONE,   /**< for of create context */
   VM_OC_FOR_OF_GET_NEXT = VM_OC_NONE,         /**< get next */
@@ -286,8 +295,12 @@ typedef enum
   VM_OC_PUSH_CONSTRUCTOR_THIS = VM_OC_NONE,   /**< push 'this' inside a class constructor */
   VM_OC_CONSTRUCTOR_RET = VM_OC_NONE,         /**< explicit return from a class constructor */
   VM_OC_CREATE_SPREAD_OBJECT = VM_OC_NONE,    /**< create spread object */
-#endif /* !ENABLED (JERRY_ES2015S) */
-
+  VM_OC_GET_ITERATOR = VM_OC_NONE,            /**< GetIterator abstract operation */
+  VM_OC_ITERATOR_STEP = VM_OC_NONE,           /**< IteratorStep abstract operation */
+  VM_OC_DEFAULT_INITIALIZER = VM_OC_NONE,     /**< default initializer inside a pattern */
+  VM_OC_REST_INITIALIZER = VM_OC_NONE,        /**< create rest object inside an array pattern */
+  VM_OC_INITIALIZER_PUSH_PROP = VM_OC_NONE,   /**< push property for object initializer */
+#endif /* !ENABLED (JERRY_ES2015) */
   VM_OC_UNUSED = VM_OC_NONE                   /**< placeholder if the list is empty */
 } vm_oc_unused_types;
 

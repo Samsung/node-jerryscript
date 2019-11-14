@@ -96,6 +96,7 @@ typedef enum
   PARSER_ERR_IDENTIFIER_EXPECTED,                     /**< identifier expected */
   PARSER_ERR_EXPRESSION_EXPECTED,                     /**< expression expected */
   PARSER_ERR_PRIMARY_EXP_EXPECTED,                    /**< primary expression expected */
+  PARSER_ERR_LEFT_HAND_SIDE_EXP_EXPECTED,             /**< left-hand-side expression expected */
   PARSER_ERR_STATEMENT_EXPECTED,                      /**< statement expected */
   PARSER_ERR_PROPERTY_IDENTIFIER_EXPECTED,            /**< property identifier expected */
   PARSER_ERR_ARGUMENT_LIST_EXPECTED,                  /**< argument list expected */
@@ -127,6 +128,7 @@ typedef enum
   PARSER_ERR_FORMAL_PARAM_AFTER_REST_PARAMETER,       /**< formal parameter after rest parameter */
   PARSER_ERR_REST_PARAMETER_DEFAULT_INITIALIZER,      /**< rest parameter default initializer */
   PARSER_ERR_DUPLICATED_ARGUMENT_NAMES,               /**< duplicated argument names */
+  PARSER_ERR_INVALID_DESTRUCTURING_PATTERN,           /**< invalid destructuring pattern */
 #endif /* ENABLED (JERRY_ES2015) */
 #if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
   PARSER_ERR_FILE_NOT_FOUND,                          /**< file not found*/
