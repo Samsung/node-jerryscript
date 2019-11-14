@@ -949,7 +949,6 @@ vm_init_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
         break;
       }
 
-#if ENABLED (JERRY_ES2015)
       case CBC_SET_VAR_FUNC:
       {
         uint32_t literal_index, value_index;
@@ -966,8 +965,6 @@ vm_init_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
 
         if (literal_index < register_end)
         {
-          JERRY_ASSERT (type == CBC_SET_VAR_FUNC);
-
           ecma_fast_free_value (frame_ctx_p->registers_p[literal_index]);
           frame_ctx_p->registers_p[literal_index] = lit_value;
           break;
@@ -978,7 +975,6 @@ vm_init_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
         vm_set_var (frame_ctx_p->lex_env_p, name_p, is_strict, lit_value);
         break;
       }
-#endif /* ENABLED (JERRY_ES2015) */
 
 #if ENABLED (JERRY_SNAPSHOT_EXEC)
       case CBC_SET_BYTECODE_PTR:
@@ -1316,6 +1312,13 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
           continue;
         }
 #if ENABLED (JERRY_ES2015)
+        case VM_OC_INIT_LOCALS:
+        {
+          frame_ctx_p->byte_code_p = byte_code_start_p;
+          vm_init_loop (frame_ctx_p);
+          byte_code_p = frame_ctx_p->byte_code_p;
+          continue;
+        }
         case VM_OC_ASSIGN_LET_CONST:
         {
           uint32_t literal_index;
@@ -1337,6 +1340,14 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
           {
             ecma_deref_object (ecma_get_object_from_value (left_value));
           }
+          continue;
+        }
+        case VM_OC_CLONE_CONTEXT:
+        {
+          JERRY_ASSERT (byte_code_start_p[0] == CBC_EXT_OPCODE);
+
+          bool copy_values = (byte_code_start_p[1] == CBC_EXT_CLONE_FULL_CONTEXT);
+          frame_ctx_p->lex_env_p = ecma_clone_decl_lexical_environment (frame_ctx_p->lex_env_p, copy_values);
           continue;
         }
         case VM_OC_SET_COMPUTED_PROPERTY:
@@ -1780,7 +1791,104 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
           *stack_top_p++ = ecma_op_create_spread_object (left_value);
           goto free_left_value;
         }
-#endif /* ENABLED (JERRY_ES2015) */
+        case VM_OC_GET_ITERATOR:
+        {
+          result = ecma_op_get_iterator (stack_top_p[-1], ECMA_VALUE_EMPTY);
+
+          if (ECMA_IS_VALUE_ERROR (result))
+          {
+            goto error;
+          }
+
+          *stack_top_p++ = result;
+          continue;
+        }
+        case VM_OC_ITERATOR_STEP:
+        {
+          const int8_t index = (opcode == CBC_EXT_ITERATOR_STEP) ? -1 : -3;
+          result = ecma_op_iterator_step (stack_top_p[index]);
+
+          if (ECMA_IS_VALUE_ERROR (result))
+          {
+            goto error;
+          }
+
+          ecma_value_t value = ECMA_VALUE_UNDEFINED;
+
+          if (!ecma_is_value_false (result))
+          {
+            value = ecma_op_iterator_value (result);
+            ecma_free_value (result);
+
+            if (ECMA_IS_VALUE_ERROR (value))
+            {
+              result = value;
+              goto error;
+            }
+          }
+
+          *stack_top_p++ = value;
+          continue;
+        }
+        case VM_OC_DEFAULT_INITIALIZER:
+        {
+          if (stack_top_p[-1] != ECMA_VALUE_UNDEFINED)
+          {
+            byte_code_p = byte_code_start_p + branch_offset;
+          }
+          continue;
+        }
+        case VM_OC_REST_INITIALIZER:
+        {
+          const int8_t iterator_index = (opcode == CBC_EXT_REST_INITIALIZER) ? -1 : -3;
+          ecma_object_t *array_p = ecma_op_new_fast_array_object (0);
+          ecma_value_t iterator = stack_top_p[iterator_index];
+          uint32_t index = 0;
+
+          while (true)
+          {
+            result = ecma_op_iterator_step (iterator);
+
+            if (ECMA_IS_VALUE_ERROR (result))
+            {
+              goto error;
+            }
+
+            if (ecma_is_value_false (result))
+            {
+              break;
+            }
+
+            ecma_value_t value = ecma_op_iterator_value (result);
+            ecma_free_value (result);
+
+            if (ECMA_IS_VALUE_ERROR (value))
+            {
+              result = value;
+              goto error;
+            }
+
+            bool set_result = ecma_fast_array_set_property (array_p, index++, value);
+            JERRY_ASSERT (set_result);
+            ecma_free_value (value);
+          }
+
+          *stack_top_p++ = ecma_make_object_value (array_p);
+          continue;
+        }
+        case VM_OC_INITIALIZER_PUSH_PROP:
+        {
+          result = vm_op_get_value (stack_top_p[-1], left_value);
+
+          if (ECMA_IS_VALUE_ERROR (result))
+          {
+            goto error;
+          }
+
+          *stack_top_p++ = result;
+          goto free_left_value;
+        }
+ #endif /* ENABLED (JERRY_ES2015) */
         case VM_OC_PUSH_ELISON:
         {
           *stack_top_p++ = ECMA_VALUE_ARRAY_HOLE;
@@ -1807,13 +1915,6 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
 #else /* !ENABLED (JERRY_ES2015) */
           JERRY_ASSERT (ecma_is_value_empty (result));
 #endif /* ENABLED (JERRY_ES2015) */
-          continue;
-        }
-        case VM_OC_PUSH_UNDEFINED_BASE:
-        {
-          stack_top_p[0] = stack_top_p[-1];
-          stack_top_p[-1] = ECMA_VALUE_UNDEFINED;
-          stack_top_p++;
           continue;
         }
         case VM_OC_IDENT_REFERENCE:
@@ -3029,6 +3130,13 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
           stack_top_p[-3] = 0;
           stack_top_p[-4] = expr_obj_value;
 
+#if ENABLED (JERRY_ES2015)
+          if (byte_code_p[0] == CBC_EXT_OPCODE && byte_code_p[1] == CBC_EXT_CLONE_CONTEXT)
+          {
+            /* No need to duplicate the first context. */
+            byte_code_p += 2;
+          }
+#endif /* ENABLED (JERRY_ES2015) */
           continue;
         }
         case VM_OC_FOR_IN_GET_NEXT:
@@ -3128,6 +3236,11 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
           stack_top_p[-2] = iterator_step;
           stack_top_p[-3] = iterator;
 
+          if (byte_code_p[0] == CBC_EXT_OPCODE && byte_code_p[1] == CBC_EXT_CLONE_CONTEXT)
+          {
+            /* No need to duplicate the first context. */
+            byte_code_p += 2;
+          }
           continue;
         }
         case VM_OC_FOR_OF_GET_NEXT:
@@ -3408,6 +3521,7 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
           continue;
         }
 #endif /* ENABLED (JERRY_LINE_INFO) */
+        case VM_OC_NONE:
         default:
         {
           JERRY_ASSERT (VM_OC_GROUP_GET_INDEX (opcode_data) == VM_OC_NONE);

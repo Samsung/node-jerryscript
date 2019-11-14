@@ -1016,6 +1016,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Primary expression expected.";
     }
+    case PARSER_ERR_LEFT_HAND_SIDE_EXP_EXPECTED:
+    {
+      return "Left-hand-side expression expected.";
+    }
     case PARSER_ERR_STATEMENT_EXPECTED:
     {
       return "Statement expected.";
@@ -1116,6 +1120,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     case PARSER_ERR_DUPLICATED_ARGUMENT_NAMES:
     {
       return "Duplicated function argument names are not allowed here.";
+    }
+    case PARSER_ERR_INVALID_DESTRUCTURING_PATTERN:
+    {
+      return "Invalid destructuring assignment target.";
     }
     case PARSER_ERR_FORMAL_PARAM_AFTER_REST_PARAMETER:
     {

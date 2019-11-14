@@ -51,8 +51,7 @@ typedef enum
   PARSER_HAS_NON_STRICT_ARG = (1u << 6),      /**< the function has arguments which
                                                *   are not supported in strict mode */
   PARSER_ARGUMENTS_NEEDED = (1u << 7),        /**< arguments object must be created */
-  PARSER_ARGUMENTS_NOT_NEEDED = (1u << 8),    /**< arguments object must NOT be created */
-  PARSER_LEXICAL_ENV_NEEDED = (1u << 9),     /**< lexical environment object must be created */
+  PARSER_LEXICAL_ENV_NEEDED = (1u << 9),      /**< lexical environment object must be created */
   PARSER_INSIDE_WITH = (1u << 10),            /**< code block is inside a with statement */
   PARSER_RESOLVE_BASE_FOR_CALLS = (1u << 11), /**< the this object must be resolved when
                                                *   a function without a base object is called */
@@ -93,11 +92,24 @@ typedef enum
 typedef enum
 {
   PARSE_EXPR = 0,                             /**< parse an expression without any special flags */
-  PARSE_EXPR_NO_PUSH_RESULT = (1u << 0),      /**< do not push the result of the expression onto the stack */
-  PARSE_EXPR_NO_COMMA = (1u << 1),            /**< do not parse comma operator */
-  PARSE_EXPR_HAS_LITERAL = (1u << 2),         /**< a primary literal is provided by a
+  PARSE_EXPR_LEFT_HAND_SIDE = (1u << 0),      /**< parse a left-hand-side expression */
+  PARSE_EXPR_NO_PUSH_RESULT = (1u << 1),      /**< do not push the result of the expression onto the stack */
+  PARSE_EXPR_NO_COMMA = (1u << 2),            /**< do not parse comma operator */
+  PARSE_EXPR_HAS_LITERAL = (1u << 3),         /**< a primary literal is provided by a
                                                *   CBC_PUSH_LITERAL instruction  */
 } parser_expression_flags_t;
+
+/**
+ * Pattern parsing flags.
+ */
+typedef enum
+{
+  PARSER_PATTERN_NO_OPTS = 0,                 /**< parse the expression after '=' */
+  PARSER_PATTERN_BINDING = (1u << 0),         /**< parse BindingPattern */
+  PARSER_PATTERN_TARGET_ON_STACK = (1u << 1), /**< assignment target is the topmost element on the stack */
+  PARSER_PATTERN_TARGET_DEFAULT = (1u << 2),  /**< perform default value comparison for assignment target */
+  PARSER_PATTERN_INNER_PATTERN = (1u << 3),   /**< parse patter inside a pattern */
+} parser_pattern_flags_t;
 
 /**
  * Mask for strict mode code
@@ -320,6 +332,14 @@ typedef struct
 
 /**
  * This item represents a function literal in the scope stack.
+ *
+ * When map_from == PARSER_SCOPE_STACK_FUNC:
+ *   map_to represents the literal reserved for a function literal
+ *   Note: the name of the function is the previous value in the scope stack
+ *
+ * When map_to == PARSER_SCOPE_STACK_FUNC:
+ *   map_from represents the name of the function literal following this literal
+ *   Note: only the name, the real mapping is somewhere else in the scope stack
  */
 #define PARSER_SCOPE_STACK_FUNC 0xffff
 
@@ -615,6 +635,7 @@ void parser_parse_expression (parser_context_t *context_p, int options);
 void parser_parse_class (parser_context_t *context_p, bool is_statement);
 void parser_parse_super_class_context_start (parser_context_t *context_p);
 void parser_parse_super_class_context_end (parser_context_t *context_p);
+void parser_parse_initializer (parser_context_t *context_p, parser_pattern_flags_t flags);
 #endif /* ENABLED (JERRY_ES2015) */
 
 /**
@@ -626,6 +647,7 @@ void parser_parse_super_class_context_end (parser_context_t *context_p);
 
 void scanner_release_next (parser_context_t *context_p, size_t size);
 void scanner_set_active (parser_context_t *context_p);
+void scanner_revert_active (parser_context_t *context_p);
 void scanner_release_active (parser_context_t *context_p, size_t size);
 void scanner_release_switch_cases (scanner_case_info_t *case_p);
 void scanner_seek (parser_context_t *context_p);
@@ -675,6 +697,7 @@ void parser_module_set_default (parser_context_t *context_p);
 ecma_module_node_t *parser_module_create_module_node (parser_context_t *context_p);
 bool parser_module_check_duplicate_import (parser_context_t *context_p, ecma_string_t *local_name_p);
 bool parser_module_check_duplicate_export (parser_context_t *context_p, ecma_string_t *export_name_p);
+void parser_module_append_export_name (parser_context_t *context_p);
 void parser_module_add_names_to_node (parser_context_t *context_p,
                                       ecma_string_t *imex_name_p,
                                       ecma_string_t *local_name_p);
