@@ -427,6 +427,7 @@ int64_t Isolate::AdjustAmountOfExternalAllocatedMemoryCustom(int64_t change_in_b
 bool Isolate::AddMessageListener(MessageCallback that, Local<Value> data /* = Local<Value>() */) {
     V8_CALL_TRACE();
     // There is no messages to listen to, ignoring the call.
+    JerryIsolate::fromV8(this)->AddMessageListener(that);
     return true;
 }
 
@@ -2295,11 +2296,24 @@ TryCatch::TryCatch(v8::Isolate* isolate)
 TryCatch::~TryCatch() {
     V8_CALL_TRACE();
     // TODO: remove from isolate stack
-    JerryIsolate::fromV8(isolate_)->PopTryCatch(this);
+    JerryIsolate* iso = JerryIsolate::fromV8(isolate_);
+    iso->PopTryCatch(this);
 
-    if (!rethrow_) {
-        // By not clearing the error "effectively" the parent TryCatch would inherit everything.
-        JerryIsolate::fromV8(isolate_)->ClearError();
+    if (!rethrow_ && HasCaught()) {
+        if (is_verbose_) {
+            JerryValue error(jerry_acquire_value(iso->GetRawError()->value()));
+            iso->ClearError();
+            Local<Value> exception(reinterpret_cast<Value*>(&error));
+
+            // Replace "stack" property on exception as V8 creates a stack string and not an array.
+            iso->UpdateErrorStackProp(error);
+
+            Local<v8::Message> message;
+            iso->ReportMessage(message, exception);
+        } else {
+            // By not clearing the error "effectively" the parent TryCatch would inherit everything.
+            iso->ClearError();
+        }
     }
 }
 
@@ -2333,7 +2347,6 @@ Local<v8::Message> TryCatch::Message() const {
 void TryCatch::SetVerbose(bool value) {
     V8_CALL_TRACE();
     is_verbose_ = value;
-    JerryIsolate::fromV8(isolate_)->SetErrorVerbose(value);
 }
 
 bool TryCatch::IsVerbose() const {
