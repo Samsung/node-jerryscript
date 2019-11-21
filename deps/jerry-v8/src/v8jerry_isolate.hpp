@@ -68,6 +68,9 @@ public:
 
     void AddTemplate(JerryTemplate* handle);
 
+    void AddMessageListener(v8::MessageCallback callback) { m_messageCallback = callback; }
+    void ReportMessage(v8::Local<v8::Message> message, v8::Local<v8::Value> error);
+
     void SetFatalErrorHandler(v8::FatalErrorCallback callback) { m_fatalErrorCallback = callback; }
     void ReportFatalError(const char* location, const char* message);
 
@@ -90,6 +93,9 @@ public:
 
     void AddUTF16String(std::u16string*);
     void RemoveUTF16String(uint16_t*);
+
+    void FormatError(const JerryValue& error, std::ostream& out);
+    void UpdateErrorStackProp(JerryValue& error);
 
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }
     static JerryIsolate* fromV8(v8::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
@@ -141,9 +147,9 @@ private:
 
     int m_try_catch_count;
     JerryValue* m_current_error;
-    bool m_current_error_verbose;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
+    v8::MessageCallback m_messageCallback;
 
     bool m_terminated;
     bool m_autorun_tasks;
