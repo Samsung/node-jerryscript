@@ -174,6 +174,23 @@ bool JerryIsolate::HasError(void) {
     return m_current_error != NULL;
 }
 
+void JerryIsolate::TryReportError(void) {
+    if (m_try_catch_count != 0) {
+        return;
+    }
+
+    // Copy the error to corectly report error
+    JerryValue error(jerry_acquire_value(GetRawError()->value()));
+
+    ClearError();
+    v8::Local<v8::Value> exception = error.AsLocal<v8::Value>();
+
+    // Replace "stack" property on exception as V8 creates a stack string and not an array.
+    UpdateErrorStackProp(error);
+
+    v8::Local<v8::Message> message;
+    ReportMessage(message, exception);
+}
 
 void JerryIsolate::PushContext(JerryValue* context) {
     // Contexts are managed by HandleScopes, here we only need the stack to correctly
