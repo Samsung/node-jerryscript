@@ -213,6 +213,16 @@ public:
 
     JerryValue(JerryValue& that) = delete;
 
+    template <typename T>
+    v8::Local<T> AsLocal(void) {
+        /* Magical dragons from the depths are present in this method!
+         * You have been warned! Proceed with caution!
+         */
+        JerryValue* value_ptr = this;
+        v8::Local<T>* v8_value = reinterpret_cast<v8::Local<T>*>(&value_ptr);
+        return *v8_value;
+    }
+
 private:
     JerryValue(jerry_value_t value, bool isGlobal)
         : JerryHandle(isGlobal ? JerryHandle::GlobalValue : JerryHandle::Value)

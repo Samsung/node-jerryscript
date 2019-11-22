@@ -21,6 +21,7 @@ class JerryHandle;
 class JerryHandleScope;
 enum JerryHandleScopeType : int;
 class JerryTemplate;
+class JerryObjectTemplate;
 
 class JerryIsolate {
 public:
@@ -97,6 +98,8 @@ public:
     void FormatError(const JerryValue& error, std::ostream& out);
     void UpdateErrorStackProp(JerryValue& error);
 
+    JerryObjectTemplate* HiddenObjectTemplate(void);
+
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }
     static JerryIsolate* fromV8(v8::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
     static JerryIsolate* fromV8(v8::internal::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }
@@ -132,6 +135,8 @@ private:
     std::vector<JerryValue*> m_weakrefs;
     std::vector<v8::String::ExternalStringResource*> m_ext_str_res;
     std::unordered_map<uint16_t*, std::u16string*> m_utf16strs;
+
+    JerryObjectTemplate* m_hidden_object_template;
 
     JerryPolyfill* m_fn_map_new;
     JerryPolyfill* m_fn_is_map;

@@ -80,18 +80,6 @@ union AccessorEntrySetter {
     v8::AccessorNameSetterCallback named;
 };
 
-struct JerryV8GetterSetterHandlerData {
-    bool is_setter;
-    bool is_named;
-    union {
-        AccessorEntryGetter getter;
-        AccessorEntrySetter setter;
-    } v8;
-    jerry_value_t external;
-
-    static jerry_object_native_info_t TypeInfo;
-};
-
 struct AccessorEntry {
     JerryValue* name;
     AccessorEntryGetter getter;
@@ -142,6 +130,19 @@ struct AccessorEntry {
     }
 };
 
+struct JerryV8GetterSetterHandlerData {
+    bool is_setter;
+    bool is_named;
+    union {
+        AccessorEntryGetter getter;
+        AccessorEntrySetter setter;
+    } v8;
+    jerry_value_t external;
+    AccessorEntry* accessor;
+
+    static jerry_object_native_info_t TypeInfo;
+};
+
 class JerryObjectTemplate : public JerryTemplate {
 public:
     JerryObjectTemplate()
@@ -170,7 +171,11 @@ public:
         m_accessors.push_back(new AccessorEntry(name, getter, setter, data, settings, attribute));
     }
 
-    static bool SetAccessor(const jerry_value_t target, AccessorEntry& entry);
+    void SetAccessor(AccessorEntry* entry) {
+        m_accessors.push_back(entry);
+    }
+
+    static bool SetAccessor(const jerry_value_t target, AccessorEntry* entry);
     void InstallProperties(const jerry_value_t target);
 
     void ReleaseProperties(void) {

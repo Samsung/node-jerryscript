@@ -33,6 +33,7 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
     m_try_catch_count = 0;
     m_current_error = NULL;
+    m_hidden_object_template = NULL;
 
 #ifdef __POSIX__
     m_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -124,6 +125,10 @@ void JerryIsolate::Dispose(void) {
         delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kEmptyStringRootIndex]);
     }
 
+    if (m_hidden_object_template != NULL) {
+        delete m_hidden_object_template;
+    }
+
     JerryForceCleanup();
 
     jerry_cleanup();
@@ -157,7 +162,6 @@ void JerryIsolate::SetError(const jerry_value_t error_value) {
     jerry_value_t error_obj = jerry_get_value_from_error(error_value, true);
     SetError(new JerryValue(error_obj));
 }
-
 
 void JerryIsolate::ClearError(void) {
     if (m_current_error != NULL) {
@@ -414,4 +418,12 @@ void JerryIsolate::UpdateErrorStackProp(JerryValue& error) {
 
     JerryValue newMessage(jerry_create_string((const jerry_char_t*)errorMessage.str().c_str()));
     error.SetProperty(m_magic_string_stack, &newMessage);
+}
+
+JerryObjectTemplate* JerryIsolate::HiddenObjectTemplate(void) {
+    if (m_hidden_object_template == NULL) {
+        m_hidden_object_template = new JerryObjectTemplate();
+    }
+
+    return m_hidden_object_template;
 }

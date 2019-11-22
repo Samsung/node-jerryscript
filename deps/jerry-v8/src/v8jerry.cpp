@@ -1433,16 +1433,15 @@ Maybe<bool> Object::SetAccessor(Local<Context> context,
         jdata = reinterpret_cast<JerryValue*>(*dataValue)->Copy();
     }
 
-    AccessorEntry entry(
-        reinterpret_cast<JerryValue*>(*name)->Copy(),
-        getter,
-        setter,
-        jdata,
-        settings,
-        attribute
-    );
-
+    AccessorEntry* entry = new AccessorEntry(reinterpret_cast<JerryValue*>(*name)->Copy(),
+                                             getter,
+                                             setter,
+                                             jdata,
+                                             settings,
+                                             attribute);
     bool configured = JerryObjectTemplate::SetAccessor(jobj->value(), entry);
+    JerryIsolate::fromV8(context->GetIsolate())->HiddenObjectTemplate()->SetAccessor(entry);
+
     return Just(configured);
 }
 

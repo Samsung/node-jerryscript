@@ -61,7 +61,7 @@ jerry_object_native_info_t JerryV8GetterSetterHandlerData::TypeInfo = {
 };
 
 /* static */
-bool JerryObjectTemplate::SetAccessor(const jerry_value_t target, AccessorEntry& entry) {
+bool JerryObjectTemplate::SetAccessor(const jerry_value_t target, AccessorEntry* entry) {
     jerry_property_descriptor_t prop_desc;
     jerry_init_property_descriptor_fields (&prop_desc);
 
@@ -70,27 +70,34 @@ bool JerryObjectTemplate::SetAccessor(const jerry_value_t target, AccessorEntry&
     prop_desc.getter = jerry_create_external_function(JerryV8GetterSetterHandler);
     {
         JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
-        data->v8.getter = entry.getter;
+        data->v8.getter = entry->getter;
         data->external = NULL; // TODO
         data->is_setter = false;
+        data->accessor = entry;
 
         jerry_set_object_native_pointer(prop_desc.getter, data, &JerryV8GetterSetterHandlerData::TypeInfo);
     }
 
-    prop_desc.is_set_defined = (entry.setter.stringed != NULL);
+    prop_desc.is_set_defined = (entry->setter.stringed != NULL);
     if (prop_desc.is_set_defined) {
         prop_desc.setter = jerry_create_external_function(JerryV8GetterSetterHandler); // TODO: connect setter callback;
 
         JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
-        data->v8.setter = entry.setter;
+        data->v8.setter = entry->setter;
         data->external = NULL; // TODO
         data->is_setter = true;
+        data->accessor = entry;
 
         jerry_set_object_native_pointer(prop_desc.setter, data, &JerryV8GetterSetterHandlerData::TypeInfo);
     }
+    prop_desc.is_configurable_defined = true;
+    prop_desc.is_configurable = true;
+
+    prop_desc.is_enumerable_defined = true;
+    prop_desc.is_enumerable = true;
 
     // TODO: handle settings and attributes
-    jerry_value_t define_result = jerry_define_own_property(target, entry.name->value(), &prop_desc);
+    jerry_value_t define_result = jerry_define_own_property(target, entry->name->value(), &prop_desc);
     bool isOk = !jerry_value_is_error(define_result) && jerry_get_boolean_value(define_result);
     jerry_release_value(define_result);
 
@@ -103,7 +110,7 @@ void JerryObjectTemplate::InstallProperties(const jerry_value_t target) {
     JerryTemplate::InstallProperties(target);
 
     for (AccessorEntry* entry : m_accessors) {
-        JerryObjectTemplate::SetAccessor(target, *entry);
+        JerryObjectTemplate::SetAccessor(target, entry);
     }
 
     if (m_internal_field_count) {
