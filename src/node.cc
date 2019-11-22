@@ -120,6 +120,29 @@ typedef int mode_t;
 extern char **environ;
 #endif
 
+/* TODO(V8JERRY): remove this if the Interceptors are supported */
+void AccessorEnvGetter(const v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value>& info) {
+  v8::Isolate* isolate = info.GetIsolate();
+  node::Utf8Value key(isolate, property);
+  const char* val = getenv(*key);
+  if (val) {
+    return info.GetReturnValue().Set(v8::String::NewFromUtf8(isolate, val));
+  }
+}
+
+void AccessorEnvSetter(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info) {
+  node::Utf8Value key(info.GetIsolate(), property);
+  node::Utf8Value val(info.GetIsolate(), value);
+
+  if ((value->IsInt32() && value->Int32Value() == -1) || val.length() == 0 || value->IsUndefined()) {
+    unsetenv(*key);
+  } else {
+    setenv(*key, *val, 1);
+  }
+}
+
+
+
 // This is used to load built-in modules. Instead of using
 // __attribute__((constructor)), we call the _register_<modname>
 // function for each built-in modules explicitly in
@@ -2797,6 +2820,8 @@ void SetupProcessObject(Environment* env,
   // create process.env
   Local<ObjectTemplate> process_env_template =
       ObjectTemplate::New(env->isolate());
+  // TODO(V8JERRY): enable if the Interceptor is supported
+  /*
   process_env_template->SetHandler(NamedPropertyHandlerConfiguration(
           EnvGetter,
           EnvSetter,
@@ -2804,6 +2829,66 @@ void SetupProcessObject(Environment* env,
           EnvDeleter,
           EnvEnumerator,
           env->as_external()));
+  */
+
+  {
+    // TODO(V8JERRY): remove this if the Interceptor is supported
+    const char *envKeys[] = {
+      "NODE_CHANNEL_FD",
+      "NODE_UNIQUE_ID",
+
+      "NODE_DEBUG",
+      "NODE_PATH",
+      "NODE_PENDING_PIPE_INSTANCES",
+      "NODE_MANY_ACCEPTS",
+      "NODE_TLS_REJECT_UNAUTHORIZED",
+      "NODE_CLUSTER_SCHED_POLICY",
+
+      "USERPROFILE",
+      "HOME",
+      "TEMP",
+      "TMP",
+      "TMPDIR"
+
+      // Only for windows, skip for now:
+      //"SystemRoot"
+      //"windir"
+      //"comspec"
+      // For tests:
+      "BE_CHILD",
+      "TEST_INIT",
+      "NODE_TEST_DIR",
+      "NODE_TEST_WITH_ASYNC_HOOKS",
+      "TEST_THREAD_ID",
+      "NODE_TEST_KNOWN_GLOBALS",
+      "NODE_COMMON_PORT",
+      "LOCALHOST",
+      "BOUND",
+      "PORT",
+      "HELLO",
+      "PRT1",
+      "NODE_PRESERVE_SYMLINKS",
+      "FORK",
+      "CHILD",
+      "BAZ",
+      "REPL_TEST_PPID",
+      "NODE_OPTIONS",
+      "NODE_PENDING_DEPRECATION",
+      "PUMMEL",
+      "FAST",
+      "PYTHON",
+      "NODE_PROCESS_ENV",
+      "NODE_PROCESS_ENV_DELETED",
+      "WORKER2_NAME",
+    };
+
+    for (const char* key : envKeys) {
+      // DO not use the FIXED_ONE_BYTE_STRING as it uses sizeof for length
+      process_env_template->SetAccessor(node::OneByteString(env->isolate(), key, strlen(key)),
+                                        AccessorEnvGetter,
+                                        AccessorEnvSetter);
+    }
+  }
 
   Local<Object> process_env =
       process_env_template->NewInstance(env->context()).ToLocalChecked();

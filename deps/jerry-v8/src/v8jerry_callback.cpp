@@ -83,26 +83,28 @@ jerry_value_t JerryV8GetterSetterHandler(
 
     jerry_value_t jret = jerry_create_undefined();
 
+    v8::Local<v8::Name> v8_name = data->accessor->name->AsLocal<v8::Name>();
+
     if (data->is_setter) {
         JerryPropertyCallbackInfo<void> info(function_obj, this_val, args_p, args_cnt, data);
 
         // TODO: assert on args[0]?
         JerryValue new_value(jerry_acquire_value(args_p[0]));
-        v8::Local<v8::Value>* v8_value = reinterpret_cast<v8::Local<v8::Value>*>(&new_value);
+
+        v8::Local<v8::Value> v8_value = new_value.AsLocal<v8::Value>();
 
         if (data->is_named) {
-            data->v8.setter.named(v8::Local<v8::Name>(), *v8_value, info);
+            data->v8.setter.named(v8_name, v8_value, info);
         } else {
-            data->v8.setter.stringed(v8::Local<v8::String>(), *v8_value, info);
+            data->v8.setter.stringed(v8_name.As<v8::String>(), v8_value, info);
         }
     } else {
         JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data);
         if (data->is_named) {
-            data->v8.getter.named(v8::Local<v8::Name>(), info);
+            data->v8.getter.named(v8_name, info);
         } else {
-            data->v8.getter.stringed(v8::Local<v8::String>(), info);
+            data->v8.getter.stringed(v8_name.As<v8::String>(), info);
         }
-
 
         JerryIsolate* iso = JerryIsolate::GetCurrent();
         if (!iso->HasError()) {
