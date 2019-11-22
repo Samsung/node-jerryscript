@@ -2002,6 +2002,10 @@ Local<Value> Function::Call(Local<Value> recv, int argc, Local<Value> argv[]) {
     jerry_value_t result = jerry_call_function(jfunc->value(), jthis->value(), &arguments[0], argc);
     JerryValue* return_value = JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), result);
 
+    if (return_value == NULL) {
+        JerryIsolate::GetCurrent()->TryReportError();
+    }
+
     RETURN_HANDLE(Value, Isolate::GetCurrent(), return_value);
 }
 

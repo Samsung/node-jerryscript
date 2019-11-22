@@ -53,6 +53,7 @@ public:
     void SetError(const jerry_value_t error_value);
     void ClearError(void);
     bool HasError(void);
+    void TryReportError(void);
     JerryValue* GetRawError(void) { return m_current_error; }
 
     void PushContext(JerryValue* context);
