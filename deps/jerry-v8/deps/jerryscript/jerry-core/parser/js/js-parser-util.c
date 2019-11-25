@@ -828,6 +828,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Invalid (unexpected) character.";
     }
+    case PARSER_ERR_INVALID_OCTAL_DIGIT:
+    {
+      return "Invalid octal digit.";
+    }
     case PARSER_ERR_INVALID_HEX_DIGIT:
     {
       return "Invalid hexadecimal digit.";
@@ -1089,6 +1093,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Local variable is redeclared.";
     }
+    case PARSER_ERR_LEXICAL_SINGLE_STATEMENT:
+    {
+      return "Lexical declaration cannot appear in a single-statement context.";
+    }
     case PARSER_ERR_MISSING_ASSIGN_AFTER_CONST:
     {
       return "Value assignment is expected after a const declaration.";
@@ -1117,6 +1125,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Expected 'of' token.";
     }
+    case PARSER_ERR_ASSIGNMENT_EXPECTED:
+    {
+      return "Unexpected arrow function or yield expression (parentheses around the expression may help).";
+    }
     case PARSER_ERR_DUPLICATED_ARGUMENT_NAMES:
     {
       return "Duplicated function argument names are not allowed here.";
@@ -1125,9 +1137,17 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Invalid destructuring assignment target.";
     }
+    case PARSER_ERR_ILLEGAL_PROPERTY_IN_DECLARATION:
+    {
+      return "Illegal property in declaration context.";
+    }
     case PARSER_ERR_FORMAL_PARAM_AFTER_REST_PARAMETER:
     {
       return "Rest parameter must be the last formal parameter.";
+    }
+    case PARSER_ERR_SETTER_REST_PARAMETER:
+    {
+      return "Setter function argument must not be a rest parameter.";
     }
     case PARSER_ERR_REST_PARAMETER_DEFAULT_INITIALIZER:
     {

@@ -33,4 +33,10 @@ assert (String (foo) === "Symbol(foo)");
 
 var fooObj = Object (foo);
 assert (fooObj.toString () === "Symbol(foo)");
-assert (String (fooObj) === "Symbol(foo)");
+
+try {
+  String (fooObj);
+  assert (false);
+} catch (e) {
+  assert (e instanceof TypeError);
+}

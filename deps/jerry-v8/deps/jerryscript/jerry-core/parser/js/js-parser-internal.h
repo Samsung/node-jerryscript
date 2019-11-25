@@ -51,21 +51,22 @@ typedef enum
   PARSER_HAS_NON_STRICT_ARG = (1u << 6),      /**< the function has arguments which
                                                *   are not supported in strict mode */
   PARSER_ARGUMENTS_NEEDED = (1u << 7),        /**< arguments object must be created */
-  PARSER_LEXICAL_ENV_NEEDED = (1u << 9),      /**< lexical environment object must be created */
-  PARSER_INSIDE_WITH = (1u << 10),            /**< code block is inside a with statement */
-  PARSER_RESOLVE_BASE_FOR_CALLS = (1u << 11), /**< the this object must be resolved when
+  PARSER_LEXICAL_ENV_NEEDED = (1u << 8),      /**< lexical environment object must be created */
+  PARSER_INSIDE_WITH = (1u << 9),             /**< code block is inside a with statement */
+  PARSER_RESOLVE_BASE_FOR_CALLS = (1u << 10), /**< the this object must be resolved when
                                                *   a function without a base object is called */
-  PARSER_HAS_INITIALIZED_VARS = (1u << 12),   /**< a CBC_INITIALIZE_VARS instruction must be emitted */
-  PARSER_HAS_LATE_LIT_INIT = (1u << 13),      /**< allocate memory for this string after
+  PARSER_HAS_INITIALIZED_VARS = (1u << 11),   /**< a CBC_INITIALIZE_VARS instruction must be emitted */
+  PARSER_HAS_LATE_LIT_INIT = (1u << 12),      /**< allocate memory for this string after
                                                *   the local parser data is freed */
-  PARSER_NO_END_LABEL = (1u << 14),           /**< return instruction must be inserted
+  PARSER_NO_END_LABEL = (1u << 13),           /**< return instruction must be inserted
                                                *   after the last byte code */
-  PARSER_DEBUGGER_BREAKPOINT_APPENDED = (1u << 15), /**< pending (unsent) breakpoint
+  PARSER_DEBUGGER_BREAKPOINT_APPENDED = (1u << 14), /**< pending (unsent) breakpoint
                                                      *   info is available */
 #if ENABLED (JERRY_ES2015)
-  PARSER_INSIDE_BLOCK = (1u << 16),           /**< script has a lexical environment for let and const */
-  PARSER_IS_ARROW_FUNCTION = (1u << 17),      /**< an arrow function is parsed */
-  PARSER_ARROW_PARSE_ARGS = (1u << 18),       /**< parse the argument list of an arrow function */
+  PARSER_INSIDE_BLOCK = (1u << 15),           /**< script has a lexical environment for let and const */
+  PARSER_IS_ARROW_FUNCTION = (1u << 16),      /**< an arrow function is parsed */
+  PARSER_ARROW_PARSE_ARGS = (1u << 17),       /**< parse the argument list of an arrow function */
+  PARSER_FUNCTION_HAS_NON_SIMPLE_PARAM = (1u << 18), /**< function has a non simple parameter */
   PARSER_FUNCTION_HAS_REST_PARAM = (1u << 19), /**< function has rest parameter */
   /* These four status flags must be in this order. See PARSER_CLASS_PARSE_OPTS_OFFSET. */
   PARSER_CLASS_CONSTRUCTOR = (1u << 20),      /**< a class constructor is parsed (this value must be kept in
@@ -104,11 +105,14 @@ typedef enum
  */
 typedef enum
 {
-  PARSER_PATTERN_NO_OPTS = 0,                 /**< parse the expression after '=' */
-  PARSER_PATTERN_BINDING = (1u << 0),         /**< parse BindingPattern */
-  PARSER_PATTERN_TARGET_ON_STACK = (1u << 1), /**< assignment target is the topmost element on the stack */
-  PARSER_PATTERN_TARGET_DEFAULT = (1u << 2),  /**< perform default value comparison for assignment target */
-  PARSER_PATTERN_INNER_PATTERN = (1u << 3),   /**< parse patter inside a pattern */
+  PARSER_PATTERN_NO_OPTS = 0,                  /**< parse the expression after '=' */
+  PARSER_PATTERN_BINDING = (1u << 0),          /**< parse BindingPattern */
+  PARSER_PATTERN_TARGET_ON_STACK = (1u << 1),  /**< assignment target is the topmost element on the stack */
+  PARSER_PATTERN_TARGET_DEFAULT = (1u << 2),   /**< perform default value comparison for assignment target */
+  PARSER_PATTERN_NESTED_PATTERN = (1u << 3),   /**< parse patter inside a pattern */
+  PARSER_PATTERN_LEXICAL = (1u << 4),          /**< pattern is a lexical (let/const) declaration */
+  PARSER_PATTERN_REST_ELEMENT = (1u << 5),     /**< parse rest array initializer */
+  PARSER_PATTERN_ARGUMENTS = (1u << 6),        /**< parse arguments binding */
 } parser_pattern_flags_t;
 
 /**
@@ -157,7 +161,22 @@ typedef enum
  */
 #define PARSER_IS_CLASS_CONSTRUCTOR_SUPER(flag) \
   (((flag) & PARSER_CLASS_CONSTRUCTOR_SUPER) == PARSER_CLASS_CONSTRUCTOR_SUPER)
+
+/* All flags that affect exotic arguments object creation. */
+#define PARSER_ARGUMENTS_RELATED_FLAGS \
+  (PARSER_ARGUMENTS_NEEDED | PARSER_FUNCTION_HAS_NON_SIMPLE_PARAM | PARSER_IS_STRICT)
+
+#else /* !ENABLED (JERRY_ES2015) */
+
+/* All flags that affect exotic arguments object creation. */
+#define PARSER_ARGUMENTS_RELATED_FLAGS \
+  (PARSER_ARGUMENTS_NEEDED | PARSER_IS_STRICT)
+
 #endif /* ENABLED (JERRY_ES2015) */
+
+/* Checks whether unmapped arguments are needed. */
+#define PARSER_NEEDS_MAPPED_ARGUMENTS(status_flags) \
+  (((status_flags) & PARSER_ARGUMENTS_RELATED_FLAGS) == PARSER_ARGUMENTS_NEEDED)
 
 /* The maximum of PARSER_CBC_STREAM_PAGE_SIZE is 127. */
 #define PARSER_CBC_STREAM_PAGE_SIZE \
@@ -580,6 +599,8 @@ void parser_set_continues_to_current_position (parser_context_t *context_p, pars
   parser_emit_cbc_literal ((context_p), PARSER_TO_EXT_OPCODE (opcode), (literal_index))
 #define parser_emit_cbc_ext_call(context_p, opcode, call_arguments) \
   parser_emit_cbc_call ((context_p), PARSER_TO_EXT_OPCODE (opcode), (call_arguments))
+#define parser_emit_cbc_ext_call(context_p, opcode, call_arguments) \
+  parser_emit_cbc_call ((context_p), PARSER_TO_EXT_OPCODE (opcode), (call_arguments))
 #define parser_emit_cbc_ext_forward_branch(context_p, opcode, branch_p) \
   parser_emit_cbc_forward_branch ((context_p), PARSER_TO_EXT_OPCODE (opcode), (branch_p))
 #define parser_emit_cbc_ext_backward_branch(context_p, opcode, offset) \
@@ -596,9 +617,13 @@ void parser_set_continues_to_current_position (parser_context_t *context_p, pars
 
 void lexer_next_token (parser_context_t *context_p);
 bool lexer_check_next_character (parser_context_t *context_p, lit_utf8_byte_t character);
+bool lexer_check_next_characters (parser_context_t *context_p, lit_utf8_byte_t character1,
+                                  lit_utf8_byte_t character2);
+uint8_t lexer_consume_next_character (parser_context_t *context_p);
 #if ENABLED (JERRY_ES2015)
 void lexer_skip_empty_statements (parser_context_t *context_p);
 bool lexer_check_arrow (parser_context_t *context_p);
+bool lexer_check_arrow_param (parser_context_t *context_p);
 #endif /* ENABLED (JERRY_ES2015) */
 void lexer_parse_string (parser_context_t *context_p);
 void lexer_expect_identifier (parser_context_t *context_p, uint8_t literal_type);

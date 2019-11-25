@@ -13,30 +13,18 @@
  * limitations under the License.
  */
 
-#ifndef ECMA_SPREAD_OBJECT_H
-#define ECMA_SPREAD_OBJECT_H
-
-#include "ecma-globals.h"
-
-/** \addtogroup ecma ECMA
- * @{
- *
- * \addtogroup ecmaspreadobject ECMA Spread object related routines
- * @{
- */
-
-ecma_value_t
-ecma_op_create_spread_object (ecma_value_t arg);
-
-bool
-ecma_op_is_spread_object (ecma_value_t value);
-
-ecma_value_t
-ecma_op_spread_object_get_spreaded_element (ecma_object_t *object_p);
-
-/**
- * @}
- * @}
- */
-
-#endif /* !ECMA_SPREAD_OBJECT_H */
+var obj2 = {
+    [Symbol.toPrimitive](hint) {
+      if (hint == 'number') {
+        return 10;
+      }
+      if (hint == 'string') {
+        return 'hello';
+      }
+      return true;
+    }
+  };
+  
+  assert(+obj2 === 10);
+  //assert(`${obj2}` === "hello"); //FIXME: template literals requires String hint during concatenation
+  assert(obj2 + '' === "true");

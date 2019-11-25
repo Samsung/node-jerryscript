@@ -42,6 +42,7 @@ typedef enum
   PARSER_ERR_STACK_LIMIT_REACHED,                     /**< maximum function stack size reached */
 
   PARSER_ERR_INVALID_CHARACTER,                       /**< unexpected character */
+  PARSER_ERR_INVALID_OCTAL_DIGIT,                     /**< invalid octal digit */
   PARSER_ERR_INVALID_HEX_DIGIT,                       /**< invalid hexadecimal digit */
   PARSER_ERR_INVALID_ESCAPE_SEQUENCE,                 /**< invalid escape sequence */
   PARSER_ERR_INVALID_UNICODE_ESCAPE_SEQUENCE,         /**< invalid unicode escape sequence */
@@ -115,6 +116,7 @@ typedef enum
   PARSER_ERR_OBJECT_PROPERTY_REDEFINED,               /**< property of object literal redefined */
 #if ENABLED (JERRY_ES2015)
   PARSER_ERR_VARIABLE_REDECLARED,                     /**< a variable redeclared */
+  PARSER_ERR_LEXICAL_SINGLE_STATEMENT,                /**< lexical variable in single statement context */
   PARSER_ERR_MISSING_ASSIGN_AFTER_CONST,              /**< an assignment is required after a const declaration */
 
   PARSER_ERR_MULTIPLE_CLASS_CONSTRUCTORS,             /**< multiple class constructor */
@@ -125,10 +127,13 @@ typedef enum
   PARSER_ERR_RIGHT_BRACE_EXPECTED,                    /**< right brace expected */
   PARSER_ERR_OF_EXPECTED,                             /**< of keyword expected */
 
+  PARSER_ERR_ASSIGNMENT_EXPECTED,                     /**< assignment expression expected */
   PARSER_ERR_FORMAL_PARAM_AFTER_REST_PARAMETER,       /**< formal parameter after rest parameter */
+  PARSER_ERR_SETTER_REST_PARAMETER,                   /**< setter rest parameter */
   PARSER_ERR_REST_PARAMETER_DEFAULT_INITIALIZER,      /**< rest parameter default initializer */
   PARSER_ERR_DUPLICATED_ARGUMENT_NAMES,               /**< duplicated argument names */
   PARSER_ERR_INVALID_DESTRUCTURING_PATTERN,           /**< invalid destructuring pattern */
+  PARSER_ERR_ILLEGAL_PROPERTY_IN_DECLARATION,         /**< illegal property in declaration context */
 #endif /* ENABLED (JERRY_ES2015) */
 #if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
   PARSER_ERR_FILE_NOT_FOUND,                          /**< file not found*/

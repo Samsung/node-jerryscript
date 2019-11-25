@@ -58,6 +58,8 @@ checkSyntax ("[super] = []");
 checkSyntax ("[this] = []");
 checkSyntax ("[()] = []");
 checkSyntax ("try { let [$] = $;");
+checkSyntax ("let a, [ b.c ] = [6];");
+checkSyntax ("let [(a)] = [1]");
 
 mustThrow ("var [a] = 4");
 mustThrow ("var [a] = 5");
@@ -222,3 +224,83 @@ mustThrow ("var [a] = { [Symbol.iterator] () { return { next () { return { get d
   assert (a === 1);
   assert (b === 2);
 }) ();
+
+// Force the creation of lexical environment I.
+(function () {
+  const [a] = [1];
+  eval();
+
+  assert (a === 1);
+}) ();
+
+// Force the creation of lexical environment II.
+(function () {
+  let [a] = [1];
+  eval();
+
+  assert (a === 1);
+}) ();
+
+// Check the parsing of AssignmentElement
+(function () {
+  var a = 6;
+  [((a))] = [7];
+  assert (a === 7);
+}) ();
+
+// Test iterator closing
+function __createIterableObject (arr, methods) {
+  methods = methods || {};
+  if (typeof Symbol !== 'function' || !Symbol.iterator) {
+    return {};
+  }
+  arr.length++;
+  var iterator = {
+    next: function() {
+      return { value: arr.shift(), done: arr.length <= 0 };
+    },
+    'return': methods['return'],
+    'throw': methods['throw']
+  };
+  var iterable = {};
+  iterable[Symbol.iterator] = function () { return iterator; };
+  return iterable;
+};
+
+(function () {
+  var closed = false;
+  var iter = __createIterableObject([1, 2, 3], {
+    'return': function() { closed = true; return {}; }
+  });
+  var [a, b] = iter;
+  assert (closed === true);
+  assert (a === 1);
+  assert (b === 2);
+}) ();
+
+mustThrow ("var iter = __createIterableObject([], "
+           + "{ get 'return'() { throw new TypeError() }});"
+           + "var [a] = iter");
+
+mustThrow ("var iter = __createIterableObject([], "
+           + "{ 'return': 5 });"
+           + "var [a] = iter");
+
+mustThrow ("var iter = __createIterableObject([], "
+           + "{ 'return': function() { return 5; }});"
+           + "var [a] = iter");
+
+mustThrow ("try { throw 5 } catch (e) {"
+           + "var iter = __createIterableObject([], "
+           + "{ get 'return'() { throw new TypeError() }});"
+           + "var [a] = iter }");
+
+mustThrow ("try { throw 5 } catch (e) {"
+           + "var iter = __createIterableObject([], "
+           + "{ 'return': 5 });"
+           + "var [a] = iter }");
+
+mustThrow ("try { throw 5 } catch (e) {"
+           + "var iter = __createIterableObject([], "
+           + "{ 'return': function() { return 5; }});"
+           + "var [a] = iter }");
