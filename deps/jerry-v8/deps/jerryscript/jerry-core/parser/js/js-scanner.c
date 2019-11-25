@@ -255,6 +255,23 @@ scanner_process_arrow_arg (parser_context_t *context_p, /**< context */
       }
     }
   }
+  else if (context_p->token.type == LEXER_LEFT_SQUARE || context_p->token.type == LEXER_LEFT_BRACE)
+  {
+    scanner_append_hole (context_p, scanner_context_p);
+    scanner_push_destructuring_pattern (context_p, scanner_context_p, SCANNER_BINDING_ARROW_ARG, false);
+
+    if (context_p->token.type == LEXER_LEFT_BRACE)
+    {
+      parser_stack_push_uint8 (context_p, SCAN_STACK_OBJECT_LITERAL);
+      scanner_context_p->mode = SCAN_MODE_PROPERTY_NAME;
+      return;
+    }
+
+    parser_stack_push_uint8 (context_p, SCAN_STACK_ARRAY_LITERAL);
+    scanner_context_p->mode = SCAN_MODE_BINDING;
+    lexer_next_token (context_p);
+    return;
+  }
 
   scanner_pop_literal_pool (context_p, scanner_context_p);
 
@@ -267,7 +284,172 @@ scanner_process_arrow_arg (parser_context_t *context_p, /**< context */
   }
 } /* scanner_process_arrow_arg */
 
+/**
+ * Arrow types for scanner_handle_bracket() function.
+ */
+typedef enum
+{
+  SCANNER_HANDLE_BRACKET_NO_ARROW, /**< not an arrow function */
+  SCANNER_HANDLE_BRACKET_SIMPLE_ARROW, /**< simple arrow function */
+  SCANNER_HANDLE_BRACKET_ARROW_WITH_ONE_ARG, /**< arrow function with one argument */
+} scanner_handle_bracket_arrow_type_t;
+
 #endif /* ENABLED (JERRY_ES2015) */
+
+/**
+ * Detect special cases in bracketed expressions.
+ */
+static void
+scanner_handle_bracket (parser_context_t *context_p, /**< context */
+                        scanner_context_t *scanner_context_p) /**< scanner context */
+{
+  size_t depth = 0;
+#if ENABLED (JERRY_ES2015)
+  const uint8_t *arrow_source_p;
+  scanner_handle_bracket_arrow_type_t arrow_type = SCANNER_HANDLE_BRACKET_NO_ARROW;
+#endif /* ENABLED (JERRY_ES2015) */
+
+  JERRY_ASSERT (context_p->token.type == LEXER_LEFT_PAREN);
+
+  do
+  {
+#if ENABLED (JERRY_ES2015)
+    arrow_source_p = context_p->source_p;
+#endif /* ENABLED (JERRY_ES2015) */
+    depth++;
+    lexer_next_token (context_p);
+  }
+  while (context_p->token.type == LEXER_LEFT_PAREN);
+
+  scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION;
+
+  switch (context_p->token.type)
+  {
+    case LEXER_LITERAL:
+    {
+      if (context_p->token.lit_location.type != LEXER_IDENT_LITERAL)
+      {
+#if ENABLED (JERRY_ES2015)
+        arrow_source_p = NULL;
+#endif /* ENABLED (JERRY_ES2015) */
+        break;
+      }
+
+#if ENABLED (JERRY_ES2015)
+      const uint8_t *source_p = context_p->source_p;
+
+      if (lexer_check_arrow (context_p))
+      {
+        arrow_source_p = source_p;
+        arrow_type = SCANNER_HANDLE_BRACKET_SIMPLE_ARROW;
+        break;
+      }
+
+      size_t total_depth = depth;
+#endif /* ENABLED (JERRY_ES2015) */
+
+      while (depth > 0 && lexer_check_next_character (context_p, LIT_CHAR_RIGHT_PAREN))
+      {
+        lexer_consume_next_character (context_p);
+        depth--;
+      }
+
+      if (lexer_check_next_character (context_p, LIT_CHAR_LEFT_PAREN))
+      {
+#if ENABLED (JERRY_ES2015)
+        /* A function call cannot be an eval function. */
+        arrow_source_p = NULL;
+#endif /* ENABLED (JERRY_ES2015) */
+
+        if (context_p->token.lit_location.length == 4
+            && lexer_compare_identifiers (context_p->token.lit_location.char_p, (const uint8_t *) "eval", 4))
+        {
+          scanner_context_p->active_literal_pool_p->status_flags |= SCANNER_LITERAL_POOL_NO_REG;
+        }
+        break;
+      }
+
+#if ENABLED (JERRY_ES2015)
+      if (total_depth == depth)
+      {
+        if (lexer_check_arrow_param (context_p))
+        {
+          JERRY_ASSERT (depth > 0);
+          depth--;
+          break;
+        }
+      }
+      else if (depth == total_depth - 1
+               && lexer_check_arrow (context_p))
+      {
+        arrow_type = SCANNER_HANDLE_BRACKET_ARROW_WITH_ONE_ARG;
+        break;
+      }
+
+      arrow_source_p = NULL;
+#endif /* ENABLED (JERRY_ES2015) */
+      break;
+    }
+#if ENABLED (JERRY_ES2015)
+    case LEXER_THREE_DOTS:
+    case LEXER_LEFT_SQUARE:
+    case LEXER_LEFT_BRACE:
+    case LEXER_RIGHT_PAREN:
+    {
+      JERRY_ASSERT (depth > 0);
+      depth--;
+      break;
+    }
+#endif /* ENABLED (JERRY_ES2015) */
+    default:
+    {
+#if ENABLED (JERRY_ES2015)
+      arrow_source_p = NULL;
+#endif /* ENABLED (JERRY_ES2015) */
+      break;
+    }
+  }
+
+  while (depth > 0)
+  {
+    parser_stack_push_uint8 (context_p, SCAN_STACK_PAREN_EXPRESSION);
+    depth--;
+  }
+
+#if ENABLED (JERRY_ES2015)
+  if (arrow_source_p != NULL)
+  {
+    if (arrow_type == SCANNER_HANDLE_BRACKET_SIMPLE_ARROW)
+    {
+      scanner_process_simple_arrow (context_p, scanner_context_p, arrow_source_p);
+      return;
+    }
+
+    parser_stack_push_uint8 (context_p, SCAN_STACK_ARROW_ARGUMENTS);
+
+    scanner_literal_pool_t *literal_pool_p;
+    literal_pool_p = scanner_push_literal_pool (context_p, scanner_context_p, 0);
+    literal_pool_p->source_p = arrow_source_p;
+
+    if (arrow_type == SCANNER_HANDLE_BRACKET_ARROW_WITH_ONE_ARG)
+    {
+      scanner_append_argument (context_p, scanner_context_p);
+      scanner_detect_eval_call (context_p, scanner_context_p);
+
+      context_p->token.type = LEXER_RIGHT_PAREN;
+      scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION_END;
+    }
+    else if (context_p->token.type == LEXER_RIGHT_PAREN)
+    {
+      scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION_END;
+    }
+    else
+    {
+      scanner_process_arrow_arg (context_p, scanner_context_p);
+    }
+  }
+#endif /* ENABLED (JERRY_ES2015) */
+} /* scanner_handle_bracket */
 
 /**
  * Scan primary expression.
@@ -311,28 +493,8 @@ scanner_scan_primary_expression (parser_context_t *context_p, /**< context */
     }
     case LEXER_LEFT_PAREN:
     {
-#if ENABLED (JERRY_ES2015)
-      parser_stack_push_uint8 (context_p, SCAN_STACK_ARROW_ARGUMENTS);
-
-      scanner_literal_pool_t *literal_pool_p;
-      literal_pool_p = scanner_push_literal_pool (context_p, scanner_context_p, 0);
-      literal_pool_p->source_p = context_p->source_p;
-
-      lexer_next_token (context_p);
-
-      if (context_p->token.type == LEXER_RIGHT_PAREN)
-      {
-        scanner_context_p->mode = SCAN_MODE_POST_PRIMARY_EXPRESSION;
-        return SCAN_KEEP_TOKEN;
-      }
-
-      scanner_process_arrow_arg (context_p, scanner_context_p);
+      scanner_handle_bracket (context_p, scanner_context_p);
       return SCAN_KEEP_TOKEN;
-#else /* ENABLED (JERRY_ES2015) */
-      parser_stack_push_uint8 (context_p, SCAN_STACK_PAREN_EXPRESSION);
-      scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION;
-#endif /* ENABLED (JERRY_ES2015) */
-      break;
     }
     case LEXER_LEFT_SQUARE:
     {
@@ -426,12 +588,25 @@ scanner_scan_primary_expression (parser_context_t *context_p, /**< context */
 #endif /* ENABLED (JERRY_ES2015) */
     case LEXER_COMMA:
     {
-      /* Elision. */
-      if (stack_top != SCAN_STACK_ARRAY_LITERAL)
+      /* Elision or spread arguments */
+#if ENABLED (JERRY_ES2015)
+      bool raise_error = (stack_top != SCAN_STACK_PAREN_EXPRESSION && stack_top != SCAN_STACK_ARRAY_LITERAL);
+#else /* !ENABLED (JERRY_ES2015) */
+      bool raise_error = stack_top != SCAN_STACK_ARRAY_LITERAL;
+#endif /* ENABLED (JERRY_ES2015) */
+
+      if (raise_error)
       {
         scanner_raise_error (context_p);
       }
       scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION;
+
+#if ENABLED (JERRY_ES2015)
+      if (scanner_context_p->binding_type != SCANNER_BINDING_NONE)
+      {
+        scanner_context_p->mode = SCAN_MODE_BINDING;
+      }
+#endif /* ENABLED (JERRY_ES2015) */
       break;
     }
     case LEXER_RIGHT_PAREN:
@@ -544,31 +719,9 @@ scanner_scan_primary_expression_end (parser_context_t *context_p, /**< context *
         }
 #if ENABLED (JERRY_ES2015)
         case SCAN_STACK_BINDING_INIT:
+        case SCAN_STACK_BINDING_LIST_INIT:
         {
-          scanner_binding_literal_t binding_literal;
-
-          parser_stack_pop_uint8 (context_p);
-          parser_stack_pop (context_p, &binding_literal, sizeof (scanner_binding_literal_t));
-
-          if (binding_literal.literal_p->type & SCANNER_LITERAL_IS_USED)
-          {
-            binding_literal.literal_p->type |= SCANNER_LITERAL_NO_REG;
-          }
-
-          if (context_p->stack_top_uint8 == SCAN_STACK_ARRAY_LITERAL
-              || context_p->stack_top_uint8 == SCAN_STACK_OBJECT_LITERAL)
-          {
-            scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION_END;
-            return SCAN_KEEP_TOKEN;
-          }
-
-          JERRY_ASSERT (context_p->stack_top_uint8 == SCAN_STACK_LET
-                        || context_p->stack_top_uint8 == SCAN_STACK_CONST
-                        || context_p->stack_top_uint8 == SCAN_STACK_FOR_LET_START
-                        || context_p->stack_top_uint8 == SCAN_STACK_FOR_CONST_START);
-
-          scanner_context_p->mode = SCAN_MODE_VAR_STATEMENT;
-          return SCAN_NEXT_TOKEN;
+          break;
         }
         case SCAN_STACK_ARROW_ARGUMENTS:
         {
@@ -706,15 +859,25 @@ scanner_scan_primary_expression_end (parser_context_t *context_p, /**< context *
       JERRY_ASSERT (context_p->stack_top_uint8 == SCAN_STACK_ARRAY_LITERAL
                     || context_p->stack_top_uint8 == SCAN_STACK_OBJECT_LITERAL
                     || context_p->stack_top_uint8 == SCAN_STACK_LET
-                    || context_p->stack_top_uint8 == SCAN_STACK_CONST);
+                    || context_p->stack_top_uint8 == SCAN_STACK_CONST
+                    || context_p->stack_top_uint8 == SCAN_STACK_FOR_LET_START
+                    || context_p->stack_top_uint8 == SCAN_STACK_FOR_CONST_START
+                    || context_p->stack_top_uint8 == SCAN_STACK_FUNCTION_PARAMETERS
+                    || context_p->stack_top_uint8 == SCAN_STACK_ARROW_ARGUMENTS);
 
       scanner_binding_item_t *item_p = scanner_context_p->active_binding_list_p->items_p;
+
+      uint8_t flag = SCANNER_LITERAL_NO_REG;
+      if (scanner_context_p->binding_type == SCANNER_BINDING_ARROW_ARG)
+      {
+        flag = SCANNER_LITERAL_ARROW_DESTRUCTURED_ARG_NO_REG;
+      }
 
       while (item_p != NULL)
       {
         if (item_p->literal_p->type & SCANNER_LITERAL_IS_USED)
         {
-          item_p->literal_p->type |= SCANNER_LITERAL_NO_REG;
+          item_p->literal_p->type |= flag;
         }
         item_p = item_p->next_p;
       }
@@ -730,28 +893,31 @@ scanner_scan_primary_expression_end (parser_context_t *context_p, /**< context *
       parser_stack_pop_uint8 (context_p);
       parser_stack_pop (context_p, &binding_literal, sizeof (scanner_binding_literal_t));
 
+      JERRY_ASSERT (context_p->stack_top_uint8 == SCAN_STACK_ARRAY_LITERAL
+                    || context_p->stack_top_uint8 == SCAN_STACK_OBJECT_LITERAL
+                    || context_p->stack_top_uint8 == SCAN_STACK_LET
+                    || context_p->stack_top_uint8 == SCAN_STACK_CONST
+                    || context_p->stack_top_uint8 == SCAN_STACK_FOR_LET_START
+                    || context_p->stack_top_uint8 == SCAN_STACK_FOR_CONST_START
+                    || context_p->stack_top_uint8 == SCAN_STACK_ARROW_ARGUMENTS);
+
       if (binding_literal.literal_p->type & SCANNER_LITERAL_IS_USED)
       {
-        binding_literal.literal_p->type |= SCANNER_LITERAL_NO_REG;
+        stack_top = (scan_stack_modes_t) context_p->stack_top_uint8;
+
+        if ((stack_top == SCAN_STACK_ARRAY_LITERAL || stack_top == SCAN_STACK_OBJECT_LITERAL)
+            && (scanner_context_p->binding_type == SCANNER_BINDING_ARROW_ARG))
+        {
+          binding_literal.literal_p->type |= SCANNER_LITERAL_ARROW_DESTRUCTURED_ARG_NO_REG;
+        }
+        else
+        {
+          binding_literal.literal_p->type |= SCANNER_LITERAL_NO_REG;
+        }
       }
 
-      if (context_p->stack_top_uint8 == SCAN_STACK_ARRAY_LITERAL
-          || context_p->stack_top_uint8 == SCAN_STACK_OBJECT_LITERAL)
-      {
-        scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION_END;
-        return SCAN_KEEP_TOKEN;
-      }
-
-      if (context_p->stack_top_uint8 == SCAN_STACK_FOR_LET_START
-          || context_p->stack_top_uint8 == SCAN_STACK_FOR_CONST_START)
-      {
-        scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION_END;
-        return SCAN_KEEP_TOKEN;
-      }
-
-      JERRY_ASSERT (context_p->stack_top_uint8 == SCAN_STACK_LET
-                    || context_p->stack_top_uint8 == SCAN_STACK_CONST);
-      /* FALLTHRU */
+      scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION_END;
+      return SCAN_KEEP_TOKEN;
     }
 #endif /* ENABLED (JERRY_ES2015) */
     case SCAN_STACK_VAR:
@@ -997,6 +1163,11 @@ scanner_scan_primary_expression_end (parser_context_t *context_p, /**< context *
         }
 
         scanner_context_p->mode = SCAN_MODE_POST_PRIMARY_EXPRESSION;
+
+        if (context_p->stack_top_uint8 == SCAN_STACK_FUNCTION_PARAMETERS)
+        {
+          scanner_context_p->mode = SCAN_MODE_PRIMARY_EXPRESSION_END;
+        }
         return SCAN_KEEP_TOKEN;
       }
 
@@ -1434,7 +1605,7 @@ scanner_scan_statement (parser_context_t *context_p, /**< context */
 
 #if ENABLED (JERRY_ES2015)
       if (literal_p->type & SCANNER_LITERAL_IS_LOCAL
-          && !(literal_p->type & SCANNER_LITERAL_IS_FUNC))
+          && !(literal_p->type & (SCANNER_LITERAL_IS_FUNC | SCANNER_LITERAL_IS_ARG)))
       {
         scanner_raise_redeclaration_error (context_p);
       }
@@ -1442,11 +1613,11 @@ scanner_scan_statement (parser_context_t *context_p, /**< context */
       if ((context_p->status_flags & PARSER_IS_EVAL)
           && scanner_scope_find_let_declaration (context_p, literal_p))
       {
-        literal_p->type |= SCANNER_LITERAL_IS_FUNC | SCANNER_LITERAL_IS_CONST;
+        literal_p->type |= SCANNER_LITERAL_IS_FUNC | SCANNER_LITERAL_IS_FUNC_LOCAL;
       }
       else
       {
-        literal_p->type |= SCANNER_LITERAL_IS_FUNC | SCANNER_LITERAL_IS_LET;
+        literal_p->type |= SCANNER_LITERAL_IS_FUNC | SCANNER_LITERAL_IS_FUNC_DECLARATION;
       }
 #else
       literal_p->type |= SCANNER_LITERAL_IS_VAR | SCANNER_LITERAL_IS_FUNC;
@@ -2419,11 +2590,11 @@ scanner_scan_all (parser_context_t *context_p, /**< context */
           {
             uint8_t binding_type = SCANNER_BINDING_VAR;
 
-            if (stack_top == SCAN_STACK_LET)
+            if (stack_top == SCAN_STACK_LET || stack_top == SCAN_STACK_FOR_LET_START)
             {
               binding_type = SCANNER_BINDING_LET;
             }
-            else if (stack_top == SCAN_STACK_CONST)
+            else if (stack_top == SCAN_STACK_CONST || stack_top == SCAN_STACK_FOR_CONST_START)
             {
               binding_type = SCANNER_BINDING_CONST;
             }
@@ -2582,6 +2753,8 @@ scanner_scan_all (parser_context_t *context_p, /**< context */
         }
         case SCAN_MODE_CONTINUE_FUNCTION_ARGUMENTS:
         {
+          bool is_destructuring_binding = false;
+
 #endif /* ENABLED (JERRY_ES2015) */
 
           if (context_p->token.type != LEXER_RIGHT_PAREN && context_p->token.type != LEXER_EOS)
@@ -2592,6 +2765,12 @@ scanner_scan_all (parser_context_t *context_p, /**< context */
               if (context_p->token.type == LEXER_THREE_DOTS)
               {
                 lexer_next_token (context_p);
+              }
+
+              if (context_p->token.type == LEXER_LEFT_SQUARE || context_p->token.type == LEXER_LEFT_BRACE)
+              {
+                is_destructuring_binding = true;
+                break;
               }
 #endif /* ENABLED (JERRY_ES2015) */
 
@@ -2614,6 +2793,24 @@ scanner_scan_all (parser_context_t *context_p, /**< context */
           }
 
 #if ENABLED (JERRY_ES2015)
+          if (is_destructuring_binding)
+          {
+            parser_stack_push_uint8 (context_p, SCAN_STACK_FUNCTION_PARAMETERS);
+            scanner_append_hole (context_p, &scanner_context);
+            scanner_push_destructuring_pattern (context_p, &scanner_context, SCANNER_BINDING_ARG, false);
+
+            if (context_p->token.type == LEXER_LEFT_SQUARE)
+            {
+              parser_stack_push_uint8 (context_p, SCAN_STACK_ARRAY_LITERAL);
+              scanner_context.mode = SCAN_MODE_BINDING;
+              break;
+            }
+
+            parser_stack_push_uint8 (context_p, SCAN_STACK_OBJECT_LITERAL);
+            scanner_context.mode = SCAN_MODE_PROPERTY_NAME;
+            continue;
+          }
+
           if (context_p->token.type == LEXER_ASSIGN)
           {
             parser_stack_push_uint8 (context_p, SCAN_STACK_FUNCTION_PARAMETERS);
@@ -2785,7 +2982,9 @@ scanner_scan_all (parser_context_t *context_p, /**< context */
         {
           JERRY_ASSERT (scanner_context.binding_type == SCANNER_BINDING_VAR
                         || scanner_context.binding_type == SCANNER_BINDING_LET
-                        || scanner_context.binding_type == SCANNER_BINDING_CONST);
+                        || scanner_context.binding_type == SCANNER_BINDING_CONST
+                        || scanner_context.binding_type == SCANNER_BINDING_ARG
+                        || scanner_context.binding_type == SCANNER_BINDING_ARROW_ARG);
 
           if (type == LEXER_THREE_DOTS)
           {
@@ -2830,6 +3029,18 @@ scanner_scan_all (parser_context_t *context_p, /**< context */
                 literal_p->type |= SCANNER_LITERAL_NO_REG;
               }
             }
+            break;
+          }
+
+          if (scanner_context.binding_type == SCANNER_BINDING_ARROW_ARG)
+          {
+            literal_p->type |= SCANNER_LITERAL_IS_ARG | SCANNER_LITERAL_IS_ARROW_DESTRUCTURED_ARG;
+
+            if (literal_p->type & SCANNER_LITERAL_IS_USED)
+            {
+              literal_p->type |= SCANNER_LITERAL_ARROW_DESTRUCTURED_ARG_NO_REG;
+              break;
+            }
           }
           else
           {
@@ -2842,38 +3053,41 @@ scanner_scan_all (parser_context_t *context_p, /**< context */
             else
             {
               literal_p->type |= SCANNER_LITERAL_IS_CONST;
+
+              if (scanner_context.binding_type == SCANNER_BINDING_ARG)
+              {
+                literal_p->type |= SCANNER_LITERAL_IS_ARG;
+              }
             }
 
             if (literal_p->type & SCANNER_LITERAL_IS_USED)
             {
               literal_p->type |= SCANNER_LITERAL_NO_REG;
-            }
-            else
-            {
-              scanner_binding_item_t *binding_item_p;
-              binding_item_p = (scanner_binding_item_t *) scanner_malloc (context_p, sizeof (scanner_binding_item_t));
-
-              binding_item_p->next_p = scanner_context.active_binding_list_p->items_p;
-              binding_item_p->literal_p = literal_p;
-
-              scanner_context.active_binding_list_p->items_p = binding_item_p;
-
-              lexer_next_token (context_p);
-              if (context_p->token.type != LEXER_ASSIGN)
-              {
-                continue;
-              }
-
-              scanner_binding_literal_t binding_literal;
-              binding_literal.literal_p = literal_p;
-
-              parser_stack_push (context_p, &binding_literal, sizeof (scanner_binding_literal_t));
-              parser_stack_push_uint8 (context_p, SCAN_STACK_BINDING_INIT);
-
-              scanner_context.mode = SCAN_MODE_PRIMARY_EXPRESSION;
+              break;
             }
           }
 
+          scanner_binding_item_t *binding_item_p;
+          binding_item_p = (scanner_binding_item_t *) scanner_malloc (context_p, sizeof (scanner_binding_item_t));
+
+          binding_item_p->next_p = scanner_context.active_binding_list_p->items_p;
+          binding_item_p->literal_p = literal_p;
+
+          scanner_context.active_binding_list_p->items_p = binding_item_p;
+
+          lexer_next_token (context_p);
+          if (context_p->token.type != LEXER_ASSIGN)
+          {
+            continue;
+          }
+
+          scanner_binding_literal_t binding_literal;
+          binding_literal.literal_p = literal_p;
+
+          parser_stack_push (context_p, &binding_literal, sizeof (scanner_binding_literal_t));
+          parser_stack_push_uint8 (context_p, SCAN_STACK_BINDING_INIT);
+
+          scanner_context.mode = SCAN_MODE_PRIMARY_EXPRESSION;
           break;
         }
 #endif /* ENABLED (JERRY_ES2015) */
@@ -3005,7 +3219,19 @@ scan_completed:
                 JERRY_DEBUG_MSG ("    CONST ");
                 break;
               }
+              case SCANNER_STREAM_TYPE_DESTRUCTURED_ARG:
+              {
+                JERRY_DEBUG_MSG ("    DESTRUCTURED_ARG ");
+                break;
+              }
 #endif /* ENABLED (JERRY_ES2015) */
+#if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
+              case SCANNER_STREAM_TYPE_IMPORT:
+              {
+                JERRY_DEBUG_MSG ("    IMPORT ");
+                break;
+              }
+#endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
               case SCANNER_STREAM_TYPE_ARG:
               {
                 JERRY_DEBUG_MSG ("    ARG ");
@@ -3016,6 +3242,13 @@ scan_completed:
                 JERRY_DEBUG_MSG ("    ARG_FUNC ");
                 break;
               }
+#if ENABLED (JERRY_ES2015)
+              case SCANNER_STREAM_TYPE_DESTRUCTURED_ARG_FUNC:
+              {
+                JERRY_DEBUG_MSG ("    DESTRUCTURED_ARG_FUNC ");
+                break;
+              }
+#endif /* ENABLED (JERRY_ES2015) */
               case SCANNER_STREAM_TYPE_FUNC:
               {
                 JERRY_DEBUG_MSG ("    FUNC ");
@@ -3028,13 +3261,6 @@ scan_completed:
                 break;
               }
 #endif /* ENABLED (JERRY_ES2015) */
-#if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
-              case SCANNER_STREAM_TYPE_IMPORT:
-              {
-                JERRY_DEBUG_MSG ("    IMPORT ");
-                break;
-              }
-#endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
               default:
               {
                 JERRY_ASSERT ((data_p[0] & SCANNER_STREAM_TYPE_MASK) == SCANNER_STREAM_TYPE_HOLE);

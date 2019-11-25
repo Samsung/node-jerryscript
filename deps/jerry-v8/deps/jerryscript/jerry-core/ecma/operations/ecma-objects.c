@@ -19,6 +19,7 @@
 #include "ecma-exceptions.h"
 #include "ecma-gc.h"
 #include "ecma-globals.h"
+#include "ecma-helpers.h"
 #include "ecma-function-object.h"
 #include "ecma-lex-env.h"
 #include "ecma-string-object.h"
@@ -967,19 +968,21 @@ ecma_op_object_get_by_symbol_id (ecma_object_t *object_p, /**< the object */
 } /* ecma_op_object_get_by_symbol_id */
 
 /**
- * GetMethod operation the property is a well-known symbol
+ * GetMethod operation
  *
  * See also: ECMA-262 v6, 7.3.9
  *
  * Note:
  *      Returned value must be freed with ecma_free_value.
  *
- * @return iterator fucntion object - if success
+ * @return iterator function object - if success
  *         raised error - otherwise
  */
-ecma_value_t
-ecma_op_get_method_by_symbol_id (ecma_value_t value, /**< ecma value */
-                                 lit_magic_string_id_t property_id) /**< property symbol id */
+static ecma_value_t
+ecma_op_get_method_by_id (ecma_value_t value, /**< ecma value */
+                          lit_magic_string_id_t id, /**< property magic id */
+                          bool is_symbol_id) /**< true - if id represents a symbol id
+                                              *   false - otherwise */
 {
   /* 2. */
   ecma_value_t obj_value = ecma_op_to_object (value);
@@ -990,7 +993,16 @@ ecma_op_get_method_by_symbol_id (ecma_value_t value, /**< ecma value */
   }
 
   ecma_object_t *obj_p = ecma_get_object_from_value (obj_value);
-  ecma_value_t func = ecma_op_object_get_by_symbol_id (obj_p, property_id);
+  ecma_value_t func;
+
+  if (is_symbol_id)
+  {
+    func = ecma_op_object_get_by_symbol_id (obj_p, id);
+  }
+  else
+  {
+    func = ecma_op_object_get_by_magic_id (obj_p, id);
+  }
   ecma_deref_object (obj_p);
 
   /* 3. */
@@ -1014,7 +1026,43 @@ ecma_op_get_method_by_symbol_id (ecma_value_t value, /**< ecma value */
 
   /* 6. */
   return func;
+} /* ecma_op_get_method_by_id */
+
+/**
+ * GetMethod operation when the property is a well-known symbol
+ *
+ * See also: ECMA-262 v6, 7.3.9
+ *
+ * Note:
+ *      Returned value must be freed with ecma_free_value.
+ *
+ * @return iterator function object - if success
+ *         raised error - otherwise
+ */
+ecma_value_t
+ecma_op_get_method_by_symbol_id (ecma_value_t value, /**< ecma value */
+                                 lit_magic_string_id_t symbol_id) /**< property symbol id */
+{
+  return ecma_op_get_method_by_id (value, symbol_id, true);
 } /* ecma_op_get_method_by_symbol_id */
+
+/**
+ * GetMethod operation when the property is a magic string
+ *
+ * See also: ECMA-262 v6, 7.3.9
+ *
+ * Note:
+ *      Returned value must be freed with ecma_free_value.
+ *
+ * @return iterator function object - if success
+ *         raised error - otherwise
+ */
+ecma_value_t
+ecma_op_get_method_by_magic_id (ecma_value_t value, /**< ecma value */
+                                lit_magic_string_id_t magic_id) /**< property magic id */
+{
+  return ecma_op_get_method_by_id (value, magic_id, false);
+} /* ecma_op_get_method_by_magic_id */
 #endif /* ENABLED (JERRY_ES2015) */
 
 /**
@@ -2309,6 +2357,12 @@ ecma_object_check_class_name_is_object (ecma_object_t *obj_p) /**< object */
           || ecma_builtin_is (obj_p, ECMA_BUILTIN_ID_SET_ITERATOR_PROTOTYPE)
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_SET) */
+#if ENABLED (JERRY_ES2015_BUILTIN_WEAKMAP)
+          || ecma_builtin_is (obj_p, ECMA_BUILTIN_ID_WEAKMAP_PROTOTYPE)
+#endif /* ENABLED (JERRY_ES2015_BUILTIN_WEAKMAP) */
+#if ENABLED (JERRY_ES2015_BUILTIN_WEAKSET)
+          || ecma_builtin_is (obj_p, ECMA_BUILTIN_ID_WEAKSET_PROTOTYPE)
+#endif /* ENABLED (JERRY_ES2015_BUILTIN_WEAKSET) */
 #if ENABLED (JERRY_ES2015)
           || ecma_builtin_is (obj_p, ECMA_BUILTIN_ID_SYMBOL_PROTOTYPE)
 #endif /* ENABLED (JERRY_ES2015) */
@@ -2473,6 +2527,90 @@ ecma_object_class_is (ecma_object_t *object_p, /**< object */
 
   return false;
 } /* ecma_object_class_is */
+
+/**
+ * Checks if the given argument has [[RegExpMatcher]] internal slot
+ *
+ * @return true - if the given argument is a regexp
+ *         false - otherwise
+ */
+inline bool JERRY_ATTR_ALWAYS_INLINE
+ecma_object_is_regexp_object (ecma_value_t arg) /**< argument */
+{
+  return (ecma_is_value_object (arg)
+          && ecma_object_class_is (ecma_get_object_from_value (arg), LIT_MAGIC_STRING_REGEXP_UL));
+} /* ecma_object_is_regexp_object */
+
+#if ENABLED (JERRY_ES2015)
+/**
+ * Object's IsConcatSpreadable operation, used for Array.prototype.concat
+ * It checks the argument's [Symbol.isConcatSpreadable] property value
+ *
+ * See also:
+ *          ECMA-262 v6, 22.1.3.1.1;
+ *
+ * @return ECMA_VALUE_ERROR - if the operation fails
+ *         ECMA_VALUE_TRUE - if the argument is concatSpreadable
+ *         ECMA_VALUE_FALSE - otherwise
+ */
+ecma_value_t
+ecma_op_is_concat_spreadable (ecma_value_t arg) /**< argument */
+{
+  if (!ecma_is_value_object (arg))
+  {
+    return ECMA_VALUE_FALSE;
+  }
+
+  ecma_value_t spreadable = ecma_op_object_get_by_symbol_id (ecma_get_object_from_value (arg),
+                                                             LIT_MAGIC_STRING_IS_CONCAT_SPREADABLE);
+
+  if (ECMA_IS_VALUE_ERROR (spreadable))
+  {
+    return spreadable;
+  }
+
+  if (!ecma_is_value_undefined (spreadable))
+  {
+    return ecma_make_boolean_value (ecma_op_to_boolean (spreadable));
+  }
+
+  return (ecma_make_boolean_value (ecma_is_value_array (arg)));
+} /* ecma_op_is_concat_spreadable */
+
+/**
+ * IsRegExp operation
+ *
+ * See also:
+ *          ECMA-262 v6, 22.1.3.1.1;
+ *
+ * @return ECMA_VALUE_ERROR - if the operation fails
+ *         ECMA_VALUE_TRUE - if the argument is regexp
+ *         ECMA_VALUE_FALSE - otherwise
+ */
+ecma_value_t
+ecma_op_is_regexp (ecma_value_t arg) /**< argument */
+{
+  if (!ecma_is_value_object (arg))
+  {
+    return ECMA_VALUE_FALSE;
+  }
+
+  ecma_value_t is_regexp = ecma_op_object_get_by_symbol_id (ecma_get_object_from_value (arg),
+                                                            LIT_MAGIC_STRING_MATCH);
+
+  if (ECMA_IS_VALUE_ERROR (is_regexp))
+  {
+    return is_regexp;
+  }
+
+  if (!ecma_is_value_undefined (is_regexp))
+  {
+    return ecma_make_boolean_value (ecma_op_to_boolean (is_regexp));
+  }
+
+  return ecma_make_boolean_value (ecma_object_is_regexp_object (arg));
+} /* ecma_op_is_regexp */
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * @}

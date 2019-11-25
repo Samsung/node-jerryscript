@@ -66,16 +66,16 @@
 
 #if ENABLED (JERRY_ES2015)
 /**
- * Checks whether the current opcode is a super constructor call
+ * CBC_NO_RESULT_OPERATION for ext opcodes
  */
-#define CBC_SUPER_CALL_OPERATION(opcode) \
+#define CBC_EXT_NO_RESULT_OPERATION(opcode) \
   ((opcode) >= PARSER_TO_EXT_OPCODE (CBC_EXT_SUPER_CALL) \
-    && (opcode) <= PARSER_TO_EXT_OPCODE (CBC_EXT_SUPER_CALL_BLOCK))
+    && (opcode) <= PARSER_TO_EXT_OPCODE (CBC_EXT_SPREAD_CALL_PROP_BLOCK))
 #else /* !ENABLED (JERRY_ES2015) */
 /**
- * Checks whether the current opcode is a super constructor call
+ * CBC_NO_RESULT_OPERATION for ext opcodes
  */
-#define CBC_SUPER_CALL_OPERATION(opcode) false
+#define CBC_EXT_NO_RESULT_OPERATION(opcode) false
 #endif /* ENABLED (JERRY_ES2015) */
 
 /* Debug macro. */
@@ -84,9 +84,9 @@
 
 /* Debug macro. */
 #define CBC_SAME_ARGS(op1, op2) \
-  (CBC_SUPER_CALL_OPERATION (op1) ? ((cbc_ext_flags[PARSER_GET_EXT_OPCODE (op1)] & CBC_ARG_TYPES) \
-                                      == (cbc_ext_flags[PARSER_GET_EXT_OPCODE (op2)] & CBC_ARG_TYPES)) \
-                                  : ((cbc_flags[op1] & CBC_ARG_TYPES) == (cbc_flags[op2] & CBC_ARG_TYPES)))
+  (CBC_EXT_NO_RESULT_OPERATION (op1) ? ((cbc_ext_flags[PARSER_GET_EXT_OPCODE (op1)] & CBC_ARG_TYPES) \
+                                         == (cbc_ext_flags[PARSER_GET_EXT_OPCODE (op2)] & CBC_ARG_TYPES)) \
+                                     : ((cbc_flags[op1] & CBC_ARG_TYPES) == (cbc_flags[op2] & CBC_ARG_TYPES)))
 
 #define CBC_UNARY_OPERATION(name, group) \
   CBC_OPCODE (name, CBC_NO_FLAG, 0, \
@@ -140,7 +140,7 @@
  * cannot be true for an opcode which has a result
  */
 #define CBC_NO_RESULT_OPERATION(opcode) \
-  (((opcode) >= CBC_PRE_INCR && (opcode) < CBC_END) || CBC_SUPER_CALL_OPERATION ((opcode)))
+  (((opcode) >= CBC_PRE_INCR && (opcode) < CBC_END) || CBC_EXT_NO_RESULT_OPERATION ((opcode)))
 
 /**
  * Branch instructions are organized in group of 8 opcodes.
@@ -308,6 +308,8 @@
               VM_OC_INIT_LOCALS) \
   CBC_OPCODE (CBC_CREATE_CONST, CBC_HAS_LITERAL_ARG, 0, \
               VM_OC_INIT_LOCALS) \
+  CBC_OPCODE (CBC_CREATE_DESTRUCTURED_ARG, CBC_HAS_LITERAL_ARG, 0, \
+              VM_OC_NONE) \
   CBC_OPCODE (CBC_INIT_LOCAL, CBC_HAS_LITERAL_ARG | CBC_HAS_LITERAL_ARG2, 0, \
               VM_OC_INIT_LOCALS) \
   CBC_OPCODE (CBC_CREATE_VAR_EVAL, CBC_HAS_LITERAL_ARG, 0, \
@@ -538,7 +540,7 @@
                       -1 + PARSER_SUPER_CLASS_CONTEXT_STACK_ALLOCATION, VM_OC_CLASS_HERITAGE) \
   CBC_OPCODE (CBC_EXT_INITIALIZER_PUSH_PROP, CBC_NO_FLAG, 0, \
               VM_OC_INITIALIZER_PUSH_PROP | VM_OC_GET_STACK) \
-  CBC_FORWARD_BRANCH (CBC_EXT_DEFAULT_INITIALIZER, 0, \
+  CBC_FORWARD_BRANCH (CBC_EXT_DEFAULT_INITIALIZER, -1, \
                       VM_OC_DEFAULT_INITIALIZER) \
   \
   /* Basic opcodes. */ \
@@ -596,6 +598,24 @@
               VM_OC_SUPER_CALL | VM_OC_PUT_STACK) \
   CBC_OPCODE (CBC_EXT_SUPER_CALL_BLOCK, CBC_HAS_POP_STACK_BYTE_ARG, -1, \
               VM_OC_SUPER_CALL | VM_OC_PUT_BLOCK) \
+  CBC_OPCODE (CBC_EXT_SPREAD_SUPER_CALL, CBC_HAS_POP_STACK_BYTE_ARG, -1, \
+              VM_OC_SUPER_CALL) \
+  CBC_OPCODE (CBC_EXT_SPREAD_SUPER_CALL_PUSH_RESULT, CBC_HAS_POP_STACK_BYTE_ARG, 0, \
+              VM_OC_SUPER_CALL | VM_OC_PUT_STACK) \
+  CBC_OPCODE (CBC_EXT_SPREAD_SUPER_CALL_BLOCK, CBC_HAS_POP_STACK_BYTE_ARG, -1, \
+              VM_OC_SUPER_CALL | VM_OC_PUT_BLOCK) \
+  CBC_OPCODE (CBC_EXT_SPREAD_CALL, CBC_HAS_POP_STACK_BYTE_ARG, -1, \
+              VM_OC_SPREAD_ARGUMENTS) \
+  CBC_OPCODE (CBC_EXT_SPREAD_CALL_PUSH_RESULT, CBC_HAS_POP_STACK_BYTE_ARG, 0, \
+              VM_OC_SPREAD_ARGUMENTS | VM_OC_PUT_STACK) \
+  CBC_OPCODE (CBC_EXT_SPREAD_CALL_BLOCK, CBC_HAS_POP_STACK_BYTE_ARG, -1, \
+              VM_OC_SPREAD_ARGUMENTS | VM_OC_PUT_BLOCK) \
+  CBC_OPCODE (CBC_EXT_SPREAD_CALL_PROP, CBC_HAS_POP_STACK_BYTE_ARG, -3, \
+              VM_OC_SPREAD_ARGUMENTS) \
+  CBC_OPCODE (CBC_EXT_SPREAD_CALL_PROP_PUSH_RESULT, CBC_HAS_POP_STACK_BYTE_ARG, -2, \
+              VM_OC_SPREAD_ARGUMENTS | VM_OC_PUT_STACK) \
+  CBC_OPCODE (CBC_EXT_SPREAD_CALL_PROP_BLOCK, CBC_HAS_POP_STACK_BYTE_ARG, -3, \
+              VM_OC_SPREAD_ARGUMENTS | VM_OC_PUT_BLOCK) \
   CBC_OPCODE (CBC_EXT_PUSH_CONSTRUCTOR_SUPER, CBC_NO_FLAG, 1, \
               VM_OC_PUSH_CONSTRUCTOR_SUPER | VM_OC_PUT_STACK) \
   CBC_OPCODE (CBC_EXT_PUSH_CONSTRUCTOR_SUPER_PROP, CBC_NO_FLAG, 1, \
@@ -614,8 +634,8 @@
               VM_OC_CONSTRUCTOR_RET | VM_OC_GET_STACK) \
   CBC_OPCODE (CBC_EXT_ERROR, CBC_NO_FLAG, 0, \
               VM_OC_ERROR) \
-  CBC_OPCODE (CBC_EXT_CREATE_SPREAD_OBJECT, CBC_NO_FLAG, 0, \
-              VM_OC_CREATE_SPREAD_OBJECT | VM_OC_GET_STACK | VM_OC_PUT_STACK) \
+  CBC_OPCODE (CBC_EXT_PUSH_SPREAD_ELEMENT, CBC_NO_FLAG, 1, \
+              VM_OC_PUSH_SPREAD_ELEMENT) \
   CBC_OPCODE (CBC_EXT_SPREAD_ARRAY_APPEND, CBC_HAS_POP_STACK_BYTE_ARG, 0, \
               VM_OC_APPEND_ARRAY) \
   CBC_OPCODE (CBC_EXT_GET_ITERATOR, CBC_NO_FLAG, 1, \
@@ -624,12 +644,16 @@
               VM_OC_ITERATOR_STEP) \
   CBC_OPCODE (CBC_EXT_ITERATOR_STEP_PROP, CBC_NO_FLAG, 1, \
               VM_OC_ITERATOR_STEP) \
+  CBC_OPCODE (CBC_EXT_ITERATOR_CLOSE, CBC_NO_FLAG, -1, \
+              VM_OC_ITERATOR_CLOSE | VM_OC_GET_STACK) \
   CBC_OPCODE (CBC_EXT_REST_INITIALIZER, CBC_NO_FLAG, 1, \
               VM_OC_REST_INITIALIZER) \
   CBC_OPCODE (CBC_EXT_REST_INITIALIZER_PROP, CBC_NO_FLAG, 1, \
               VM_OC_REST_INITIALIZER) \
   CBC_OPCODE (CBC_EXT_INITIALIZER_PUSH_PROP_LITERAL, CBC_HAS_LITERAL_ARG, 1, \
               VM_OC_INITIALIZER_PUSH_PROP | VM_OC_GET_LITERAL) \
+  CBC_OPCODE (CBC_EXT_SPREAD_NEW, CBC_HAS_POP_STACK_BYTE_ARG, 0, \
+              VM_OC_SPREAD_ARGUMENTS | VM_OC_PUT_STACK) \
   \
   /* Last opcode (not a real opcode). */ \
   CBC_OPCODE (CBC_EXT_END, CBC_NO_FLAG, 0, \
@@ -712,21 +736,21 @@ typedef enum
   CBC_CODE_FLAGS_FULL_LITERAL_ENCODING = (1u << 1), /**< full literal encoding mode is enabled */
   CBC_CODE_FLAGS_UINT16_ARGUMENTS = (1u << 2), /**< compiled code data is cbc_uint16_arguments_t */
   CBC_CODE_FLAGS_STRICT_MODE = (1u << 3), /**< strict mode is enabled */
-  CBC_CODE_FLAGS_ARGUMENTS_NEEDED = (1u << 4), /**< arguments object must be constructed */
-  CBC_CODE_FLAGS_LEXICAL_ENV_NOT_NEEDED = (1u << 5), /**< no need to create a lexical environment */
-  CBC_CODE_FLAGS_ARROW_FUNCTION = (1u << 6), /**< this function is an arrow function */
-  CBC_CODE_FLAGS_STATIC_FUNCTION = (1u << 7), /**< this function is a static snapshot function */
-  CBC_CODE_FLAGS_DEBUGGER_IGNORE = (1u << 8), /**< this function should be ignored by debugger */
-  CBC_CODE_FLAGS_CONSTRUCTOR = (1u << 9), /**< this function is a constructor */
-  CBC_CODE_FLAGS_REST_PARAMETER = (1u << 10), /**< this function has rest parameter */
+  CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED = (1u << 4), /**< mapped arguments object must be constructed */
+  CBC_CODE_FLAGS_UNMAPPED_ARGUMENTS_NEEDED = (1u << 5), /**< mapped arguments object must be constructed */
+  CBC_CODE_FLAGS_LEXICAL_ENV_NOT_NEEDED = (1u << 6), /**< no need to create a lexical environment */
+  CBC_CODE_FLAGS_ARROW_FUNCTION = (1u << 7), /**< this function is an arrow function */
+  CBC_CODE_FLAGS_STATIC_FUNCTION = (1u << 8), /**< this function is a static snapshot function */
+  CBC_CODE_FLAGS_DEBUGGER_IGNORE = (1u << 9), /**< this function should be ignored by debugger */
+  CBC_CODE_FLAGS_CONSTRUCTOR = (1u << 10), /**< this function is a constructor */
+  CBC_CODE_FLAGS_REST_PARAMETER = (1u << 11), /**< this function has rest parameter */
 } cbc_code_flags;
 
 /**
- * Non-strict arguments object must be constructed
+ * Any arguments object is needed
  */
-#define CBC_NON_STRICT_ARGUMENTS_NEEDED(compiled_code_p) \
-  (((compiled_code_p)->status_flags & CBC_CODE_FLAGS_ARGUMENTS_NEEDED) \
-    && !((compiled_code_p)->status_flags & CBC_CODE_FLAGS_STRICT_MODE))
+#define CBC_CODE_FLAGS_IS_ARGUMENTS_NEEDED \
+  (CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED | CBC_CODE_FLAGS_UNMAPPED_ARGUMENTS_NEEDED)
 
 #define CBC_OPCODE(arg1, arg2, arg3, arg4) arg1,
 

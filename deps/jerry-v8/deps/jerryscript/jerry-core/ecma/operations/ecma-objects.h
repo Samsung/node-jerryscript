@@ -43,7 +43,8 @@ ecma_value_t ecma_op_object_get_by_uint32_index (ecma_object_t *object_p, uint32
 ecma_value_t ecma_op_object_get_by_magic_id (ecma_object_t *object_p, lit_magic_string_id_t property_id);
 #if ENABLED (JERRY_ES2015)
 ecma_value_t ecma_op_object_get_by_symbol_id (ecma_object_t *object_p, lit_magic_string_id_t property_id);
-ecma_value_t ecma_op_get_method_by_symbol_id (ecma_value_t value, lit_magic_string_id_t property_id);
+ecma_value_t ecma_op_get_method_by_symbol_id (ecma_value_t value, lit_magic_string_id_t symbol_id);
+ecma_value_t ecma_op_get_method_by_magic_id (ecma_value_t value, lit_magic_string_id_t magic_id);
 #endif /* ENABLED (JERRY_ES2015) */
 ecma_value_t ecma_op_object_put (ecma_object_t *object_p, ecma_string_t *property_name_p, ecma_value_t value,
                                  bool is_throw);
@@ -65,6 +66,11 @@ ecma_collection_t * ecma_op_object_get_property_names (ecma_object_t *obj_p, uin
 
 lit_magic_string_id_t ecma_object_get_class_name (ecma_object_t *obj_p);
 bool ecma_object_class_is (ecma_object_t *object_p, uint32_t class_id);
+bool ecma_object_is_regexp_object (ecma_value_t arg);
+#if ENABLED (JERRY_ES2015)
+ecma_value_t ecma_op_is_concat_spreadable (ecma_value_t arg);
+ecma_value_t ecma_op_is_regexp (ecma_value_t arg);
+#endif /* !ENABLED (JERRY_ES2015) */
 
 /**
  * @}

@@ -145,7 +145,7 @@ lexer_skip_spaces (parser_context_t *context_p) /**< context */
 
   if (context_p->token.flags & LEXER_NO_SKIP_SPACES)
   {
-    context_p->token.flags = (uint8_t) (context_p->token.flags & ~LEXER_NO_SKIP_SPACES);
+    context_p->token.flags &= (uint8_t) ~LEXER_NO_SKIP_SPACES;
     return;
   }
 
@@ -918,6 +918,28 @@ lexer_parse_string (parser_context_t *context_p) /**< context */
 } /* lexer_parse_string */
 
 /**
+ * Parse octal number.
+ */
+static inline void
+lexer_parse_octal_number (parser_context_t *context_p, /** context */
+                          const uint8_t **source_p) /**< current source position */
+{
+  do
+  {
+    (*source_p)++;
+  }
+  while (*source_p < context_p->source_end_p
+         && *source_p[0] >= LIT_CHAR_0
+         && *source_p[0] <= LIT_CHAR_7);
+
+  if (*source_p < context_p->source_end_p
+      && (*source_p[0] == LIT_CHAR_8 || *source_p[0] == LIT_CHAR_9))
+  {
+    parser_raise_error (context_p, PARSER_ERR_INVALID_OCTAL_DIGIT);
+  }
+} /* lexer_parse_octal_number */
+
+/**
  * Parse number.
  */
 static void
@@ -956,6 +978,23 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
       while (source_p < source_end_p
              && lit_char_is_hex_digit (source_p[0]));
     }
+#if ENABLED (JERRY_ES2015)
+    else if (LEXER_TO_ASCII_LOWERCASE (source_p[1]) == LIT_CHAR_LOWERCASE_O)
+    {
+      context_p->token.extra_value = LEXER_NUMBER_OCTAL;
+      context_p->token.lit_location.char_p++;
+      context_p->source_p++;
+      source_p += 2;
+
+      if (source_p >= source_end_p
+          || !lit_char_is_octal_digit (source_p[0]))
+      {
+        parser_raise_error (context_p, PARSER_ERR_INVALID_OCTAL_DIGIT);
+      }
+
+      lexer_parse_octal_number (context_p, &source_p);
+    }
+#endif /* ENABLED (JERRY_ES2015) */
     else if (source_p[1] >= LIT_CHAR_0
              && source_p[1] <= LIT_CHAR_7)
     {
@@ -966,20 +1005,7 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
         parser_raise_error (context_p, PARSER_ERR_OCTAL_NUMBER_NOT_ALLOWED);
       }
 
-      do
-      {
-        source_p++;
-      }
-      while (source_p < source_end_p
-             && source_p[0] >= LIT_CHAR_0
-             && source_p[0] <= LIT_CHAR_7);
-
-      if (source_p < source_end_p
-          && source_p[0] >= LIT_CHAR_8
-          && source_p[0] <= LIT_CHAR_9)
-      {
-        parser_raise_error (context_p, PARSER_ERR_INVALID_NUMBER);
-      }
+      lexer_parse_octal_number (context_p, &source_p);
     }
     else if (source_p[1] >= LIT_CHAR_8
              && source_p[1] <= LIT_CHAR_9)
@@ -1406,6 +1432,44 @@ lexer_check_next_character (parser_context_t *context_p, /**< context */
           && context_p->source_p[0] == (uint8_t) character);
 } /* lexer_check_next_character */
 
+/**
+ * Checks whether the next token starts with either specified characters.
+ *
+ * @return true - if the next is the specified character
+ *         false - otherwise
+ */
+bool
+lexer_check_next_characters (parser_context_t *context_p, /**< context */
+                             lit_utf8_byte_t character1, /**< first alternative character */
+                             lit_utf8_byte_t character2) /**< second alternative character */
+{
+  if (!(context_p->token.flags & LEXER_NO_SKIP_SPACES))
+  {
+    lexer_skip_spaces (context_p);
+    context_p->token.flags = (uint8_t) (context_p->token.flags | LEXER_NO_SKIP_SPACES);
+  }
+
+  return (context_p->source_p < context_p->source_end_p
+          && (context_p->source_p[0] == (uint8_t) character1
+              || context_p->source_p[0] == (uint8_t) character2));
+} /* lexer_check_next_characters */
+
+/**
+ * Consumes the next character. The character cannot be a white space.
+ *
+ * @return consumed character
+ */
+uint8_t
+lexer_consume_next_character (parser_context_t *context_p)
+{
+  JERRY_ASSERT (context_p->source_p < context_p->source_end_p);
+
+  context_p->token.flags &= (uint8_t) ~LEXER_NO_SKIP_SPACES;
+
+  PARSER_PLUS_EQUAL_LC (context_p->column, 1);
+  return *context_p->source_p++;
+} /* lexer_consume_next_character */
+
 #if ENABLED (JERRY_ES2015)
 
 /**
@@ -1427,6 +1491,35 @@ lexer_check_arrow (parser_context_t *context_p) /**< context */
           && context_p->source_p[0] == (uint8_t) LIT_CHAR_EQUALS
           && context_p->source_p[1] == (uint8_t) LIT_CHAR_GREATER_THAN);
 } /* lexer_check_arrow */
+
+/**
+ * Checks whether the next token is a comma or equal sign.
+ *
+ * @return true if the next token is a comma or equal sign
+ */
+bool
+lexer_check_arrow_param (parser_context_t *context_p) /**< context */
+{
+  JERRY_ASSERT (context_p->token.flags & LEXER_NO_SKIP_SPACES);
+
+  if (context_p->source_p >= context_p->source_end_p)
+  {
+    return false;
+  }
+
+  if (context_p->source_p[0] == LIT_CHAR_COMMA)
+  {
+    return true;
+  }
+
+  if (context_p->source_p[0] != LIT_CHAR_EQUALS)
+  {
+    return false;
+  }
+
+  return (context_p->source_p + 1 >= context_p->source_end_p
+          || context_p->source_p[1] != LIT_CHAR_EQUALS);
+} /* lexer_check_arrow_param */
 
 #endif /* ENABLED (JERRY_ES2015) */
 
@@ -2379,6 +2472,7 @@ lexer_expect_object_literal_id (parser_context_t *context_p, /**< context */
 #if ENABLED (JERRY_ES2015)
             && context_p->source_p[0] != LIT_CHAR_COMMA
             && context_p->source_p[0] != LIT_CHAR_RIGHT_BRACE
+            && context_p->source_p[0] != LIT_CHAR_LEFT_PAREN
 #endif /* ENABLED (JERRY_ES2015) */
             && context_p->source_p[0] != LIT_CHAR_COLON)
         {
@@ -2500,6 +2594,7 @@ lexer_scan_identifier (parser_context_t *context_p, /**< context */
 #if ENABLED (JERRY_ES2015)
           && context_p->source_p[0] != LIT_CHAR_COMMA
           && context_p->source_p[0] != LIT_CHAR_RIGHT_BRACE
+          && context_p->source_p[0] != LIT_CHAR_LEFT_PAREN
 #endif /* ENABLED (JERRY_ES2015) */
           && context_p->source_p[0] != LIT_CHAR_COLON)
       {

@@ -1,3 +1,4 @@
+
 /* Copyright JS Foundation and other contributors, http://js.foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -246,12 +247,14 @@ typedef enum
   VM_OC_PUSH_CONSTRUCTOR_SUPER,  /**< push 'super' inside a class constructor */
   VM_OC_PUSH_CONSTRUCTOR_THIS,   /**< push 'this' inside a class constructor */
   VM_OC_CONSTRUCTOR_RET,         /**< explicit return from a class constructor */
-  VM_OC_CREATE_SPREAD_OBJECT,    /**< create spread object */
+  VM_OC_PUSH_SPREAD_ELEMENT,     /**< push spread element */
   VM_OC_GET_ITERATOR,            /**< GetIterator abstract operation */
   VM_OC_ITERATOR_STEP,           /**< IteratorStep abstract operation */
+  VM_OC_ITERATOR_CLOSE,          /**< IteratorClose abstract operation */
   VM_OC_DEFAULT_INITIALIZER,     /**< default initializer inside a pattern */
   VM_OC_REST_INITIALIZER,        /**< create rest object inside an array pattern */
   VM_OC_INITIALIZER_PUSH_PROP,   /**< push property for object initializer */
+  VM_OC_SPREAD_ARGUMENTS,        /**< perform function call/construct with spreaded arguments */
 #endif /* ENABLED (JERRY_ES2015) */
   VM_OC_NONE,                    /**< a special opcode for unsupported byte codes */
 } vm_oc_types;
@@ -294,13 +297,16 @@ typedef enum
   VM_OC_PUSH_CONSTRUCTOR_SUPER = VM_OC_NONE,  /**< push 'super' inside a class constructor */
   VM_OC_PUSH_CONSTRUCTOR_THIS = VM_OC_NONE,   /**< push 'this' inside a class constructor */
   VM_OC_CONSTRUCTOR_RET = VM_OC_NONE,         /**< explicit return from a class constructor */
-  VM_OC_CREATE_SPREAD_OBJECT = VM_OC_NONE,    /**< create spread object */
+  VM_OC_PUSH_SPREAD_ELEMENT = VM_OC_NONE,     /**< push spread element */
   VM_OC_GET_ITERATOR = VM_OC_NONE,            /**< GetIterator abstract operation */
   VM_OC_ITERATOR_STEP = VM_OC_NONE,           /**< IteratorStep abstract operation */
+  VM_OC_ITERATOR_CLOSE = VM_OC_NONE,          /**< IteratorClose abstract operation */
   VM_OC_DEFAULT_INITIALIZER = VM_OC_NONE,     /**< default initializer inside a pattern */
   VM_OC_REST_INITIALIZER = VM_OC_NONE,        /**< create rest object inside an array pattern */
   VM_OC_INITIALIZER_PUSH_PROP = VM_OC_NONE,   /**< push property for object initializer */
+  VM_OC_SPREAD_ARGUMENTS = VM_OC_NONE,        /**< perform function call/construct with spreaded arguments */
 #endif /* !ENABLED (JERRY_ES2015) */
+
   VM_OC_UNUSED = VM_OC_NONE                   /**< placeholder if the list is empty */
 } vm_oc_unused_types;
 
@@ -381,6 +387,7 @@ typedef enum
   VM_NO_EXEC_OP,                 /**< do nothing */
   VM_EXEC_CALL,                  /**< invoke a function */
   VM_EXEC_SUPER_CALL,            /**< invoke a function through 'super' keyword */
+  VM_EXEC_SPREAD_OP,             /**< call/construct operation with spreaded argument list */
   VM_EXEC_CONSTRUCT,             /**< construct a new object */
 } vm_call_operation;
 
@@ -392,8 +399,7 @@ ecma_value_t vm_run_module (const ecma_compiled_code_t *bytecode_p, ecma_object_
 #endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
 
 ecma_value_t vm_run (const ecma_compiled_code_t *bytecode_header_p, ecma_value_t this_binding_value,
-                     ecma_object_t *lex_env_p, uint32_t parse_opts, const ecma_value_t *arg_list_p,
-                     ecma_length_t arg_list_len);
+                     ecma_object_t *lex_env_p, const ecma_value_t *arg_list_p, ecma_length_t arg_list_len);
 
 bool vm_is_strict_mode (void);
 bool vm_is_direct_eval_form_call (void);

@@ -77,8 +77,7 @@ ecma_builtin_reflect_dispatch_routine (uint16_t builtin_routine_id, /**< built-i
   JERRY_UNUSED (this_arg);
   JERRY_UNUSED (arguments_number);
 
-  if (!ecma_is_value_object (arguments_list[0])
-      && builtin_routine_id > ECMA_REFLECT_OBJECT_SET_PROTOTYPE_OF_UL)
+  if (!ecma_is_value_object (arguments_list[0]))
   {
     return ecma_raise_type_error (ECMA_ERR_MSG ("Argument is not an Object."));
   }
@@ -87,7 +86,7 @@ ecma_builtin_reflect_dispatch_routine (uint16_t builtin_routine_id, /**< built-i
   {
     case ECMA_REFLECT_OBJECT_GET_PROTOTYPE_OF_UL:
     {
-      return ecma_builtin_object_object_get_prototype_of (arguments_list[0]);
+      return ecma_builtin_object_object_get_prototype_of (ecma_get_object_from_value (arguments_list[0]));
     }
     case ECMA_REFLECT_OBJECT_SET_PROTOTYPE_OF_UL:
     {

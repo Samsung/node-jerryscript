@@ -417,7 +417,7 @@ static_snapshot_add_compiled_code (ecma_compiled_code_t *compiled_code_p, /**< c
     }
   }
 
-  if (CBC_NON_STRICT_ARGUMENTS_NEEDED (compiled_code_p))
+  if (compiled_code_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
   {
     buffer_p += ((size_t) compiled_code_p->size) << JMEM_ALIGNMENT_LOG;
     literal_start_p = ((ecma_value_t *) buffer_p) - argument_end;
@@ -489,7 +489,7 @@ jerry_snapshot_set_offsets (uint32_t *buffer_p, /**< buffer */
         }
       }
 
-      if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+      if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
       {
         uint8_t *byte_p = (uint8_t *) bytecode_p;
         byte_p += ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG;
@@ -582,7 +582,7 @@ snapshot_load_compiled_code (const uint8_t *base_addr_p, /**< base address of th
     uint8_t *byte_p = (uint8_t *) bytecode_p;
     cbc_uint16_arguments_t *args_p = (cbc_uint16_arguments_t *) byte_p;
 
-    if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+    if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
     {
       argument_end = args_p->argument_end;
     }
@@ -596,7 +596,7 @@ snapshot_load_compiled_code (const uint8_t *base_addr_p, /**< base address of th
     uint8_t *byte_p = (uint8_t *) bytecode_p;
     cbc_uint8_arguments_t *args_p = (cbc_uint8_arguments_t *) byte_p;
 
-    if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+    if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
     {
       argument_end = args_p->argument_end;
     }
@@ -739,9 +739,9 @@ jerry_generate_snapshot_with_args (const jerry_char_t *resource_name_p, /**< scr
   JERRY_UNUSED (resource_name_p);
   JERRY_UNUSED (resource_name_length);
 
-#if ENABLED (JERRY_LINE_INFO)
+#if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM)
   JERRY_CONTEXT (resource_name) = ECMA_VALUE_UNDEFINED;
-#endif /* ENABLED (JERRY_LINE_INFO) */
+#endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
 
   snapshot_globals_t globals;
   ecma_value_t parse_status;
@@ -1092,7 +1092,7 @@ scan_snapshot_functions (const uint8_t *buffer_p, /**< snapshot buffer start */
         }
       }
 
-      if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+      if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
       {
         uint8_t *byte_p = (uint8_t *) bytecode_p;
         byte_p += ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG;
@@ -1170,7 +1170,7 @@ update_literal_offsets (uint8_t *buffer_p, /**< [in,out] snapshot buffer start *
         }
       }
 
-      if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+      if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
       {
         uint8_t *byte_p = (uint8_t *) bytecode_p;
         byte_p += ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG;
