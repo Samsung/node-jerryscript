@@ -28,6 +28,11 @@ int main(int argc, char* argv[]) {
     data[0] = 1;
     data[1] = 1;
 
+    // Create zero length arraybuffer.
+    v8::Local<v8::ArrayBuffer> zeroBuffer =
+        v8::ArrayBuffer::New(env.getIsolate(), NULL, 0, v8::ArrayBufferCreationMode::kInternalized);
+    ASSERT_EQUAL(zeroBuffer->ByteLength(), 0);
+
     // Create an internalized arraybuffer.
     v8::Local<v8::ArrayBuffer> intBuffer =
         v8::ArrayBuffer::New(env.getIsolate(), (void*) data, ARRAY_SIZE, v8::ArrayBufferCreationMode::kInternalized);
