@@ -250,11 +250,15 @@ Local<ArrayBuffer> ArrayBuffer::New(Isolate* isolate, void* data, size_t byte_le
     jerry_value_t buffer;
     jerry_object_native_free_callback_t free_cb = NULL;
 
-    if (mode == ArrayBufferCreationMode::kInternalized) {
-        free_cb = delete_external_array_buffer;
-    }
+    if (byte_length == 0) {
+        buffer = jerry_create_arraybuffer(0);
+    } else {
+        if (mode == ArrayBufferCreationMode::kInternalized) {
+            free_cb = delete_external_array_buffer;
+        }
 
-    buffer = jerry_create_arraybuffer_external(byte_length, (uint8_t*)data, free_cb);
+        buffer = jerry_create_arraybuffer_external(byte_length, (uint8_t*)data, free_cb);
+    }
 
     RETURN_HANDLE(ArrayBuffer, isolate, new JerryValue(buffer));
 }
