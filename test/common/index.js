@@ -310,6 +310,7 @@ let knownGlobals = [
   constructor, // Enumerable in V8 3.21.
   global,
   process,
+  regeneratorRuntime, // TODO(V8JERRY): remove this if transpiled modules are restored (JerryScript supports generators).
   setImmediate,
   setInterval,
   setTimeout
