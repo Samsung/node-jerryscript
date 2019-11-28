@@ -673,52 +673,88 @@ SealHandleScope::~SealHandleScope() {
 /* Value */
 Maybe<int32_t> Value::Int32Value(Local<Context> context) const {
     V8_CALL_TRACE();
-    return Just((int32_t)reinterpret_cast<const JerryValue*>(this)->GetInt64Value());
+    int32_t result = 0;
+    JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+
+    if (convertedValue != NULL) {
+        result = convertedValue->GetInt32Value();
+        delete convertedValue;
+    }
+
+    return Just(result);
 }
 
 int32_t Value::Int32Value() const {
     V8_CALL_TRACE();
-    return (int32_t)reinterpret_cast<const JerryValue*>(this)->GetInt64Value();
+    return Int32Value({}).ToChecked();
 }
 
 Maybe<uint32_t> Value::Uint32Value(Local<Context> context) const {
     V8_CALL_TRACE();
-    return Just((uint32_t)reinterpret_cast<const JerryValue*>(this)->GetUInt32Value());
+    uint32_t result = 0;
+    // TODO: Use ToUint32 conversion if available.
+    JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+
+    if (convertedValue != NULL) {
+        double value = convertedValue->GetNumberValue();
+
+        result = (value >= 0) ? (uint32_t)value : 0;
+        delete convertedValue;
+    }
+
+    return Just(result);
 }
 
 uint32_t Value::Uint32Value() const {
     V8_CALL_TRACE();
-    return reinterpret_cast<const JerryValue*> (this)->GetUInt32Value();
+    return Uint32Value({}).ToChecked();
 }
 
 Maybe<bool> Value::BooleanValue(Local<Context> context) const {
     V8_CALL_TRACE();
-    return Just((bool)reinterpret_cast<const JerryValue*>(this)->GetBooleanValue());
+    bool result = reinterpret_cast<const JerryValue*>(this)->ToBoolean();
+    return Just(result);
 }
 
 bool Value::BooleanValue() const {
     V8_CALL_TRACE();
-    return (bool)reinterpret_cast<const JerryValue*>(this)->GetBooleanValue();
+    return BooleanValue({}).ToChecked();
 }
 
 Maybe<double> Value::NumberValue(Local<Context> context) const {
     V8_CALL_TRACE();
-    return Just((double)reinterpret_cast<const JerryValue*>(this)->GetNumberValue());
+    double result = 0.0;
+    JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+
+    if (convertedValue != NULL) {
+        result = convertedValue->GetNumberValue();
+        delete convertedValue;
+    }
+
+    return Just(result);
 }
 
 double Value::NumberValue() const {
     V8_CALL_TRACE();
-    return (double)reinterpret_cast<const JerryValue*>(this)->GetNumberValue();
-}
-
-int64_t Value::IntegerValue() const {
-    V8_CALL_TRACE();
-    return (int64_t)reinterpret_cast<const JerryValue*>(this)->GetInt64Value();
+    return NumberValue({}).ToChecked();
 }
 
 Maybe<int64_t> Value::IntegerValue(Local<Context> context) const {
     V8_CALL_TRACE();
-    return Just((int64_t)reinterpret_cast<const JerryValue*>(this)->GetInt64Value());
+    int64_t result = 0;
+    JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+
+    if (convertedValue != NULL) {
+        result = convertedValue->GetInt64Value();
+        delete convertedValue;
+    }
+
+    return Just(result);
+}
+
+int64_t Value::IntegerValue() const {
+    V8_CALL_TRACE();
+    return IntegerValue({}).ToChecked();
 }
 
 MaybeLocal<String> Value::ToString(Local<Context> context) const {

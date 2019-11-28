@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cmath>
+
 #include "v8env.h"
 #include "assert.h"
 
@@ -72,6 +74,55 @@ int main(int argc, char* argv[]) {
     memset(buffer, 0, sizeof(buffer));
     helloworld->WriteOneByte((uint8_t*)buffer, 1, 4, 0);
     ASSERT_STR_EQUAL(buffer, "ello");
+
+    // Test conversions
+    {
+        v8::Local<v8::String> str_data = v8::String::NewFromUtf8(env.getIsolate(), "11", v8::NewStringType::kNormal).ToLocalChecked();
+        v8::Local<v8::Value> data = str_data.As<v8::Value>();
+        ASSERT_EQUAL(data->IsString(), true);
+        ASSERT_EQUAL(data->IsInt32(), false);
+        ASSERT_EQUAL(data->Int32Value(), 11);
+    }
+
+    {
+        v8::Local<v8::String> str_data = v8::String::NewFromUtf8(env.getIsolate(), "-11", v8::NewStringType::kNormal).ToLocalChecked();
+        v8::Local<v8::Value> data = str_data.As<v8::Value>();
+        ASSERT_EQUAL(data->IsString(), true);
+        ASSERT_EQUAL(data->IsUint32(), false);
+        ASSERT_EQUAL(data->Uint32Value(), 0);
+    }
+
+    {
+        v8::Local<v8::String> str_data = v8::String::NewFromUtf8(env.getIsolate(), "true", v8::NewStringType::kNormal).ToLocalChecked();
+        v8::Local<v8::Value> data = str_data.As<v8::Value>();
+        ASSERT_EQUAL(data->IsString(), true);
+        ASSERT_EQUAL(data->IsBoolean(), false);
+        ASSERT_EQUAL(data->BooleanValue(), true);
+    }
+
+    {
+        v8::Local<v8::String> str_data = v8::String::NewFromUtf8(env.getIsolate(), "false", v8::NewStringType::kNormal).ToLocalChecked();
+        v8::Local<v8::Value> data = str_data.As<v8::Value>();
+        ASSERT_EQUAL(data->IsString(), true);
+        ASSERT_EQUAL(data->IsBoolean(), false);
+        ASSERT_EQUAL(data->BooleanValue(), true);
+    }
+
+    {
+        v8::Local<v8::String> str_data = v8::String::NewFromUtf8(env.getIsolate(), "43.34", v8::NewStringType::kNormal).ToLocalChecked();
+        v8::Local<v8::Value> data = str_data.As<v8::Value>();
+        ASSERT_EQUAL(data->IsString(), true);
+        ASSERT_EQUAL(data->IsNumber(), false);
+        ASSERT_EQUAL(data->NumberValue(), 43.34);
+    }
+
+    {
+        v8::Local<v8::String> str_data = v8::String::NewFromUtf8(env.getIsolate(), "true", v8::NewStringType::kNormal).ToLocalChecked();
+        v8::Local<v8::Value> data = str_data.As<v8::Value>();
+        ASSERT_EQUAL(data->IsString(), true);
+        ASSERT_EQUAL(data->IsNumber(), false);
+        ASSERT_EQUAL(std::isnan(data->NumberValue()), true);
+    }
 
     return 0;
 }
