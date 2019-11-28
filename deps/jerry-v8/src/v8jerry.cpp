@@ -19,6 +19,7 @@
 /* Jerry <-> V8 binding classes */
 #include "v8jerry_callback.hpp"
 #include "v8jerry_handlescope.hpp"
+#include "v8jerry_flags.hpp"
 #include "v8jerry_isolate.hpp"
 #include "v8jerry_platform.hpp"
 #include "v8jerry_templates.hpp"
@@ -93,6 +94,50 @@ void V8::SetEntropySource(EntropySource source) {
 
 void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
     V8_CALL_TRACE();
+
+    bool expose_gc = false;
+
+    for (int idx = 0; idx < *argc; idx++) {
+        const char* arg = argv[idx];
+
+        if (strncmp("--", arg, 2) != 0) {
+            /* Ignore arguments which does not start with '--' */
+            continue;
+        }
+        arg += 2;
+
+        bool negate = false;
+
+        if (strncmp("no-", arg, 3) == 0) {
+            negate = true;
+            arg += 3;
+        }
+
+        Flag* flag = Flag::Get(arg);
+
+        if (flag == NULL) {
+            continue;
+        }
+        /* Flag found, update it's value */
+
+        if (flag->type == Flag::BOOL) {
+            flag->u.bool_value = !negate;
+        }
+
+        if (remove_flags) {
+            argv[idx] = NULL;
+        }
+    }
+
+    if (remove_flags) {
+        int targetIdx = 0;
+        for (int idx = 0; idx < *argc; idx++) {
+            if (argv[idx] != NULL) {
+                argv[targetIdx++] = argv[idx];
+            }
+        }
+        *argc = targetIdx;
+    }
 }
 
 void V8::SetFlagsFromString(const char* str, int length) {

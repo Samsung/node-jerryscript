@@ -6,9 +6,10 @@
 #include <iostream>
 #include <sstream>
 
-#include "v8jerry_value.hpp"
 #include "v8jerry_handlescope.hpp"
+#include "v8jerry_flags.hpp"
 #include "v8jerry_templates.hpp"
+#include "v8jerry_utils.hpp"
 
 JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
 
@@ -38,6 +39,8 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
 #ifdef __POSIX__
     m_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
+
+    InjectGlobalFunctions();
 }
 
 

@@ -12,6 +12,8 @@ add_library(v8jerry
     v8jerry_value.hpp
     v8jerry_utils.cpp
     v8jerry_utils.hpp
+    v8jerry_flags.cpp
+    v8jerry_flags.hpp
 )
 target_link_libraries(v8jerry PRIVATE jerry)
 target_link_libraries(v8jerry PUBLIC v8headers)
