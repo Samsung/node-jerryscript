@@ -4,6 +4,9 @@
 #include <cstring>
 #include <vector>
 
+#include "v8jerry_flags.hpp"
+#include "v8jerry_value.hpp"
+
 JerryPolyfill::JerryPolyfill(const char* name, const char* fn_args, const char* fn_body)
     : m_method(JerryPolyfill::BuildMethod(name, fn_args, fn_body))
 {
@@ -29,6 +32,26 @@ jerry_value_t JerryPolyfill::BuildMethod(const char* name, const char* fn_args, 
     }
 
     return method;
+}
+
+static jerry_value_t JerryHandlerGC(const jerry_value_t func,
+                                    const jerry_value_t thisarg,
+                                    const jerry_value_t argv[],
+                                    const jerry_value_t argc) {
+    jerry_gc (JERRY_GC_PRESSURE_LOW);
+    return jerry_create_undefined();
+}
+
+void InjectGlobalFunctions(void) {
+    JerryValue global(jerry_get_global_object());
+
+
+    if (Flag::Get(Flag::expose_gc)->u.bool_value) {
+        JerryValue gc_string(jerry_create_string((const jerry_char_t*)"gc"));
+        JerryValue gc_function(jerry_create_external_function(JerryHandlerGC));
+
+        global.SetProperty(&gc_string, &gc_function);
+    }
 }
 
 

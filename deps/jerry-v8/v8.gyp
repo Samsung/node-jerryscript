@@ -36,6 +36,8 @@
         'src/v8jerry_callback.cpp',
         'src/v8jerry_callback.hpp',
         'src/v8jerry_context.hpp',
+        'src/v8jerry_flags.cpp',
+        'src/v8jerry_flags.hpp',
         'src/v8jerry_handlescope.cpp',
         'src/v8jerry_handlescope.hpp',
         'src/v8jerry_isolate.cpp',

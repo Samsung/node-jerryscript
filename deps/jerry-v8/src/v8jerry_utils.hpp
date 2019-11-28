@@ -17,6 +17,7 @@ private:
     jerry_value_t m_method;
 };
 
+void InjectGlobalFunctions(void);
 void JerryForceCleanup(void);
 
 #endif
