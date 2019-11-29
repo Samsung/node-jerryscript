@@ -22,7 +22,7 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     m_fn_is_map = new JerryPolyfill("is_map", "value", "return value instanceof Map;");
     m_fn_is_set = new JerryPolyfill("is_set", "value", "return value instanceof Set;");
     m_fn_map_set = new JerryPolyfill("map_set", "map, key, value", "return map.set(key, value);");
-    m_fn_object_assign = new JerryPolyfill("object_assign", "value", "return Object.assign({}, value);");
+    m_fn_object_assign = new JerryPolyfill("object_assign", "value", "return Object.assign(Array.isArray(value) ? [] : {}, value);");
     m_fn_conversion_failer =
         new JerryPolyfill("conv_fail", "", "this.toString = this.valueOf = function() { throw new TypeError('Invalid usage'); }");
     m_fn_get_own_prop = new JerryPolyfill("get_own_prop", "key", "return Object.getOwnPropertyDescriptor(this, key);");
