@@ -568,13 +568,20 @@ void Isolate::SetPromiseRejectCallback(PromiseRejectCallback callback) {
     JerryIsolate::fromV8(this)->SetPromiseRejectCallback(callback);
 }
 
+static std::string kContextSecurityTokenKey = "$$context_token";
+
 /* Context */
 Local<Context> Context::New(Isolate* isolate,
                             ExtensionConfiguration* extensions /*= NULL*/,
                             MaybeLocal<ObjectTemplate> global_template /*= MaybeLocal<ObjectTemplate>()*/,
                             MaybeLocal<Value> global_object /*= MaybeLocal<Value>()*/) {
     V8_CALL_TRACE();
-    RETURN_HANDLE(Context, isolate, JerryValue::NewContextObject(JerryIsolate::fromV8(isolate)));
+    JerryValue* __handle = JerryValue::NewContextObject(JerryIsolate::fromV8(isolate));
+    Local<Context> ctx = v8::Local<Context>::New(isolate, reinterpret_cast<Context*>(__handle));
+
+    ctx->SetSecurityToken(ctx->Global().As<v8::Value>());
+
+    return ctx;
 }
 
 Isolate* Context::GetIsolate() {
@@ -617,19 +624,20 @@ void* Context::SlowGetAlignedPointerFromEmbedderData(int index) {
     return ctx->ContextGetEmbedderData(index);
 }
 
-static int kContextSecurityTokenIdx = 2;
-
 void Context::SetSecurityToken(Local<Value> value) {
     V8_CALL_TRACE();
     JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
 
-    ctx->SetInternalField(kContextSecurityTokenIdx, reinterpret_cast<JerryValue*>(*value));
+    JerryValue name(jerry_create_string_from_utf8((const jerry_char_t*)kContextSecurityTokenKey.c_str()));
+    ctx->SetInternalProperty(&name, reinterpret_cast<JerryValue*>(*value));
 }
 
 Local<Value> Context::GetSecurityToken() {
     V8_CALL_TRACE();
     JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
-    JerryValue* prop = ctx->GetInternalField<JerryValue*>(kContextSecurityTokenIdx);
+    JerryValue name(jerry_create_string_from_utf8((const jerry_char_t*)kContextSecurityTokenKey.c_str()));
+    JerryValue* prop = ctx->GetInternalProperty(&name);
+
     RETURN_HANDLE(Value, GetIsolate(), prop);
 }
 
