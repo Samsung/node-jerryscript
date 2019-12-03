@@ -54,6 +54,21 @@ void JerryIsolate::Exit(void) {
     }
 }
 
+static jerry_value_t IsolateTerminateCallback(void *user_p) {
+    return jerry_create_string ((const jerry_char_t *) "Script Abort Requested");
+}
+
+void JerryIsolate::Terminate(void) {
+    m_terminated = true;
+
+    jerry_set_vm_exec_stop_callback(IsolateTerminateCallback, NULL, 1);
+}
+
+void JerryIsolate::CancelTerminate(void) {
+    m_terminated = false;
+    jerry_set_vm_exec_stop_callback(NULL, NULL, 1);
+}
+
 namespace v8 {
     namespace internal {
         class Heap {

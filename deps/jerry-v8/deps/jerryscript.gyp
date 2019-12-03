@@ -52,7 +52,8 @@
         'JERRY_ERROR_MESSAGES=1',
         'JERRY_LINE_INFO=1', 
         'JERRY_SYSTEM_ALLOCATOR=1',
-        'JERRY_CPOINTER_32_BIT=1'
+        'JERRY_CPOINTER_32_BIT=1',
+        'JERRY_VM_EXEC_STOP=1'
       ],
 
       'sources': [
