@@ -41,8 +41,8 @@ public:
     void Enter(void);
     void Exit(void);
     bool IsTerminated(void) const { return m_terminated; }
-    void Terminate(void) { m_terminated = true; }
-    void CancelTerminate(void) { m_terminated = false; }
+    void Terminate(void);
+    void CancelTerminate(void);
 
     void RunWeakCleanup(void);
     void Dispose(void);
