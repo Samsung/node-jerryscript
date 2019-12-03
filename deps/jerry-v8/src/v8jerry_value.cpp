@@ -71,6 +71,15 @@ JerryValue* JerryValue::GetPropertyIdx(uint32_t idx) {
     return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);
 }
 
+bool JerryValue::SetInternalProperty(JerryValue* key, JerryValue* value) {
+    return jerry_set_internal_property(m_value, key->value(), value->value());
+}
+
+JerryValue* JerryValue::GetInternalProperty(JerryValue* key) {
+    jerry_value_t prop = jerry_get_internal_property(m_value, key->value());
+    return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);
+}
+
 JerryValue* JerryValue::GetOwnPropertyDescriptor(const JerryValue& jkey) const {
     jerry_value_t key = jkey.value();
     jerry_value_t descriptor = JerryIsolate::GetCurrent()->HelperGetOwnPropDesc().Call(m_value, &key, 1);
@@ -162,7 +171,7 @@ JerryValue* JerryValue::NewContextObject(JerryIsolate* iso) {
     JerryV8ContextData* ctx_data = new JerryV8ContextData{iso, {}};
 
     jerry_set_object_native_pointer(object, ctx_data, &JerryV8ContextTypeInfo);
-
+    CreateInternalFields(object, 3);
     return new JerryValue(object);
 }
 
@@ -265,8 +274,7 @@ void JerryValue::SetInternalField(int idx, JerryValue* value) {
 
     std::string internal_name = "$$internal_" + idx;
     JerryValue name(jerry_create_string_from_utf8((const jerry_char_t*)internal_name.c_str()));
-
-    this->SetProperty(&name, value);
+    SetInternalProperty(&name, value);
 }
 
 void JerryValue::SetInternalField(int idx, void* value) {

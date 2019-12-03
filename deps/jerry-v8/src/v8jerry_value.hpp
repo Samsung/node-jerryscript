@@ -7,6 +7,8 @@
 #include "v8.h"
 #include "v8jerry_utils.hpp"
 
+#include "jerryscript.h"
+
 class JerryIsolate;
 struct JerryV8ContextData;
 
@@ -95,6 +97,9 @@ public:
 
     JerryValue* GetProperty(JerryValue* key);
     JerryValue* GetPropertyIdx(uint32_t idx);
+
+    bool SetInternalProperty(JerryValue* key, JerryValue* value);
+    JerryValue* GetInternalProperty(JerryValue* key);
 
     JerryValue* GetOwnPropertyDescriptor(const JerryValue& jkey) const;
 
@@ -205,7 +210,7 @@ public:
 
             std::string internal_name = "$$internal_" + idx;
             JerryValue name(jerry_create_string_from_utf8((const jerry_char_t*)internal_name.c_str()));
-            return this->GetProperty(&name);
+            return GetInternalProperty(&name);
         } else if (std::is_same<T, void*>::value) {
             return reinterpret_cast<T>(data->fields[idx]);
         } else {
