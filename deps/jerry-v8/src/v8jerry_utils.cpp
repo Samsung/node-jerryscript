@@ -60,7 +60,10 @@ extern "C" bool ecma_get_object_is_builtin(void* obj);
 #define ECMA_OBJECT_REF_ONE (1u << 6)
 #define ECMA_OBJECT_MAX_REF (0x3ffu << 6)
 #define ECMA_VALUE_TYPE_MASK 0x7u
+#define ECMA_VALUE_SHIFT 3
 typedef uint32_t ecma_value_t;
+
+extern "C" void * jmem_decompress_pointer (uintptr_t compressed_pointer);
 
 typedef struct {
   /** type : 4 bit : ecma_object_type_t or ecma_lexical_environment_type_t
@@ -73,7 +76,11 @@ typedef struct {
 } header_ecma_object_t;
 
 static void *ecma_get_pointer_from_ecma_value (ecma_value_t value) {
+#if __UINTPTR_MAX__ <= __UINT32_MAX__
   void *ptr = (void *) (uintptr_t) ((value) & ~ECMA_VALUE_TYPE_MASK);
+#else
+  void *ptr = (void*)jmem_decompress_pointer(value >> ECMA_VALUE_SHIFT);
+#endif
   return ptr;
 }
 
