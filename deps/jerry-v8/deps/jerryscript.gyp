@@ -48,12 +48,10 @@
         ]
       },
       'defines': [
-        'JERRY_GLOBAL_HEAP_SIZE=10*1024',
         'JERRY_ERROR_MESSAGES=1',
         'JERRY_LINE_INFO=1', 
-        'JERRY_SYSTEM_ALLOCATOR=1',
         'JERRY_CPOINTER_32_BIT=1',
-        'JERRY_VM_EXEC_STOP=1'
+        'JERRY_VM_EXEC_STOP=1',
       ],
 
       'sources': [
@@ -66,6 +64,17 @@
         '-msse2',
       ],
       'conditions': [
+        ['target_arch=="x64"', {
+          'defines': [
+            'JERRY_SYSTEM_ALLOCATOR=0',
+            'JERRY_GLOBAL_HEAP_SIZE=(200*1024)',
+          ]
+        }, {
+          'defines': [
+            'JERRY_SYSTEM_ALLOCATOR=1'
+          ]
+        }],
+
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
         }, {
