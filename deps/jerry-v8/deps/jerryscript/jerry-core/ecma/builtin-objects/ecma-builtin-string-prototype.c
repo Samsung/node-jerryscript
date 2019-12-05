@@ -902,6 +902,7 @@ ecma_builtin_string_prototype_object_split (ecma_value_t this_to_string_val, /**
       if (ECMA_IS_VALUE_ERROR (match_result))
       {
         match_result = JERRY_CONTEXT (error_value);
+        JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
       }
 
       ecma_free_value (match_result);
@@ -991,6 +992,7 @@ ecma_builtin_string_prototype_object_split (ecma_value_t this_to_string_val, /**
         if (ECMA_IS_VALUE_ERROR (match_result))
         {
           ecma_free_value (JERRY_CONTEXT (error_value));
+          JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
         }
       }
       else
@@ -1333,7 +1335,7 @@ ecma_builtin_string_prototype_object_trim (ecma_string_t *original_string_p) /**
   return ecma_make_string_value (trimmed_string_p);
 } /* ecma_builtin_string_prototype_object_trim */
 
-#if ENABLED (JERRY_ES2015_BUILTIN)
+#if ENABLED (JERRY_ES2015)
 
 /**
  * The String.prototype object's 'repeat' routine
@@ -1448,7 +1450,8 @@ ecma_builtin_string_prototype_object_code_point_at (ecma_string_t *this_string_p
 
   return ecma_make_uint32_value (lit_convert_surrogate_pair_to_code_point (first, second));
 } /* ecma_builtin_string_prototype_object_code_point_at */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+
+#endif /* ENABLED (JERRY_ES2015) */
 
 #if ENABLED (JERRY_BUILTIN_ANNEXB)
 
@@ -1512,7 +1515,8 @@ ecma_builtin_string_prototype_object_substr (ecma_string_t *this_string_p, /**< 
 
 #endif /* ENABLED (JERRY_BUILTIN_ANNEXB) */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_ITERATOR)
+#if ENABLED (JERRY_ES2015)
+
 /**
  * The String.prototype object's @@iterator routine
  *
@@ -1530,7 +1534,8 @@ ecma_builtin_string_prototype_object_iterator (ecma_value_t to_string) /**< this
                                          ECMA_PSEUDO_STRING_ITERATOR,
                                          0);
 } /* ecma_builtin_string_prototype_object_iterator */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
+
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * Dispatcher of the built-in's routines
@@ -1592,11 +1597,11 @@ ecma_builtin_string_prototype_dispatch_routine (uint16_t builtin_routine_id, /**
     }
     case ECMA_STRING_PROTOTYPE_INDEX_OF:
     case ECMA_STRING_PROTOTYPE_LAST_INDEX_OF:
-#if ENABLED (JERRY_ES2015_BUILTIN)
+#if ENABLED (JERRY_ES2015)
     case ECMA_STRING_PROTOTYPE_STARTS_WITH:
     case ECMA_STRING_PROTOTYPE_INCLUDES:
     case ECMA_STRING_PROTOTYPE_ENDS_WITH:
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+#endif /* ENABLED (JERRY_ES2015) */
     {
       ecma_string_index_of_mode_t mode;
       mode = (ecma_string_index_of_mode_t) (builtin_routine_id - ECMA_STRING_PROTOTYPE_INDEX_OF);
@@ -1656,7 +1661,7 @@ ecma_builtin_string_prototype_dispatch_routine (uint16_t builtin_routine_id, /**
       break;
     }
 #endif /* ENABLED (JERRY_BUILTIN_ANNEXB) */
-#if ENABLED (JERRY_ES2015_BUILTIN)
+#if ENABLED (JERRY_ES2015)
     case ECMA_STRING_PROTOTYPE_REPEAT:
     {
       ret_value = ecma_builtin_string_prototype_object_repeat (string_p, arg1);
@@ -1667,14 +1672,12 @@ ecma_builtin_string_prototype_dispatch_routine (uint16_t builtin_routine_id, /**
       ret_value = ecma_builtin_string_prototype_object_code_point_at (string_p, arg1);
       break;
     }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
-#if ENABLED (JERRY_ES2015_BUILTIN_ITERATOR)
     case ECMA_STRING_PROTOTYPE_ITERATOR:
     {
       ret_value = ecma_builtin_string_prototype_object_iterator (to_string_val);
       break;
     }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
+#endif /* ENABLED (JERRY_ES2015) */
     default:
     {
       JERRY_UNREACHABLE ();

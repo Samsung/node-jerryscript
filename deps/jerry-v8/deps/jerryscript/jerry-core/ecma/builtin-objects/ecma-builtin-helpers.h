@@ -76,6 +76,7 @@ typedef struct
   const lit_utf8_byte_t *matched_p;  /**< matched string */
   lit_utf8_size_t matched_size;      /**< matcehd string size */
   lit_utf8_size_t match_byte_pos;    /**< byte position of the match in the source string */
+  ecma_length_t index;               /**< current match index */
 
   /**
    * Capture results
@@ -146,6 +147,9 @@ typedef enum
 } ecma_date_timezone_t;
 
 /* ecma-builtin-helpers-date.c */
+extern const char day_names_p[7][3];
+extern const char month_names_p[12][3];
+
 ecma_number_t ecma_date_day (ecma_number_t time);
 ecma_number_t ecma_date_time_within_day (ecma_number_t time);
 ecma_number_t ecma_date_year_from_time (ecma_number_t time);

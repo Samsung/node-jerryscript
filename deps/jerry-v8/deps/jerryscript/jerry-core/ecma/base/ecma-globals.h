@@ -653,7 +653,8 @@ typedef enum
   ECMA_LEXICAL_ENVIRONMENT_TYPE__MAX = ECMA_LEXICAL_ENVIRONMENT_SUPER_OBJECT_BOUND /**< maximum value */
 } ecma_lexical_environment_type_t;
 
-#if ENABLED (JERRY_ES2015_BUILTIN_ITERATOR)
+#if ENABLED (JERRY_ES2015)
+
 /**
  * Types of array iterators.
  */
@@ -663,7 +664,8 @@ typedef enum
   ECMA_ITERATOR_VALUES, /**< List only key values */
   ECMA_ITERATOR_KEYS_VALUES, /**< List key indices and values */
 } ecma_iterator_type_t;
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
+
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * Offset for JERRY_CONTEXT (status_flags) top 8 bits.
@@ -1749,6 +1751,27 @@ typedef struct
 } ecma_typedarray_info_t;
 
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
+
+#if ENABLED (JERRY_ES2015)
+
+/**
+ * Executable (e.g. generator, async) object flags.
+ */
+typedef enum
+{
+  ECMA_EXECUTABLE_OBJECT_COMPLETED = (1u << 0), /**< executable object is completed and cannot be resumed */
+  ECMA_EXECUTABLE_OBJECT_RUNNING = (1u << 1), /**< executable object is currently running */
+  /* Generator specific flags. */
+  ECMA_GENERATOR_ITERATE_AND_YIELD = (1u << 2), /**< the generator performs a yield* operation */
+} ecma_executable_object_flags_t;
+
+/**
+ * Checks whether the executable object is waiting for resuming.
+ */
+#define ECMA_EXECUTABLE_OBJECT_IS_SUSPENDED(extra_info) \
+  (!((extra_info) & (ECMA_EXECUTABLE_OBJECT_COMPLETED | ECMA_EXECUTABLE_OBJECT_RUNNING)))
+
+#endif /* ENABLED (JERRY_ES2015) */
 
 #if ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW)
 /**
