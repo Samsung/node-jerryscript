@@ -411,6 +411,11 @@ static void
 ecma_op_container_set_weak (ecma_object_t *const key_p, /**< key object */
                             ecma_extended_object_t *const container_p) /**< container */
 {
+  if (JERRY_UNLIKELY (ecma_op_object_is_fast_array (key_p)))
+  {
+    ecma_fast_array_convert_to_normal (key_p);
+  }
+
   ecma_string_t *weak_refs_string_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_WEAK_REFS);
   ecma_property_t *property_p = ecma_find_named_property (key_p, weak_refs_string_p);
   ecma_collection_t *refs_p;
@@ -774,7 +779,7 @@ ecma_op_container_remove_weak_entry (ecma_object_t *container_p, /**< internal c
   ((ecma_extended_object_t *) container_p)->u.class_prop.u.length--;
 } /* ecma_op_container_remove_weak_entry */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_ITERATOR)
+#if ENABLED (JERRY_ES2015)
 
 /**
  * The Create{Set, Map}Iterator Abstract operation
@@ -969,7 +974,8 @@ ecma_op_container_iterator_next (ecma_value_t this_val, /**< this argument */
   return ret_value;
 } /* ecma_op_container_iterator_next */
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
+#endif /* ENABLED (JERRY_ES2015) */
+
 /**
  * @}
  * @}

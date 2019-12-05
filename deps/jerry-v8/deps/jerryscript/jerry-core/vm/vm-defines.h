@@ -41,8 +41,8 @@
 typedef struct vm_frame_ctx_t
 {
   const ecma_compiled_code_t *bytecode_header_p;      /**< currently executed byte-code data */
-  uint8_t *byte_code_p;                               /**< current byte code pointer */
-  uint8_t *byte_code_start_p;                         /**< byte code start pointer */
+  const uint8_t *byte_code_p;                         /**< current byte code pointer */
+  const uint8_t *byte_code_start_p;                   /**< byte code start pointer */
   ecma_value_t *stack_top_p;                          /**< stack top pointer */
   ecma_value_t *literal_start_p;                      /**< literal list start pointer */
   ecma_object_t *lex_env_p;                           /**< current lexical environment */
@@ -64,12 +64,21 @@ typedef struct vm_frame_ctx_t
 /**
  * Get register list corresponding to the frame context.
  */
-#define VM_GET_REGISTERS(frame_ctx_p) ((ecma_value_t *) (frame_ctx_p + 1))
+#define VM_GET_REGISTERS(frame_ctx_p) ((ecma_value_t *) ((frame_ctx_p) + 1))
 
 /**
  * Read or write a specific register.
  */
-#define VM_GET_REGISTER(frame_ctx_p, i) (((ecma_value_t *) (frame_ctx_p + 1))[i])
+#define VM_GET_REGISTER(frame_ctx_p, i) (((ecma_value_t *) ((frame_ctx_p) + 1))[i])
+
+/**
+ * Generator frame context.
+ */
+typedef struct
+{
+  ecma_extended_object_t extended_object; /**< extended object part */
+  vm_frame_ctx_t frame_ctx; /**< frame context part */
+} vm_executable_object_t;
 
 /**
  * @}

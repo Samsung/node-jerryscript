@@ -141,6 +141,7 @@ scanner_get_stream_size (scanner_info_t *info_p, /**< scanner info block */
 #if ENABLED (JERRY_ES2015)
       case SCANNER_STREAM_TYPE_LET:
       case SCANNER_STREAM_TYPE_CONST:
+      case SCANNER_STREAM_TYPE_LOCAL:
       case SCANNER_STREAM_TYPE_DESTRUCTURED_ARG:
 #endif /* ENABLED (JERRY_ES2015) */
       case SCANNER_STREAM_TYPE_ARG:
@@ -402,10 +403,13 @@ scanner_push_literal_pool (parser_context_t *context_p, /**< context */
     JERRY_ASSERT (prev_literal_pool_p != NULL);
     status_flags |= SCANNER_LITERAL_POOL_NO_ARGUMENTS;
 
-    if (prev_literal_pool_p->status_flags & SCANNER_LITERAL_POOL_IN_WITH)
-    {
-      status_flags |= SCANNER_LITERAL_POOL_IN_WITH;
-    }
+#if ENABLED (JERRY_ES2015)
+    const uint16_t copied_flags = SCANNER_LITERAL_POOL_IN_WITH | SCANNER_LITERAL_POOL_GENERATOR;
+#else /* !ENABLED (JERRY_ES2015) */
+    const uint16_t copied_flags = SCANNER_LITERAL_POOL_IN_WITH;
+#endif /* ENABLED (JERRY_ES2015) */
+
+    status_flags |= (uint16_t) (prev_literal_pool_p->status_flags & copied_flags);
   }
 
   parser_list_init (&literal_pool_p->literal_pool,
@@ -715,6 +719,10 @@ scanner_pop_literal_pool (parser_context_t *context_p, /**< context */
           type = SCANNER_STREAM_TYPE_IMPORT;
         }
 #endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+        else
+        {
+          type = SCANNER_STREAM_TYPE_LOCAL;
+        }
       }
       else if (literal_p->type & SCANNER_LITERAL_IS_CONST)
       {
@@ -774,6 +782,20 @@ scanner_pop_literal_pool (parser_context_t *context_p, /**< context */
   {
     prev_literal_pool_p->no_declarations = (uint16_t) no_declarations;
   }
+
+#if ENABLED (JERRY_ES2015)
+  if (is_function && prev_literal_pool_p != NULL)
+  {
+    if (prev_literal_pool_p->status_flags & SCANNER_LITERAL_POOL_GENERATOR)
+    {
+      context_p->status_flags |= PARSER_IS_GENERATOR_FUNCTION;
+    }
+    else
+    {
+      context_p->status_flags &= (uint32_t) ~PARSER_IS_GENERATOR_FUNCTION;
+    }
+  }
+#endif /* ENABLED (JERRY_ES2015) */
 
   scanner_context_p->active_literal_pool_p = literal_pool_p->prev_p;
 
@@ -1529,6 +1551,7 @@ scanner_is_context_needed (parser_context_t *context_p) /**< context */
     JERRY_ASSERT (type == SCANNER_STREAM_TYPE_VAR
                   || type == SCANNER_STREAM_TYPE_LET
                   || type == SCANNER_STREAM_TYPE_CONST
+                  || type == SCANNER_STREAM_TYPE_LOCAL
                   || type == SCANNER_STREAM_TYPE_FUNC
                   || type == SCANNER_STREAM_TYPE_FUNC_LOCAL);
 #else /* !ENABLED (JERRY_ES2015) */
@@ -1751,7 +1774,7 @@ scanner_create_variables (parser_context_t *context_p, /**< context */
   }
   else
   {
-    JERRY_ASSERT (context_p->scope_stack_p != NULL);
+    JERRY_ASSERT (context_p->scope_stack_p != NULL || context_p->scope_stack_size == 0);
 
     scope_stack_p = context_p->scope_stack_p;
     scope_stack_end_p = scope_stack_p + context_p->scope_stack_size;
@@ -1933,6 +1956,7 @@ scanner_create_variables (parser_context_t *context_p, /**< context */
 #if ENABLED (JERRY_ES2015)
           case SCANNER_STREAM_TYPE_LET:
           case SCANNER_STREAM_TYPE_CONST:
+          case SCANNER_STREAM_TYPE_LOCAL:
           case SCANNER_STREAM_TYPE_DESTRUCTURED_ARG:
           case SCANNER_STREAM_TYPE_DESTRUCTURED_ARG_FUNC:
 #endif /* ENABLED (JERRY_ES2015) */
@@ -1941,7 +1965,7 @@ scanner_create_variables (parser_context_t *context_p, /**< context */
             context_p->scope_stack_top = (uint16_t) (scope_stack_p - context_p->scope_stack_p);
 #endif /* ENABLED (JERRY_PARSER_DUMP_BYTE_CODE) */
 
-            uint16_t opcode = CBC_CREATE_LOCAL;
+            uint16_t opcode = CBC_CREATE_VAR;
 
             if (option_flags & SCANNER_CREATE_VARS_IS_EVAL)
             {
@@ -1961,10 +1985,11 @@ scanner_create_variables (parser_context_t *context_p, /**< context */
                 opcode = CBC_CREATE_CONST;
                 break;
               }
+              case SCANNER_STREAM_TYPE_LOCAL:
               case SCANNER_STREAM_TYPE_DESTRUCTURED_ARG:
               case SCANNER_STREAM_TYPE_DESTRUCTURED_ARG_FUNC:
               {
-                opcode = CBC_CREATE_DESTRUCTURED_ARG;
+                opcode = CBC_CREATE_LOCAL;
                 break;
               }
             }

@@ -2096,7 +2096,8 @@ ecma_builtin_array_reduce_from (ecma_value_t callbackfn, /**< routine's 1st argu
   return accumulator;
 } /* ecma_builtin_array_reduce_from */
 
-#if ENABLED (JERRY_ES2015_BUILTIN)
+#if ENABLED (JERRY_ES2015)
+
 /**
  * The Array.prototype object's 'fill' routine
  *
@@ -2337,9 +2338,8 @@ ecma_builtin_array_prototype_object_copy_within (const ecma_value_t args[], /**<
     }
   }
 
-  ecma_free_value (error);
-
   uint32_t count = JERRY_MIN (end - start, len - target);
+
   bool forward = true;
 
   if (start < target && target < start + count)
@@ -2347,6 +2347,39 @@ ecma_builtin_array_prototype_object_copy_within (const ecma_value_t args[], /**<
     start = start + count - 1;
     target = target + count - 1;
     forward = false;
+  }
+
+  if (ecma_op_object_is_fast_array (obj_p))
+  {
+    ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) obj_p;
+
+    if (ext_obj_p->u.array.u.hole_count < ECMA_FAST_ARRAY_HOLE_ONE)
+    {
+      if (obj_p->u1.property_list_cp != JMEM_CP_NULL)
+      {
+        ecma_value_t *buffer_p = ECMA_GET_NON_NULL_POINTER (ecma_value_t, obj_p->u1.property_list_cp);
+
+        for (; count > 0; count--)
+        {
+          ecma_free_value_if_not_object (buffer_p[target]);
+          buffer_p[target] = ecma_copy_value_if_not_object (buffer_p[start]);
+
+          if (forward)
+          {
+            start++;
+            target++;
+          }
+          else
+          {
+            start--;
+            target--;
+          }
+        }
+      }
+
+      ecma_ref_object (obj_p);
+      return ecma_make_object_value (obj_p);
+    }
   }
 
   while (count > 0)
@@ -2394,9 +2427,7 @@ ecma_builtin_array_prototype_object_copy_within (const ecma_value_t args[], /**<
 
   return ecma_copy_value (ecma_make_object_value (obj_p));
 } /* ecma_builtin_array_prototype_object_copy_within */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_ITERATOR)
 /**
  * Helper function for Array.prototype object's {'keys', 'values', 'entries', '@@iterator'}
  * routines common parts.
@@ -2425,7 +2456,8 @@ ecma_builtin_array_iterators_helper (ecma_object_t *obj_p, /**< array object */
                                          ECMA_PSEUDO_ARRAY_ITERATOR,
                                          type);
 } /* ecma_builtin_array_iterators_helper */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
+
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * Dispatcher of the built-in's routines
@@ -2470,7 +2502,7 @@ ecma_builtin_array_prototype_dispatch_routine (uint16_t builtin_routine_id, /**<
     return ret_value;
   }
 
-#if ENABLED (JERRY_ES2015_BUILTIN_ITERATOR)
+#if ENABLED (JERRY_ES2015)
   if (JERRY_UNLIKELY (builtin_routine_id >= ECMA_ARRAY_PROTOTYPE_ENTRIES
                       && builtin_routine_id <= ECMA_ARRAY_PROTOTYPE_SYMBOL_ITERATOR))
   {
@@ -2495,7 +2527,7 @@ ecma_builtin_array_prototype_dispatch_routine (uint16_t builtin_routine_id, /**<
     ecma_deref_object (obj_p);
     return ret_value;
   }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   uint32_t length;
   ecma_value_t len_value = ecma_op_object_get_length (obj_p, &length);
@@ -2623,7 +2655,7 @@ ecma_builtin_array_prototype_dispatch_routine (uint16_t builtin_routine_id, /**<
                                                   length);
       break;
     }
-#if ENABLED (JERRY_ES2015_BUILTIN)
+#if ENABLED (JERRY_ES2015)
     case ECMA_ARRAY_PROTOTYPE_COPY_WITHIN:
     {
       ret_value = ecma_builtin_array_prototype_object_copy_within (arguments_list_p,
@@ -2651,7 +2683,7 @@ ecma_builtin_array_prototype_dispatch_routine (uint16_t builtin_routine_id, /**<
                                                      length);
       break;
     }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+#endif /* ENABLED (JERRY_ES2015) */
     default:
     {
       JERRY_ASSERT (builtin_routine_id == ECMA_ARRAY_PROTOTYPE_FILTER);

@@ -218,6 +218,8 @@ ecma_value_t JERRY_ATTR_CONST ecma_invert_boolean_value (ecma_value_t value);
 ecma_value_t ecma_copy_value (ecma_value_t value);
 ecma_value_t ecma_fast_copy_value (ecma_value_t value);
 ecma_value_t ecma_copy_value_if_not_object (ecma_value_t value);
+void ecma_ref_if_object (ecma_value_t value);
+void ecma_deref_if_object (ecma_value_t value);
 ecma_value_t ecma_update_float_number (ecma_value_t float_value, ecma_number_t new_number);
 void ecma_value_assign_value (ecma_value_t *value_p, ecma_value_t ecma_value);
 void ecma_value_assign_number (ecma_value_t *value_p, ecma_number_t ecma_number);
@@ -231,6 +233,7 @@ lit_magic_string_id_t ecma_get_typeof_lit_id (ecma_value_t value);
 #if ENABLED (JERRY_ES2015)
 ecma_string_t *ecma_new_symbol_from_descriptor_string (ecma_value_t string_desc);
 bool ecma_prop_name_is_symbol (ecma_string_t *string_p);
+uint32_t ecma_op_advance_string_index (ecma_string_t *str_p, uint32_t index, bool is_unicode);
 #endif /* ENABLED (JERRY_ES2015) */
 #if ENABLED (JERRY_ES2015_BUILTIN_MAP) || ENABLED (JERRY_ES2015_BUILTIN_SET)
 ecma_string_t *ecma_new_map_key_string (ecma_value_t value);
@@ -240,9 +243,9 @@ ecma_string_t *ecma_new_ecma_string_from_utf8 (const lit_utf8_byte_t *string_p, 
 ecma_string_t *ecma_new_ecma_string_from_utf8_converted_to_cesu8 (const lit_utf8_byte_t *string_p,
                                                                   lit_utf8_size_t string_size);
 ecma_string_t *ecma_new_ecma_string_from_code_unit (ecma_char_t code_unit);
-#if ENABLED (JERRY_ES2015_BUILTIN_ITERATOR)
+#if ENABLED (JERRY_ES2015)
 ecma_string_t *ecma_new_ecma_string_from_code_units (ecma_char_t first_code_unit, ecma_char_t second_code_unit);
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
+#endif /* ENABLED (JERRY_ES2015) */
 ecma_string_t *ecma_new_ecma_string_from_uint32 (uint32_t uint32_number);
 ecma_string_t *ecma_new_non_direct_string_from_uint32 (uint32_t uint32_number);
 ecma_string_t *ecma_get_ecma_string_from_uint32 (uint32_t uint32_number);
