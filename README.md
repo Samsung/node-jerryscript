@@ -2,12 +2,32 @@
 # node-jerryscript
 
 ## Build & test instructions
-1. Run the following configure command.
+1. Run the appropriate configure command:
+
+  * x86 configuration:
 
 ```sh
 $ ./configure --without-dtrace --without-etw --without-perfctr \
     --without-ssl --without-inspector --without-intl --without-snapshot \
     --dest-cpu x86 --without-bundled-v8
+```
+
+  * x64 configuration:
+
+```sh
+$ ./configure --without-dtrace --without-etw --without-perfctr \
+    --without-ssl --without-inspector --without-intl --without-snapshot \
+    --dest-cpu x64 --without-bundled-v8
+```
+
+  * ARM32 cross-compile configuration:
+
+```sh
+$ CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ \
+    ./configure --without-dtrace --without-etw --without-perfctr --without-ssl \
+    --without-inspector --without-intl --without-snapshot --dest-cpu arm \
+    --cross-compiling --dest-os=linux --with-arm-float-abi=hard --with-arm-fpu=neon \
+    --without-bundled-v8
 ```
 
 The `--without-bundled-v8` option was hijacked to force build Node with JerryScript.

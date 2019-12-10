@@ -60,10 +60,14 @@
       'cflags': [
         '-std=c99',
         '-pedantic',
-        '-mfpmath=sse',
-        '-msse2',
       ],
       'conditions': [
+        ['target_arch=="x32" or target_arch=="x64"', {
+          'cflags': [
+            '-mfpmath=sse',
+            '-msse2',
+          ]
+        }],
         ['target_arch=="x64"', {
           'defines': [
             'JERRY_SYSTEM_ALLOCATOR=0',
