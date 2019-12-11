@@ -277,6 +277,16 @@ jerry_value_t JerryV8FunctionHandler(
         }
     }
 
+    if (data->function_template->HasSignature()) {
+        JerryV8FunctionHandlerData* this_val_data;
+        bool has_info = jerry_get_object_native_pointer(this_val, reinterpret_cast<void**>(&this_val_data), &JerryV8ObjectConstructed);
+        if (!has_info
+            || data->function_template->IsValidSignature(this_val_data->function_template->Signature())) {
+            // Invalid signature found throw error.
+            return jerry_create_error (JERRY_ERROR_TYPE, (const jerry_char_t *) "Incorrect signature");
+        }
+    }
+
     jerry_value_t jret = jerry_create_undefined();
 
     if (data->v8callback != NULL) {

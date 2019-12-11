@@ -2149,6 +2149,9 @@ Local<FunctionTemplate> FunctionTemplate::New(Isolate* isolate,
     // TODO: handle the other args
     JerryFunctionTemplate* func = new JerryFunctionTemplate();
     reinterpret_cast<FunctionTemplate*>(func)->SetCallHandler(callback, data);
+    if (!signature.IsEmpty()) {
+        func->SetSignature(reinterpret_cast<JerryHandle*>(*signature));
+    }
 
     RETURN_HANDLE(FunctionTemplate, isolate, func);
 }

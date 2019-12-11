@@ -210,6 +210,7 @@ public:
         , m_instance_template(NULL)
         , m_external(jerry_create_undefined())
         , m_function(NULL)
+        , m_signature(NULL)
     {
     }
 
@@ -227,6 +228,10 @@ public:
 
     void SetCallback(v8::FunctionCallback callback) { m_callback = callback; }
     void SetExternalData(jerry_value_t value) { m_external = value; }
+    void SetSignature(JerryHandle* handle) { m_signature = handle; }
+    bool HasSignature(void) const { return m_signature != NULL; }
+    bool IsValidSignature(const JerryHandle* handle) { return m_signature == handle; }
+    const JerryHandle* Signature(void) const { return m_signature; }
 
     v8::FunctionCallback callback(void) const { return m_callback; }
     jerry_value_t external(void) const { return m_external; }
@@ -238,6 +243,7 @@ private:
     v8::FunctionCallback m_callback;
     jerry_value_t m_external;
     JerryValue* m_function;
+    JerryHandle* m_signature;
 };
 
 #endif /* V8JERRY_TEMPLATES_HPP */
