@@ -34,6 +34,33 @@ jerry_value_t JerryPolyfill::BuildMethod(const char* name, const char* fn_args, 
     return method;
 }
 
+static jerry_value_t JerryHandlerStackTrace(const jerry_value_t func,
+                                            const jerry_value_t this_val,
+                                            const jerry_value_t args_p[],
+                                            const jerry_length_t args_count)
+{
+    if (!jerry_is_feature_enabled(JERRY_FEATURE_LINE_INFO) || args_count == 0 || !jerry_value_is_object(args_p[0]))
+    {
+        printf("Line info is disabled or the argument is not an object.\n");
+        return jerry_create_undefined();
+    }
+
+    jerry_value_t stack_string = jerry_create_string((const jerry_char_t*)"stack");
+    jerry_value_t stack_trace = jerry_get_backtrace(0);
+    jerry_value_t set_result = jerry_set_property(args_p[0], stack_string, stack_trace);
+
+    if (jerry_value_is_error(set_result))
+    {
+        printf("Cannot set stack property.\n");
+    }
+
+    jerry_release_value(stack_string);
+    jerry_release_value(stack_trace);
+    jerry_release_value(set_result);
+
+    return jerry_create_undefined();
+}
+
 static jerry_value_t JerryHandlerGC(const jerry_value_t func,
                                     const jerry_value_t thisarg,
                                     const jerry_value_t argv[],
@@ -52,6 +79,19 @@ void InjectGlobalFunctions(void) {
 
         global.SetProperty(&gc_string, &gc_function);
     }
+
+    JerryValue error_string(jerry_create_string((const jerry_char_t*)"Error"));
+    JerryValue capture_stack_trace_string(jerry_create_string((const jerry_char_t*)"captureStackTrace"));
+    JerryValue stack_trace_function(jerry_create_external_function(JerryHandlerStackTrace));
+
+    JerryValue* error_obj = global.GetProperty(&error_string);
+    if (error_obj == NULL) {
+        printf("Error object is not defined...\n");
+        abort();
+    }
+
+    error_obj->SetProperty(&capture_stack_trace_string, &stack_trace_function);
+    delete error_obj;
 }
 
 
