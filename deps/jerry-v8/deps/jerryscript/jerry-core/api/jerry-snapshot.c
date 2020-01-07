@@ -161,6 +161,13 @@ snapshot_add_compiled_code (ecma_compiled_code_t *compiled_code_p, /**< compiled
   ecma_compiled_code_t *copied_code_p = (ecma_compiled_code_t *) copied_code_start_p;
 
 #if ENABLED (JERRY_ES2015)
+  if (compiled_code_p->status_flags & CBC_CODE_FLAG_HAS_TAGGED_LITERALS)
+  {
+    const char * const error_message_p = "Unsupported feature: tagged template literals.";
+    globals_p->snapshot_error = jerry_create_error (JERRY_ERROR_RANGE, (const jerry_char_t *) error_message_p);
+    return 0;
+  }
+
   if (compiled_code_p->status_flags & CBC_CODE_FLAGS_CONSTRUCTOR)
   {
     globals_p->class_found = true;
@@ -763,7 +770,7 @@ jerry_generate_snapshot_with_args (const jerry_char_t *resource_name_p, /**< scr
 
   if (ECMA_IS_VALUE_ERROR (parse_status))
   {
-    return ecma_create_error_reference (JERRY_CONTEXT (error_value), true);
+    return ecma_create_error_reference_from_context ();
   }
 
   JERRY_ASSERT (bytecode_data_p != NULL);
@@ -1553,31 +1560,59 @@ jerry_append_number_to_buffer (uint8_t *buffer_p, /**< buffer */
 static bool
 ecma_string_is_valid_identifier (const ecma_string_t *string_p)
 {
-  bool result = false;
-
   ECMA_STRING_TO_UTF8_STRING (string_p, str_buffer_p, str_buffer_size);
 
-  if (lit_char_is_identifier_start (str_buffer_p))
+  const uint8_t *str_p = str_buffer_p;
+  const uint8_t *str_end_p = str_buffer_p + str_buffer_size;
+
+  while (str_p < str_end_p)
   {
-    const uint8_t *str_start_p = str_buffer_p;
-    const uint8_t *str_end_p = str_buffer_p + str_buffer_size;
+    lit_code_point_t code_point = *str_p;
+    lit_utf8_size_t utf8_length = 1;
 
-    result = true;
-
-    while (str_start_p < str_end_p)
+    if (JERRY_UNLIKELY (code_point >= LIT_UTF8_2_BYTE_MARKER))
     {
-      if (!lit_char_is_identifier_part (str_start_p))
+      utf8_length = lit_read_code_point_from_utf8 (str_p,
+                                                   (lit_utf8_size_t) (str_end_p - str_p),
+                                                   &code_point);
+
+#if ENABLED (JERRY_ES2015)
+      if ((code_point >= LIT_UTF16_HIGH_SURROGATE_MIN && code_point <= LIT_UTF16_HIGH_SURROGATE_MAX)
+          && str_p + 3 < str_end_p)
       {
-        result = false;
+        lit_code_point_t low_surrogate;
+        lit_read_code_point_from_utf8 (str_p + 3,
+                                       (lit_utf8_size_t) (str_end_p - (str_p + 3)),
+                                       &low_surrogate);
+
+        if (low_surrogate >= LIT_UTF16_LOW_SURROGATE_MIN && low_surrogate <= LIT_UTF16_LOW_SURROGATE_MAX)
+        {
+          code_point = lit_convert_surrogate_pair_to_code_point ((ecma_char_t) code_point,
+                                                                 (ecma_char_t) low_surrogate);
+          utf8_length = 2 * 3;
+        }
+      }
+#endif /* ENABLED (JERRY_ES2015) */
+    }
+
+    if (str_p == str_buffer_p)
+    {
+      if (!lit_code_point_is_identifier_start (code_point))
+      {
         break;
       }
-      lit_utf8_incr (&str_start_p);
     }
+    else if (!lit_code_point_is_identifier_part (code_point))
+    {
+      break;
+    }
+
+    str_p += utf8_length;
   }
 
   ECMA_FINALIZE_UTF8_STRING (str_buffer_p, str_buffer_size);
 
-  return result;
+  return str_p == str_end_p;
 } /* ecma_string_is_valid_identifier */
 
 #endif /* ENABLED (JERRY_SNAPSHOT_SAVE) */

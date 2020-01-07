@@ -308,7 +308,7 @@ parser_emit_cbc_literal (parser_context_t *context_p, /**< context */
   context_p->last_cbc_opcode = opcode;
   context_p->last_cbc.literal_index = literal_index;
   context_p->last_cbc.literal_type = LEXER_UNUSED_LITERAL;
-  context_p->last_cbc.literal_object_type = LEXER_LITERAL_OBJECT_ANY;
+  context_p->last_cbc.literal_keyword_type = LEXER_EOS;
 } /* parser_emit_cbc_literal */
 
 /**
@@ -330,7 +330,7 @@ parser_emit_cbc_literal_value (parser_context_t *context_p, /**< context */
   context_p->last_cbc_opcode = opcode;
   context_p->last_cbc.literal_index = literal_index;
   context_p->last_cbc.literal_type = LEXER_UNUSED_LITERAL;
-  context_p->last_cbc.literal_object_type = LEXER_LITERAL_OBJECT_ANY;
+  context_p->last_cbc.literal_keyword_type = LEXER_EOS;
   context_p->last_cbc.value = value;
 } /* parser_emit_cbc_literal_value */
 
@@ -351,7 +351,7 @@ parser_emit_cbc_literal_from_token (parser_context_t *context_p, /**< context */
   context_p->last_cbc_opcode = opcode;
   context_p->last_cbc.literal_index = context_p->lit_object.index;
   context_p->last_cbc.literal_type = context_p->token.lit_location.type;
-  context_p->last_cbc.literal_object_type = context_p->lit_object.type;
+  context_p->last_cbc.literal_keyword_type = context_p->token.keyword_type;
 } /* parser_emit_cbc_literal_from_token */
 
 /**
@@ -836,6 +836,12 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Invalid hexadecimal digit.";
     }
+#if ENABLED (JERRY_ES2015)
+    case PARSER_ERR_INVALID_BIN_DIGIT:
+    {
+      return "Invalid binary digit.";
+    }
+#endif /* ENABLED (JERRY_ES2015) */
     case PARSER_ERR_INVALID_ESCAPE_SEQUENCE:
     {
       return "Invalid escape sequence.";
@@ -851,6 +857,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     case PARSER_ERR_INVALID_IDENTIFIER_PART:
     {
       return "Character cannot be part of an identifier.";
+    }
+    case PARSER_ERR_INVALID_KEYWORD:
+    {
+      return "Escape sequences are not allowed in keywords.";
     }
     case PARSER_ERR_INVALID_NUMBER:
     {
@@ -933,6 +943,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
       return "Arguments is not allowed to be used here in strict mode.";
     }
 #if ENABLED (JERRY_ES2015)
+    case PARSER_ERR_USE_STRICT_NOT_ALLOWED:
+    {
+      return "The 'use strict' directive is not allowed for functions with non-simple arguments.";
+    }
     case PARSER_ERR_YIELD_NOT_ALLOWED:
     {
       return "Incorrect use of yield keyword.";
@@ -1102,6 +1116,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     case PARSER_ERR_LEXICAL_SINGLE_STATEMENT:
     {
       return "Lexical declaration cannot appear in a single-statement context.";
+    }
+    case PARSER_ERR_LEXICAL_LET_BINDING:
+    {
+      return "Let binding cannot appear in let/const declarations.";
     }
     case PARSER_ERR_MISSING_ASSIGN_AFTER_CONST:
     {

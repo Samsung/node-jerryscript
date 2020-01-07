@@ -44,10 +44,14 @@ typedef enum
   PARSER_ERR_INVALID_CHARACTER,                       /**< unexpected character */
   PARSER_ERR_INVALID_OCTAL_DIGIT,                     /**< invalid octal digit */
   PARSER_ERR_INVALID_HEX_DIGIT,                       /**< invalid hexadecimal digit */
+#if ENABLED (JERRY_ES2015)
+  PARSER_ERR_INVALID_BIN_DIGIT,                       /**< invalid binary digit */
+#endif /* ENABLED (JERRY_ES2015) */
   PARSER_ERR_INVALID_ESCAPE_SEQUENCE,                 /**< invalid escape sequence */
   PARSER_ERR_INVALID_UNICODE_ESCAPE_SEQUENCE,         /**< invalid unicode escape sequence */
   PARSER_ERR_INVALID_IDENTIFIER_START,                /**< character cannot be start of an identifier */
   PARSER_ERR_INVALID_IDENTIFIER_PART,                 /**< character cannot be part of an identifier */
+  PARSER_ERR_INVALID_KEYWORD,                         /**< escape sequences are not allowed in keywords */
 
   PARSER_ERR_INVALID_NUMBER,                          /**< invalid number literal */
   PARSER_ERR_MISSING_EXPONENT,                        /**< missing exponent */
@@ -74,6 +78,7 @@ typedef enum
   PARSER_ERR_EVAL_NOT_ALLOWED,                        /**< eval is not allowed here in strict mode */
   PARSER_ERR_ARGUMENTS_NOT_ALLOWED,                   /**< arguments is not allowed here in strict mode */
 #if ENABLED (JERRY_ES2015)
+  PARSER_ERR_USE_STRICT_NOT_ALLOWED,                  /**< use strict directive is not allowed */
   PARSER_ERR_YIELD_NOT_ALLOWED,                       /**< yield keyword is not allowed */
 #endif /* ENABLED (JERRY_ES2015) */
   PARSER_ERR_DELETE_IDENT_NOT_ALLOWED,                /**< identifier delete is not allowed in strict mode */
@@ -119,7 +124,8 @@ typedef enum
   PARSER_ERR_OBJECT_PROPERTY_REDEFINED,               /**< property of object literal redefined */
 #if ENABLED (JERRY_ES2015)
   PARSER_ERR_VARIABLE_REDECLARED,                     /**< a variable redeclared */
-  PARSER_ERR_LEXICAL_SINGLE_STATEMENT,                /**< lexical variable in single statement context */
+  PARSER_ERR_LEXICAL_SINGLE_STATEMENT,                /**< lexical declaration in single statement context */
+  PARSER_ERR_LEXICAL_LET_BINDING,                     /**< let binding cannot be declared in let/const */
   PARSER_ERR_MISSING_ASSIGN_AFTER_CONST,              /**< an assignment is required after a const declaration */
 
   PARSER_ERR_MULTIPLE_CLASS_CONSTRUCTORS,             /**< multiple class constructor */

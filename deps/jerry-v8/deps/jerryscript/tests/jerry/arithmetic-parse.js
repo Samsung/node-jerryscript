@@ -41,3 +41,6 @@ parse ("a =% b");
 
 parse ("c = a+");
 parse ("c = a-");
+
+parse("a++\n()")
+parse("a--\n.b")

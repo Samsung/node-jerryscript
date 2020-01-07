@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Changing exec should not affect replace.
-Object.getPrototypeOf(/x/).exec = function () { return 1234; }
-assert (/y/.exec("y") === 1234);
-assert ("y".replace (/y/, "x") === "x");
+var array = [0, 0, obj, 0, 0];
+array.copyWithin(NaN, 67, 0);
+var obj

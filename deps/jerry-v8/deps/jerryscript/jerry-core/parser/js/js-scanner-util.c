@@ -412,6 +412,15 @@ scanner_push_literal_pool (parser_context_t *context_p, /**< context */
     status_flags |= (uint16_t) (prev_literal_pool_p->status_flags & copied_flags);
   }
 
+  if (prev_literal_pool_p != NULL)
+  {
+    const uint16_t copied_flags = SCANNER_LITERAL_POOL_IS_STRICT;
+    status_flags |= (uint16_t) (prev_literal_pool_p->status_flags & copied_flags);
+
+    /* The logical value of these flags must be the same. */
+    JERRY_ASSERT (!(status_flags & SCANNER_LITERAL_POOL_IS_STRICT) == !(context_p->status_flags & PARSER_IS_STRICT));
+  }
+
   parser_list_init (&literal_pool_p->literal_pool,
                     sizeof (lexer_lit_location_t),
                     (uint32_t) ((128 - sizeof (void *)) / sizeof (lexer_lit_location_t)));
@@ -434,8 +443,7 @@ JERRY_STATIC_ASSERT (PARSER_MAXIMUM_IDENT_LENGTH <= UINT8_MAX,
 static inline bool JERRY_ATTR_ALWAYS_INLINE
 scanner_literal_is_arguments (lexer_lit_location_t *literal_p) /**< literal */
 {
-  return (literal_p->length == 9
-          && lexer_compare_identifiers (literal_p->char_p, (const uint8_t *) "arguments", 9));
+  return lexer_compare_identifier_to_string (literal_p, (const uint8_t *) "arguments", 9);
 } /* scanner_literal_is_arguments */
 
 /**
@@ -447,6 +455,18 @@ scanner_pop_literal_pool (parser_context_t *context_p, /**< context */
 {
   scanner_literal_pool_t *literal_pool_p = scanner_context_p->active_literal_pool_p;
   scanner_literal_pool_t *prev_literal_pool_p = literal_pool_p->prev_p;
+
+  if (literal_pool_p->source_p == NULL)
+  {
+    JERRY_ASSERT (literal_pool_p->status_flags & SCANNER_LITERAL_POOL_FUNCTION);
+    JERRY_ASSERT (literal_pool_p->literal_pool.data.first_p == NULL
+                  && literal_pool_p->literal_pool.data.last_p == NULL);
+
+    scanner_context_p->active_literal_pool_p = literal_pool_p->prev_p;
+    scanner_free (literal_pool_p, sizeof (scanner_literal_pool_t));
+    return;
+  }
+
   parser_list_iterator_t literal_iterator;
   lexer_lit_location_t *literal_p;
   bool is_function = (literal_pool_p->status_flags & SCANNER_LITERAL_POOL_FUNCTION) != 0;
@@ -637,7 +657,30 @@ scanner_pop_literal_pool (parser_context_t *context_p, /**< context */
         {
           no_declarations++;
         }
+
+#if ENABLED (JERRY_ES2015)
+        const uint16_t is_unmapped = SCANNER_LITERAL_POOL_IS_STRICT | SCANNER_LITERAL_POOL_ARGUMENTS_UNMAPPED;
+#else /* !ENABLED (JERRY_ES2015) */
+        const uint16_t is_unmapped = SCANNER_LITERAL_POOL_IS_STRICT;
+#endif /* ENABLED (JERRY_ES2015) */
+
+        if (literal_pool_p->status_flags & is_unmapped)
+        {
+          arguments_required = false;
+        }
       }
+
+#if ENABLED (JERRY_ES2015)
+      if (literal_pool_p->status_flags & SCANNER_LITERAL_POOL_ASYNC)
+      {
+        status_flags |= SCANNER_FUNCTION_ASYNC;
+
+        if (literal_pool_p->status_flags & SCANNER_LITERAL_POOL_FUNCTION_STATEMENT)
+        {
+          status_flags |= SCANNER_FUNCTION_STATEMENT;
+        }
+      }
+#endif /* ENABLED (JERRY_ES2015) */
 
       info_p->u8_arg = status_flags;
       info_p->u16_arg = (uint16_t) no_declarations;
@@ -783,9 +826,18 @@ scanner_pop_literal_pool (parser_context_t *context_p, /**< context */
     prev_literal_pool_p->no_declarations = (uint16_t) no_declarations;
   }
 
-#if ENABLED (JERRY_ES2015)
   if (is_function && prev_literal_pool_p != NULL)
   {
+    if (prev_literal_pool_p->status_flags & SCANNER_LITERAL_POOL_IS_STRICT)
+    {
+      context_p->status_flags |= PARSER_IS_STRICT;
+    }
+    else
+    {
+      context_p->status_flags &= (uint32_t) ~PARSER_IS_STRICT;
+    }
+
+#if ENABLED (JERRY_ES2015)
     if (prev_literal_pool_p->status_flags & SCANNER_LITERAL_POOL_GENERATOR)
     {
       context_p->status_flags |= PARSER_IS_GENERATOR_FUNCTION;
@@ -794,8 +846,8 @@ scanner_pop_literal_pool (parser_context_t *context_p, /**< context */
     {
       context_p->status_flags &= (uint32_t) ~PARSER_IS_GENERATOR_FUNCTION;
     }
-  }
 #endif /* ENABLED (JERRY_ES2015) */
+  }
 
   scanner_context_p->active_literal_pool_p = literal_pool_p->prev_p;
 
@@ -986,7 +1038,7 @@ scanner_add_custom_literal (parser_context_t *context_p, /**< context */
             return literal_p;
           }
         }
-        else if (lexer_compare_identifiers (literal_p->char_p, char_p, length))
+        else if (lexer_compare_identifier_to_string (literal_p, char_p, length))
         {
           /* The non-escaped version is preferred. */
           literal_p->char_p = char_p;
@@ -1000,8 +1052,7 @@ scanner_add_custom_literal (parser_context_t *context_p, /**< context */
   {
     while ((literal_p = (lexer_lit_location_t *) parser_list_iterator_next (&literal_iterator)) != NULL)
     {
-      if (literal_p->length == length
-          && lexer_compare_identifiers (literal_p->char_p, char_p, length))
+      if (lexer_compare_identifiers (context_p, literal_p, literal_location_p))
       {
         return literal_p;
       }
@@ -1065,10 +1116,11 @@ scanner_append_argument (parser_context_t *context_p, /**< context */
   scanner_literal_pool_t *literal_pool_p = scanner_context_p->active_literal_pool_p;
   parser_list_iterator_t literal_iterator;
   parser_list_iterator_init (&literal_pool_p->literal_pool, &literal_iterator);
+  lexer_lit_location_t *literal_location_p = &context_p->token.lit_location;
   lexer_lit_location_t *literal_p;
 
-  const uint8_t *char_p = context_p->token.lit_location.char_p;
-  prop_length_t length = context_p->token.lit_location.length;
+  const uint8_t *char_p = literal_location_p->char_p;
+  prop_length_t length = literal_location_p->length;
 
   if (JERRY_LIKELY (!context_p->token.lit_location.has_escape))
   {
@@ -1084,7 +1136,7 @@ scanner_append_argument (parser_context_t *context_p, /**< context */
             break;
           }
         }
-        else if (lexer_compare_identifiers (literal_p->char_p, char_p, length))
+        else if (lexer_compare_identifier_to_string (literal_p, char_p, length))
         {
           literal_p->length = 0;
           break;
@@ -1096,8 +1148,7 @@ scanner_append_argument (parser_context_t *context_p, /**< context */
   {
     while ((literal_p = (lexer_lit_location_t *) parser_list_iterator_next (&literal_iterator)) != NULL)
     {
-      if (literal_p->length == length
-          && lexer_compare_identifiers (literal_p->char_p, char_p, length))
+      if (lexer_compare_identifiers (context_p, literal_p, literal_location_p))
       {
         literal_p->length = 0;
         break;
@@ -1118,8 +1169,7 @@ void
 scanner_detect_eval_call (parser_context_t *context_p, /**< context */
                           scanner_context_t *scanner_context_p) /**< scanner context */
 {
-  if (context_p->token.lit_location.length == 4
-      && lexer_compare_identifiers (context_p->token.lit_location.char_p, (const uint8_t *) "eval", 4)
+  if (context_p->token.keyword_type == LEXER_KEYW_EVAL
       && lexer_check_next_character (context_p, LIT_CHAR_LEFT_PAREN))
   {
     scanner_context_p->active_literal_pool_p->status_flags |= SCANNER_LITERAL_POOL_NO_REG;
@@ -1147,7 +1197,7 @@ scanner_scope_find_let_declaration (parser_context_t *context_p, /**< context */
   {
     uint8_t *destination_p = (uint8_t *) scanner_malloc (context_p, literal_p->length);
 
-    lexer_convert_ident_to_utf8 (literal_p->char_p, destination_p, literal_p->length);
+    lexer_convert_ident_to_cesu8 (destination_p, literal_p->char_p, literal_p->length);
 
     name_p = ecma_new_ecma_string_from_utf8 (destination_p, literal_p->length);
     scanner_free (destination_p, literal_p->length);
@@ -1231,7 +1281,7 @@ scanner_detect_invalid_var (parser_context_t *context_p, /**< context */
               return;
             }
           }
-          else if (lexer_compare_identifiers (literal_p->char_p, char_p, length))
+          else if (lexer_compare_identifier_to_string (literal_p, char_p, length))
           {
             scanner_raise_redeclaration_error (context_p);
             return;
@@ -1246,8 +1296,7 @@ scanner_detect_invalid_var (parser_context_t *context_p, /**< context */
         if (literal_p->type & SCANNER_LITERAL_IS_LOCAL
             && !(literal_p->type & SCANNER_LITERAL_IS_ARG)
             && (literal_p->type & SCANNER_LITERAL_IS_LOCAL) != SCANNER_LITERAL_IS_LOCAL
-            && literal_p->length == length
-            && lexer_compare_identifiers (literal_p->char_p, char_p, length))
+            && lexer_compare_identifiers (context_p, literal_p, var_literal_p))
         {
           scanner_raise_redeclaration_error (context_p);
           return;
@@ -1467,6 +1516,7 @@ scanner_cleanup (parser_context_t *context_p) /**< context */
       {
 #if ENABLED (JERRY_ES2015)
         JERRY_ASSERT (scanner_info_p->type == SCANNER_TYPE_END_ARGUMENTS
+                      || scanner_info_p->type == SCANNER_TYPE_LET_EXPRESSION
                       || scanner_info_p->type == SCANNER_TYPE_ERR_REDECLARED);
 #else /* !ENABLED (JERRY_ES2015) */
         JERRY_ASSERT (scanner_info_p->type == SCANNER_TYPE_END_ARGUMENTS);
@@ -1759,16 +1809,13 @@ scanner_create_variables (parser_context_t *context_p, /**< context */
     size_t stack_size = info_p->u16_arg * sizeof (parser_scope_stack);
     context_p->scope_stack_size = info_p->u16_arg;
 
-    if (stack_size == 0)
+    scope_stack_p = NULL;
+
+    if (stack_size > 0)
     {
-      if (!(option_flags & SCANNER_CREATE_VARS_IS_FUNCTION_ARGS))
-      {
-        scanner_release_next (context_p, sizeof (scanner_info_t) + 1);
-      }
-      return;
+      scope_stack_p = (parser_scope_stack *) parser_malloc (context_p, stack_size);
     }
 
-    scope_stack_p = (parser_scope_stack *) parser_malloc (context_p, stack_size);
     context_p->scope_stack_p = scope_stack_p;
     scope_stack_end_p = scope_stack_p + context_p->scope_stack_size;
   }
@@ -1819,6 +1866,8 @@ scanner_create_variables (parser_context_t *context_p, /**< context */
       }
       continue;
     }
+
+    JERRY_ASSERT (context_p->scope_stack_size != 0);
 
     if (!(data_p[0] & SCANNER_STREAM_UINT16_DIFF))
     {

@@ -298,8 +298,6 @@ ecma_number_is_negative (ecma_number_t num) /**< ecma-number */
 bool
 ecma_number_is_zero (ecma_number_t num) /**< ecma-number */
 {
-  JERRY_ASSERT (!ecma_number_is_nan (num));
-
   bool is_zero = (num == ECMA_NUMBER_ZERO);
 
 #ifndef JERRY_NDEBUG
@@ -323,8 +321,6 @@ ecma_number_is_zero (ecma_number_t num) /**< ecma-number */
 bool
 ecma_number_is_infinity (ecma_number_t num) /**< ecma-number */
 {
-  JERRY_ASSERT (!ecma_number_is_nan (num));
-
   uint32_t biased_exp = ecma_number_get_biased_exponent_field (num);
   uint64_t fraction = ecma_number_get_fraction_field (num);
 
@@ -332,6 +328,24 @@ ecma_number_is_infinity (ecma_number_t num) /**< ecma-number */
   return ((biased_exp  == (1u << ECMA_NUMBER_BIASED_EXP_WIDTH) - 1)
           && (fraction == 0));
 } /* ecma_number_is_infinity */
+
+/**
+ * Check if number is finite
+ *
+ * @return true  - if number is finite
+ *         false - if number is NaN or infinity
+ */
+extern inline bool JERRY_ATTR_ALWAYS_INLINE
+ecma_number_is_finite (ecma_number_t num) /**< ecma-number */
+{
+#if defined (__GNUC__) || defined (__clang__)
+  return __builtin_isfinite (num);
+#elif defined (WIN32)
+  return isfinite (num);
+#else
+  return !ecma_number_is_nan (num) && !ecma_number_is_infinity (num);
+#endif /* defined (__GNUC__) || defined (__clang__) */
+} /* ecma_number_is_finite */
 
 /**
  * Get fraction and exponent of the number

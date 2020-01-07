@@ -169,7 +169,7 @@ vm_op_set_value (ecma_value_t object, /**< base object */
     {
 #if ENABLED (JERRY_ERROR_MESSAGES)
       ecma_free_value (to_object);
-      ecma_free_value (JERRY_CONTEXT (error_value));
+      jcontext_release_exception ();
 
       ecma_value_t error_value = ecma_raise_standard_error_with_format (ECMA_ERROR_TYPE,
                                                                         "Cannot set property '%' of %",
@@ -1273,16 +1273,17 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
             {
               JERRY_CONTEXT (vm_exec_stop_counter) = 1;
 
-              if (!ecma_is_value_error_reference (result))
+              if (ecma_is_value_error_reference (result))
               {
-                JERRY_CONTEXT (error_value) = result;
+                ecma_raise_error_from_error_reference (result);
               }
               else
               {
-                JERRY_CONTEXT (error_value) = ecma_clear_error_reference (result, false);
+                jcontext_raise_exception (result);
               }
 
-              JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
+              JERRY_ASSERT (jcontext_has_pending_exception ());
+              jcontext_set_abort_flag (true);
               result = ECMA_VALUE_ERROR;
               goto error;
             }
@@ -1628,7 +1629,7 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
             {
               if (ECMA_IS_VALUE_ERROR (result))
               {
-                ecma_free_value (JERRY_CONTEXT (error_value));
+                jcontext_release_exception ();
               }
 
               ecma_free_value (result);
@@ -1889,10 +1890,12 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
             /**
              * The bytecode order for super assignment should be one of this:
              *  - CBC_EXT_PUSH_SUPER, CBC_EXT_SUPER_PROP_ASSIGN.
+             *  - CBC_EXT_PUSH_STATIC_SUPER, CBC_EXT_SUPER_PROP_ASSIGN.
              *  - CBC_EXT_PUSH_CONSTRUCTOR_SUPER_PROP, CBC_EXT_SUPER_PROP_ASSIGN.
              * That is one ext opcode back (-1).
              */
             JERRY_ASSERT (byte_code_start_p[-1] == CBC_EXT_PUSH_SUPER
+                          || byte_code_start_p[-1] == CBC_EXT_PUSH_STATIC_SUPER
                           || byte_code_start_p[-1] == CBC_EXT_PUSH_CONSTRUCTOR_SUPER_PROP);
           }
 
@@ -2007,6 +2010,7 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
 
             if (ECMA_IS_VALUE_ERROR (result))
             {
+              ecma_deref_object (array_p);
               goto error;
             }
 
@@ -2020,6 +2024,7 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
 
             if (ECMA_IS_VALUE_ERROR (value))
             {
+              ecma_deref_object (array_p);
               result = value;
               goto error;
             }
@@ -2092,6 +2097,45 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
           }
 
           goto error;
+        }
+        case VM_OC_RETURN_PROMISE:
+        {
+          result = opfunc_return_promise (left_value);
+          left_value = ECMA_VALUE_UNDEFINED;
+          goto error;
+        }
+        case VM_OC_STRING_CONCAT:
+        {
+          ecma_string_t *left_str_p = ecma_op_to_string (left_value);
+
+          if (JERRY_UNLIKELY (left_str_p == NULL))
+          {
+            result = ECMA_VALUE_ERROR;
+            goto error;
+          }
+          ecma_string_t *right_str_p = ecma_op_to_string (right_value);
+
+          if (JERRY_UNLIKELY (right_str_p == NULL))
+          {
+            ecma_deref_ecma_string (left_str_p);
+            result = ECMA_VALUE_ERROR;
+            goto error;
+          }
+
+          ecma_string_t *result_str_p = ecma_concat_ecma_strings (left_str_p, right_str_p);
+          ecma_deref_ecma_string (right_str_p);
+
+          *stack_top_p++ = ecma_make_string_value (result_str_p);
+          goto free_both_values;
+        }
+        case VM_OC_GET_TEMPLATE_OBJECT:
+        {
+          uint8_t tagged_idx = *byte_code_p++;
+          ecma_collection_t *collection_p = ecma_compiled_code_get_tagged_template_collection (bytecode_header_p);
+          JERRY_ASSERT (tagged_idx < collection_p->item_count);
+
+          *stack_top_p++ = ecma_copy_value (collection_p->buffer_p[tagged_idx]);
+          continue;
         }
 #endif /* ENABLED (JERRY_ES2015) */
         case VM_OC_PUSH_ELISON:
@@ -2415,8 +2459,7 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
         }
         case VM_OC_THROW:
         {
-          JERRY_CONTEXT (error_value) = left_value;
-          JERRY_CONTEXT (status_flags) |= ECMA_STATUS_EXCEPTION;
+          jcontext_raise_exception (left_value);
 
           result = ECMA_VALUE_ERROR;
           left_value = ECMA_VALUE_UNDEFINED;
@@ -2636,8 +2679,7 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
 
             if (ref_base_lex_env_p == NULL)
             {
-              ecma_free_value (JERRY_CONTEXT (error_value));
-              JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
+              jcontext_release_exception ();
               result = ECMA_VALUE_UNDEFINED;
             }
             else if (ECMA_IS_VALUE_ERROR (result))
@@ -3578,8 +3620,7 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
 
           if (context_type == VM_CONTEXT_FINALLY_THROW)
           {
-            JERRY_CONTEXT (error_value) = *stack_top_p;
-            JERRY_CONTEXT (status_flags) |= ECMA_STATUS_EXCEPTION;
+            jcontext_raise_exception (*stack_top_p);
             result = ECMA_VALUE_ERROR;
 
 #if ENABLED (JERRY_DEBUGGER)
@@ -3841,6 +3882,7 @@ error:
 
     if (ECMA_IS_VALUE_ERROR (result))
     {
+      JERRY_ASSERT (jcontext_has_pending_exception ());
       ecma_value_t *stack_bottom_p = VM_GET_REGISTERS (frame_ctx_p) + register_end + frame_ctx_p->context_depth;
 
       while (stack_top_p > stack_bottom_p)
@@ -3862,7 +3904,7 @@ error:
            therefore an evaluation error, or user-created error throw would overwrite it. */
         ecma_value_t current_error_value = JERRY_CONTEXT (error_value);
 
-        if (jerry_debugger_send_exception_string ())
+        if (jerry_debugger_send_exception_string (current_error_value))
         {
           jerry_debugger_breakpoint_hit (JERRY_DEBUGGER_EXCEPTION_HIT);
 
@@ -3907,7 +3949,7 @@ error:
         continue;
       }
     }
-    else if (JERRY_CONTEXT (status_flags) & ECMA_STATUS_EXCEPTION)
+    else if (jcontext_has_pending_exception () && !jcontext_has_pending_abort ())
     {
       if (vm_stack_find_finally (frame_ctx_p,
                                  &stack_top_p,
@@ -3921,19 +3963,19 @@ error:
         JERRY_DEBUGGER_CLEAR_FLAGS (JERRY_DEBUGGER_VM_EXCEPTION_THROWN);
 #endif /* ENABLED (JERRY_DEBUGGER) */
 
-        JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
+        result = jcontext_take_exception ();
 
         byte_code_p = frame_ctx_p->byte_code_p;
 
         if (VM_GET_CONTEXT_TYPE (stack_top_p[-1]) == VM_CONTEXT_FINALLY_THROW)
         {
-          stack_top_p[-2] = JERRY_CONTEXT (error_value);
+          stack_top_p[-2] = result;
           continue;
         }
 
         JERRY_ASSERT (VM_GET_CONTEXT_TYPE (stack_top_p[-1]) == VM_CONTEXT_CATCH);
 
-        *stack_top_p++ = JERRY_CONTEXT (error_value);
+        *stack_top_p++ = result;
         continue;
       }
     }

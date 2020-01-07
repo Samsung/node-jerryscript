@@ -46,6 +46,7 @@ typedef enum
   SCANNER_TYPE_CASE, /**< case statement */
 #if ENABLED (JERRY_ES2015)
   SCANNER_TYPE_INITIALIZER, /**< destructuring binding or assignment pattern with initializer */
+  SCANNER_TYPE_LET_EXPRESSION, /**< let expression */
   SCANNER_TYPE_ERR_REDECLARED, /**< syntax error: a variable is redeclared */
 #endif /* ENABLED (JERRY_ES2015) */
 } scanner_info_type_t;
@@ -209,6 +210,10 @@ typedef enum
 typedef enum
 {
   SCANNER_FUNCTION_ARGUMENTS_NEEDED = (1 << 0), /**< arguments object needs to be created */
+#if ENABLED (JERRY_ES2015)
+  SCANNER_FUNCTION_STATEMENT = (1 << 1), /**< function is (async) function statement */
+  SCANNER_FUNCTION_ASYNC = (1 << 2), /**< function is async function expression */
+#endif /* ENABLED (JERRY_ES2015) */
 } scanner_function_flags_t;
 
 /**

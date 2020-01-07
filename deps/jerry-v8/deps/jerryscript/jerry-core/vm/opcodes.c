@@ -26,6 +26,7 @@
 #include "ecma-iterator-object.h"
 #include "ecma-lex-env.h"
 #include "ecma-objects.h"
+#include "ecma-promise-object.h"
 #include "ecma-try-catch-macro.h"
 #include "jcontext.h"
 #include "opcodes.h"
@@ -84,7 +85,7 @@ vm_set_var (ecma_object_t *lex_env_p, /**< target lexical environment */
 
   if (ECMA_IS_VALUE_ERROR (put_value_result))
   {
-    ecma_free_value (JERRY_CONTEXT (error_value));
+    jcontext_release_exception ();
   }
 
   ecma_free_value (lit_value);
@@ -705,6 +706,21 @@ opfunc_resume_executable_object (vm_executable_object_t *executable_object_p, /*
 
   return result;
 } /* opfunc_resume_executable_object */
+
+/**
+ * Create a Promise object if needed and resolve it with a value
+ *
+ * @return Promise object
+ */
+ecma_value_t
+opfunc_return_promise (ecma_value_t value) /**< value */
+{
+  ecma_value_t promise = ecma_make_object_value (ecma_builtin_get (ECMA_BUILTIN_ID_PROMISE));
+  ecma_value_t result = ecma_promise_reject_or_resolve (promise, value, true);
+
+  ecma_free_value (value);
+  return result;
+} /* opfunc_return_promise */
 
 #endif /* ENABLED (JERRY_ES2015) */
 

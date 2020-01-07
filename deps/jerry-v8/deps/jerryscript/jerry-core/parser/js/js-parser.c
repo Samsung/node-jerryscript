@@ -994,7 +994,8 @@ parser_post_processing (parser_context_t *context_p) /**< context */
       length++;
 
 #if ENABLED (JERRY_ES2015)
-      if (ext_opcode == CBC_EXT_CONSTRUCTOR_RETURN)
+      if (ext_opcode == CBC_EXT_CONSTRUCTOR_RETURN
+          || ext_opcode == CBC_EXT_RETURN_PROMISE)
       {
         last_opcode = CBC_RETURN;
       }
@@ -1140,6 +1141,14 @@ parser_post_processing (parser_context_t *context_p) /**< context */
       || !(PARSER_OPCODE_IS_RETURN (last_opcode)))
   {
     context_p->status_flags &= (uint32_t) ~PARSER_NO_END_LABEL;
+
+#if ENABLED (JERRY_ES2015)
+    if (context_p->status_flags & PARSER_IS_ASYNC_FUNCTION)
+    {
+      length += 2;
+    }
+#endif /* ENABLED (JERRY_ES2015) */
+
     length++;
   }
 
@@ -1162,6 +1171,13 @@ parser_post_processing (parser_context_t *context_p) /**< context */
   {
     total_size += context_p->argument_count * sizeof (ecma_value_t);
   }
+
+#if ENABLED (JERRY_ES2015)
+  if (context_p->tagged_template_literal_cp != JMEM_CP_NULL)
+  {
+    total_size += sizeof (ecma_value_t);
+  }
+#endif /* ENABLED (JERRY_ES2015) */
 
 #if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM)
   if (JERRY_CONTEXT (resource_name) != ECMA_VALUE_UNDEFINED)
@@ -1289,6 +1305,11 @@ parser_post_processing (parser_context_t *context_p) /**< context */
   if (context_p->status_flags & PARSER_FUNCTION_HAS_REST_PARAM)
   {
     compiled_code_p->status_flags |= CBC_CODE_FLAGS_REST_PARAMETER;
+  }
+
+  if (context_p->tagged_template_literal_cp != JMEM_CP_NULL)
+  {
+    compiled_code_p->status_flags |= CBC_CODE_FLAG_HAS_TAGGED_LITERALS;
   }
 #endif /* ENABLED (JERRY_ES2015) */
 
@@ -1484,6 +1505,16 @@ parser_post_processing (parser_context_t *context_p) /**< context */
   if (!(context_p->status_flags & PARSER_NO_END_LABEL))
   {
     *dst_p++ = CBC_RETURN_WITH_BLOCK;
+
+#if ENABLED (JERRY_ES2015)
+    if (context_p->status_flags & PARSER_IS_ASYNC_FUNCTION)
+    {
+      dst_p[-1] = CBC_PUSH_UNDEFINED;
+      dst_p[0] = CBC_EXT_OPCODE;
+      dst_p[1] = CBC_EXT_RETURN_PROMISE;
+      dst_p += 2;
+    }
+#endif /* ENABLED (JERRY_ES2015) */
   }
   JERRY_ASSERT (dst_p == byte_code_p + length);
 
@@ -1572,6 +1603,20 @@ parser_post_processing (parser_context_t *context_p) /**< context */
     }
   }
 
+#if ENABLED (JERRY_ES2015)
+  if (context_p->tagged_template_literal_cp != JMEM_CP_NULL)
+  {
+    ecma_value_t *tagged_base_p = (ecma_value_t *) (((uint8_t *) compiled_code_p) + total_size);
+
+    if (PARSER_NEEDS_MAPPED_ARGUMENTS (context_p->status_flags))
+    {
+      tagged_base_p -= context_p->argument_count;
+    }
+
+    tagged_base_p[-1] = (ecma_value_t) context_p->tagged_template_literal_cp;
+  }
+#endif /* ENABLED (JERRY_ES2015) */
+
 #if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM)
   if (JERRY_CONTEXT (resource_name) != ECMA_VALUE_UNDEFINED)
   {
@@ -1581,6 +1626,13 @@ parser_post_processing (parser_context_t *context_p) /**< context */
     {
       resource_name_p -= context_p->argument_count;
     }
+
+#if ENABLED (JERRY_ES2015)
+    if (context_p->tagged_template_literal_cp != JMEM_CP_NULL)
+    {
+      resource_name_p--;
+    }
+#endif /* ENABLED (JERRY_ES2015) */
 
     resource_name_p[-1] = JERRY_CONTEXT (resource_name);
   }
@@ -1624,11 +1676,18 @@ static void
 parser_parse_function_arguments (parser_context_t *context_p, /**< context */
                                  lexer_token_type_t end_type) /**< expected end type */
 {
+  JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_FUNCTION);
+
 #if ENABLED (JERRY_ES2015)
   bool duplicated_argument_names = false;
-#endif /* ENABLED (JERRY_ES2015) */
 
-  JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_FUNCTION);
+  /* TODO: Currently async iterators are not supported, so generators ignore the async modifier. */
+  if ((context_p->next_scanner_info_p->u8_arg & SCANNER_FUNCTION_ASYNC)
+      && !(context_p->status_flags & PARSER_IS_GENERATOR_FUNCTION))
+  {
+    context_p->status_flags |= PARSER_IS_ASYNC_FUNCTION;
+  }
+#endif /* ENABLED (JERRY_ES2015) */
 
   if (context_p->token.type == end_type)
   {
@@ -1686,7 +1745,7 @@ parser_parse_function_arguments (parser_context_t *context_p, /**< context */
 
       uint32_t flags = (PARSER_PATTERN_BINDING
                         | PARSER_PATTERN_TARGET_ON_STACK
-                        | PARSER_PATTERN_LEXICAL
+                        | PARSER_PATTERN_LOCAL
                         | PARSER_PATTERN_ARGUMENTS);
 
       if (context_p->next_scanner_info_p->source_p == context_p->source_p)
@@ -1729,8 +1788,7 @@ parser_parse_function_arguments (parser_context_t *context_p, /**< context */
                                     &context_p->token.lit_location,
                                     LEXER_IDENT_LITERAL);
 
-    if (context_p->token.literal_is_reserved
-        || context_p->lit_object.type != LEXER_LITERAL_OBJECT_ANY)
+    if (context_p->token.keyword_type >= LEXER_FIRST_NON_STRICT_ARGUMENTS)
     {
       context_p->status_flags |= PARSER_HAS_NON_STRICT_ARG;
     }
@@ -1819,6 +1877,11 @@ parser_parse_function_arguments (parser_context_t *context_p, /**< context */
   scanner_create_variables (context_p, SCANNER_CREATE_VARS_IS_FUNCTION_BODY);
 } /* parser_parse_function_arguments */
 
+#ifndef JERRY_NDEBUG
+JERRY_STATIC_ASSERT (PARSER_SCANNING_SUCCESSFUL == PARSER_HAS_LATE_LIT_INIT,
+                     parser_scanning_successful_should_share_the_bit_position_with_parser_has_late_lit_init);
+#endif /* !JERRY_NDEBUG */
+
 /**
  * Parse and compile EcmaScript source code
  *
@@ -1848,6 +1911,7 @@ parser_parse_source (const uint8_t *arg_list_p, /**< function argument list */
 
 #if ENABLED (JERRY_ES2015)
   context.status_flags |= PARSER_GET_CLASS_PARSER_OPTS (parse_opts);
+  context.tagged_template_literal_cp = JMEM_CP_NULL;
 #endif /* ENABLED (JERRY_ES2015) */
 
   context.stack_depth = 0;
@@ -1886,6 +1950,7 @@ parser_parse_source (const uint8_t *arg_list_p, /**< function argument list */
   context.scope_stack_reg_top = 0;
 #if ENABLED (JERRY_ES2015)
   context.scope_stack_global_end = 0;
+  context.tagged_template_literal_cp = JMEM_CP_NULL;
 #endif /* ENABLED (JERRY_ES2015) */
 
 #ifndef JERRY_NDEBUG
@@ -2049,12 +2114,15 @@ parser_parse_source (const uint8_t *arg_list_p, /**< function argument list */
     JERRY_ASSERT (context.last_cbc_opcode == PARSER_CBC_UNAVAILABLE);
     JERRY_ASSERT (context.u.allocated_buffer_p == NULL);
 
-    compiled_code_p = parser_post_processing (&context);
-    parser_list_free (&context.literal_pool);
-
 #ifndef JERRY_NDEBUG
     JERRY_ASSERT (context.status_flags & PARSER_SCANNING_SUCCESSFUL);
+    context.status_flags &= (uint32_t) ~PARSER_SCANNING_SUCCESSFUL;
 #endif /* !JERRY_NDEBUG */
+
+    JERRY_ASSERT (!(context.status_flags & PARSER_HAS_LATE_LIT_INIT));
+
+    compiled_code_p = parser_post_processing (&context);
+    parser_list_free (&context.literal_pool);
 
     JERRY_ASSERT (arg_list_p != NULL || !(context.status_flags & PARSER_ARGUMENTS_NEEDED));
 
@@ -2075,11 +2143,7 @@ parser_parse_source (const uint8_t *arg_list_p, /**< function argument list */
       parser_free_jumps (context.last_statement);
     }
 
-    if (context.u.allocated_buffer_p != NULL)
-    {
-      parser_free_local (context.u.allocated_buffer_p,
-                         context.allocated_buffer_size);
-    }
+    parser_free_allocated_buffer (&context);
 
     scanner_cleanup (&context);
 
@@ -2161,6 +2225,7 @@ parser_save_context (parser_context_t *context_p, /**< context */
   saved_context_p->scope_stack_reg_top = context_p->scope_stack_reg_top;
 #if ENABLED (JERRY_ES2015)
   saved_context_p->scope_stack_global_end = context_p->scope_stack_global_end;
+  saved_context_p->tagged_template_literal_cp = context_p->tagged_template_literal_cp;
 #endif /* ENABLED (JERRY_ES2015) */
 
 #ifndef JERRY_NDEBUG
@@ -2188,6 +2253,7 @@ parser_save_context (parser_context_t *context_p, /**< context */
   context_p->scope_stack_reg_top = 0;
 #if ENABLED (JERRY_ES2015)
   context_p->scope_stack_global_end = 0;
+  context_p->tagged_template_literal_cp = JMEM_CP_NULL;
 #endif /* ENABLED (JERRY_ES2015) */
 
 #ifndef JERRY_NDEBUG
@@ -2232,6 +2298,7 @@ parser_restore_context (parser_context_t *context_p, /**< context */
   context_p->scope_stack_reg_top = saved_context_p->scope_stack_reg_top;
 #if ENABLED (JERRY_ES2015)
   context_p->scope_stack_global_end = saved_context_p->scope_stack_global_end;
+  context_p->tagged_template_literal_cp = saved_context_p->tagged_template_literal_cp;
 #endif /* ENABLED (JERRY_ES2015) */
 
 #ifndef JERRY_NDEBUG
@@ -2377,8 +2444,9 @@ parser_parse_arrow_function (parser_context_t *context_p, /**< context */
   }
 #endif /* ENABLED (JERRY_DEBUGGER) */
 
-  if (status_flags & PARSER_ARROW_PARSE_ARGS)
+  if (context_p->token.type == LEXER_ARROW_LEFT_PAREN)
   {
+    lexer_next_token (context_p);
     parser_parse_function_arguments (context_p, LEXER_RIGHT_PAREN);
     lexer_next_token (context_p);
   }
@@ -2412,14 +2480,25 @@ parser_parse_arrow_function (parser_context_t *context_p, /**< context */
 
     parser_parse_expression (context_p, PARSE_EXPR_NO_COMMA);
 
-    if (context_p->last_cbc_opcode == CBC_PUSH_LITERAL)
+#if ENABLED (JERRY_ES2015)
+    if (context_p->status_flags & PARSER_IS_ASYNC_FUNCTION)
     {
-      context_p->last_cbc_opcode = CBC_RETURN_WITH_LITERAL;
+      parser_emit_cbc_ext (context_p, CBC_EXT_RETURN_PROMISE);
     }
     else
     {
-      parser_emit_cbc (context_p, CBC_RETURN);
+#endif /* ENABLED (JERRY_ES2015) */
+      if (context_p->last_cbc_opcode == CBC_PUSH_LITERAL)
+      {
+        context_p->last_cbc_opcode = CBC_RETURN_WITH_LITERAL;
+      }
+      else
+      {
+        parser_emit_cbc (context_p, CBC_RETURN);
+      }
+#if ENABLED (JERRY_ES2015)
     }
+#endif /* ENABLED (JERRY_ES2015) */
     parser_flush_cbc (context_p);
   }
 
@@ -2474,8 +2553,24 @@ parser_raise_error (parser_context_t *context_p, /**< context */
       parser_free_jumps (saved_context_p->last_statement);
     }
 
+#if ENABLED (JERRY_ES2015)
+    if (saved_context_p->tagged_template_literal_cp != JMEM_CP_NULL)
+    {
+      ecma_collection_free (ECMA_GET_INTERNAL_VALUE_POINTER (ecma_collection_t,
+                                                             saved_context_p->tagged_template_literal_cp));
+    }
+#endif /* ENABLED (JERRY_ES2015)  */
+
     saved_context_p = saved_context_p->prev_context_p;
   }
+
+#if ENABLED (JERRY_ES2015)
+  if (context_p->tagged_template_literal_cp != JMEM_CP_NULL)
+  {
+    ecma_collection_free (ECMA_GET_INTERNAL_VALUE_POINTER (ecma_collection_t,
+                                                           context_p->tagged_template_literal_cp));
+  }
+#endif /* ENABLED (JERRY_ES2015)  */
 
   context_p->error = error;
   PARSER_THROW (context_p->try_buffer);
@@ -2542,8 +2637,7 @@ parser_parse_script (const uint8_t *arg_list_p, /**< function argument list */
     {
       /* It is unlikely that memory can be allocated in an out-of-memory
        * situation. However, a simple value can still be thrown. */
-      JERRY_CONTEXT (error_value) = ECMA_VALUE_NULL;
-      JERRY_CONTEXT (status_flags) |= ECMA_STATUS_EXCEPTION;
+      jcontext_raise_exception (ECMA_VALUE_NULL);
       return ECMA_VALUE_ERROR;
     }
 #if ENABLED (JERRY_ERROR_MESSAGES)

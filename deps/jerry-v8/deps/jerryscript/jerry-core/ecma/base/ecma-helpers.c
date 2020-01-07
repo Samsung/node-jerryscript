@@ -1256,7 +1256,6 @@ ecma_create_error_reference (ecma_value_t value, /**< referenced value */
 {
   ecma_error_reference_t *error_ref_p = (ecma_error_reference_t *) jmem_pools_alloc (sizeof (ecma_error_reference_t));
 
-  JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
   error_ref_p->refs_and_flags = ECMA_ERROR_REF_ONE | (is_exception ? 0 : ECMA_ERROR_REF_ABORT);
   error_ref_p->value = value;
   return ecma_make_error_reference_value (error_ref_p);
@@ -1270,8 +1269,13 @@ ecma_create_error_reference (ecma_value_t value, /**< referenced value */
 ecma_value_t
 ecma_create_error_reference_from_context (void)
 {
-  return ecma_create_error_reference (JERRY_CONTEXT (error_value),
-                                      (JERRY_CONTEXT (status_flags) & ECMA_STATUS_EXCEPTION) != 0);
+  bool is_abort = jcontext_has_pending_abort ();
+
+  if (is_abort)
+  {
+    jcontext_set_abort_flag (false);
+  }
+  return ecma_create_error_reference (jcontext_take_exception (), !is_abort);
 } /* ecma_create_error_reference_from_context */
 
 /**
@@ -1322,40 +1326,35 @@ ecma_deref_error_reference (ecma_error_reference_t *error_ref_p) /**< error refe
 } /* ecma_deref_error_reference */
 
 /**
- * Clears error reference, and returns with the value.
+ * Raise error from the given error reference.
  *
- * @return value referenced by the error
+ * Note: the error reference's ref count is also decreased
  */
-ecma_value_t
-ecma_clear_error_reference (ecma_value_t value, /**< error reference */
-                            bool set_abort_flag) /**< set abort flag */
+void
+ecma_raise_error_from_error_reference (ecma_value_t value) /**< error reference */
 {
+  JERRY_ASSERT (!jcontext_has_pending_exception () && !jcontext_has_pending_abort ());
   ecma_error_reference_t *error_ref_p = ecma_get_error_reference_from_value (value);
 
-  if (set_abort_flag)
-  {
-    if (error_ref_p->refs_and_flags & ECMA_ERROR_REF_ABORT)
-    {
-      JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
-    }
-    else
-    {
-      JERRY_CONTEXT (status_flags) |= ECMA_STATUS_EXCEPTION;
-    }
-  }
-
   JERRY_ASSERT (error_ref_p->refs_and_flags >= ECMA_ERROR_REF_ONE);
+
+  ecma_value_t referenced_value = error_ref_p->value;
+
+  jcontext_set_exception_flag (true);
+  jcontext_set_abort_flag (error_ref_p->refs_and_flags & ECMA_ERROR_REF_ABORT);
 
   if (error_ref_p->refs_and_flags >= 2 * ECMA_ERROR_REF_ONE)
   {
     error_ref_p->refs_and_flags -= ECMA_ERROR_REF_ONE;
-    return ecma_copy_value (error_ref_p->value);
+    referenced_value = ecma_copy_value (referenced_value);
+  }
+  else
+  {
+    jmem_pools_free (error_ref_p, sizeof (ecma_error_reference_t));
   }
 
-  ecma_value_t referenced_value = error_ref_p->value;
-  jmem_pools_free (error_ref_p, sizeof (ecma_error_reference_t));
-  return referenced_value;
-} /* ecma_clear_error_reference */
+  JERRY_CONTEXT (error_value) = referenced_value;
+} /* ecma_raise_error_from_error_reference */
 
 /**
  * Increase reference counter of Compact
@@ -1462,6 +1461,23 @@ ecma_bytecode_deref (ecma_compiled_code_t *bytecode_p) /**< byte code pointer */
     }
 #endif /* ENABLED (JERRY_DEBUGGER) */
 
+#if ENABLED (JERRY_ES2015)
+    if (bytecode_p->status_flags & CBC_CODE_FLAG_HAS_TAGGED_LITERALS)
+    {
+      ecma_length_t formal_params_number = ecma_compiled_code_get_formal_params (bytecode_p);
+
+      uint8_t *byte_p = (uint8_t *) bytecode_p;
+      byte_p += ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG;
+
+      ecma_value_t *tagged_base_p = (ecma_value_t *) byte_p;
+      tagged_base_p -= formal_params_number;
+
+      ecma_collection_t *coll_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_collection_t, tagged_base_p[-1]);
+
+      ecma_collection_destroy (coll_p);
+    }
+#endif /* ENABLED (JERRY_ES2015) */
+
 #if ENABLED (JERRY_MEM_STATS)
     jmem_stats_free_byte_code_bytes (((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG);
 #endif /* ENABLED (JERRY_MEM_STATS) */
@@ -1478,6 +1494,51 @@ ecma_bytecode_deref (ecma_compiled_code_t *bytecode_p) /**< byte code pointer */
   jmem_heap_free_block (bytecode_p,
                         ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG);
 } /* ecma_bytecode_deref */
+
+#if ENABLED (JERRY_ES2015)
+/**
+ * Get the tagged template collection of the compiled code
+ *
+ * @return pointer to the tagged template collection
+ */
+ecma_collection_t *
+ecma_compiled_code_get_tagged_template_collection (const ecma_compiled_code_t *bytecode_header_p) /**< compiled code */
+{
+  JERRY_ASSERT (bytecode_header_p != NULL);
+  JERRY_ASSERT (bytecode_header_p->status_flags & CBC_CODE_FLAG_HAS_TAGGED_LITERALS);
+
+  uint8_t *byte_p = (uint8_t *) bytecode_header_p;
+  byte_p += ((size_t) bytecode_header_p->size) << JMEM_ALIGNMENT_LOG;
+
+  ecma_value_t *tagged_base_p = (ecma_value_t *) byte_p;
+  tagged_base_p -= ecma_compiled_code_get_formal_params (bytecode_header_p);
+
+  return ECMA_GET_INTERNAL_VALUE_POINTER (ecma_collection_t, tagged_base_p[-1]);
+} /* ecma_compiled_code_get_tagged_template_collection */
+#endif /* ENABLED (JERRY_ES2015) */
+
+#if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) || ENABLED (JERRY_ES2015)
+/**
+ * Get the number of formal parameters of the compiled code
+ *
+ * @return number of formal parameters
+ */
+ecma_length_t
+ecma_compiled_code_get_formal_params (const ecma_compiled_code_t *bytecode_header_p) /**< compiled code */
+{
+  if (!(bytecode_header_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED))
+  {
+    return 0;
+  }
+
+  if (bytecode_header_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
+  {
+    return ((cbc_uint16_arguments_t *) bytecode_header_p)->argument_end;
+  }
+
+  return ((cbc_uint8_arguments_t *) bytecode_header_p)->argument_end;
+} /* ecma_compiled_code_get_formal_params */
+#endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) || ENABLED (JERRY_ES2015) */
 
 #if (JERRY_STACK_LIMIT != 0)
 /**

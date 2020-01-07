@@ -160,6 +160,7 @@ typedef enum
 #endif /* ENABLED (JERRY_ES2015) */
 
 /* ecma-helpers-value.c */
+ecma_type_t JERRY_ATTR_CONST ecma_get_value_type_field (ecma_value_t value);
 bool JERRY_ATTR_CONST ecma_is_value_direct (ecma_value_t value);
 bool JERRY_ATTR_CONST ecma_is_value_simple (ecma_value_t value);
 bool JERRY_ATTR_CONST ecma_is_value_empty (ecma_value_t value);
@@ -340,6 +341,7 @@ bool ecma_number_is_nan (ecma_number_t num);
 bool ecma_number_is_negative (ecma_number_t num);
 bool ecma_number_is_zero (ecma_number_t num);
 bool ecma_number_is_infinity (ecma_number_t num);
+bool ecma_number_is_finite (ecma_number_t num);
 ecma_number_t
 ecma_number_make_from_sign_mantissa_and_exponent (bool sign, uint64_t mantissa, int32_t exponent);
 ecma_number_t ecma_number_get_prev (ecma_number_t num);
@@ -421,10 +423,16 @@ ecma_value_t ecma_create_error_reference_from_context (void);
 ecma_value_t ecma_create_error_object_reference (ecma_object_t *object_p);
 void ecma_ref_error_reference (ecma_error_reference_t *error_ref_p);
 void ecma_deref_error_reference (ecma_error_reference_t *error_ref_p);
-ecma_value_t ecma_clear_error_reference (ecma_value_t value, bool set_abort_flag);
+void ecma_raise_error_from_error_reference (ecma_value_t value);
 
 void ecma_bytecode_ref (ecma_compiled_code_t *bytecode_p);
 void ecma_bytecode_deref (ecma_compiled_code_t *bytecode_p);
+#if ENABLED (JERRY_ES2015)
+ecma_collection_t *ecma_compiled_code_get_tagged_template_collection (const ecma_compiled_code_t *bytecode_header_p);
+#endif /* ENABLED (JERRY_ES2015) */
+#if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) || ENABLED (JERRY_ES2015)
+ecma_length_t ecma_compiled_code_get_formal_params (const ecma_compiled_code_t *bytecode_p);
+#endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) || ENABLED (JERRY_ES2015) */
 #if (JERRY_STACK_LIMIT != 0)
 uintptr_t ecma_get_current_stack_usage (void);
 #endif /* (JERRY_STACK_LIMIT != 0) */

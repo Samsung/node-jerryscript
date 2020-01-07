@@ -43,78 +43,6 @@
  */
 
 /**
- * The common function for 'reject' and 'resolve'.
- *
- * @return ecma value
- *         Returned value must be freed with ecma_free_value.
- */
-static ecma_value_t
-ecma_builtin_promise_reject_or_resolve (ecma_value_t this_arg, /**< "this" argument */
-                                        ecma_value_t argument, /**< argument for reject or resolve */
-                                        bool is_resolve) /**< whether it is for resolve routine */
-{
-  if (!ecma_is_value_object (this_arg))
-  {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("'this' is not an object."));
-  }
-
-  uint8_t builtin_id = ecma_get_object_builtin_id (ecma_get_object_from_value (this_arg));
-
-  if (builtin_id != ECMA_BUILTIN_ID_PROMISE)
-  {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("'this' is not the Promise constructor."));
-  }
-
-  if (is_resolve
-      && ecma_is_value_object (argument)
-      && ecma_is_promise (ecma_get_object_from_value (argument)))
-  {
-    return ecma_copy_value (argument);
-  }
-
-
-  ecma_value_t capability = ecma_promise_new_capability ();
-
-  if (ECMA_IS_VALUE_ERROR (capability))
-  {
-    return capability;
-  }
-
-  ecma_string_t *property_str_p;
-
-  if (is_resolve)
-  {
-    property_str_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_RESOLVE);
-  }
-  else
-  {
-    property_str_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_REJECT);
-  }
-
-  ecma_value_t func = ecma_op_object_get (ecma_get_object_from_value (capability), property_str_p);
-
-  ecma_value_t call_ret = ecma_op_function_call (ecma_get_object_from_value (func),
-                                                 ECMA_VALUE_UNDEFINED,
-                                                 &argument,
-                                                 1);
-
-  ecma_free_value (func);
-
-  if (ECMA_IS_VALUE_ERROR (call_ret))
-  {
-    return call_ret;
-  }
-
-  ecma_free_value (call_ret);
-
-  ecma_string_t *promise_str_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_PROMISE);
-  ecma_value_t promise_new = ecma_op_object_get (ecma_get_object_from_value (capability), promise_str_p);
-  ecma_free_value (capability);
-
-  return promise_new;
-} /* ecma_builtin_promise_reject_or_resolve */
-
-/**
  * Reject the promise if the value is error.
  *
  * See also:
@@ -127,8 +55,7 @@ inline static ecma_value_t
 ecma_builtin_promise_reject_abrupt (ecma_value_t capability) /**< reject description */
 {
   ecma_raise_type_error (ECMA_ERR_MSG ("Second argument is not an array."));
-  ecma_value_t reason = JERRY_CONTEXT (error_value);
-  JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
+  ecma_value_t reason = jcontext_take_exception ();
   ecma_string_t *reject_str_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_REJECT);
   ecma_value_t reject = ecma_op_object_get (ecma_get_object_from_value (capability), reject_str_p);
 
@@ -165,7 +92,7 @@ static ecma_value_t
 ecma_builtin_promise_reject (ecma_value_t this_arg, /**< 'this' argument */
                              ecma_value_t reason) /**< the reason for reject */
 {
-  return ecma_builtin_promise_reject_or_resolve (this_arg, reason, false);
+  return ecma_promise_reject_or_resolve (this_arg, reason, false);
 } /* ecma_builtin_promise_reject */
 
 /**
@@ -181,7 +108,7 @@ static ecma_value_t
 ecma_builtin_promise_resolve (ecma_value_t this_arg, /**< 'this' argument */
                               ecma_value_t argument) /**< the argument for resolve */
 {
-  return ecma_builtin_promise_reject_or_resolve (this_arg, argument, true);
+  return ecma_promise_reject_or_resolve (this_arg, argument, true);
 } /* ecma_builtin_promise_resolve */
 
 /**
@@ -575,17 +502,31 @@ ecma_builtin_promise_race_or_all (ecma_value_t this_arg, /**< 'this' argument */
     return ecma_raise_type_error (ECMA_ERR_MSG ("'this' is not an object."));
   }
 
-  uint8_t builtin_id = ecma_get_object_builtin_id (ecma_get_object_from_value (this_arg));
+  ecma_object_t *this_obj_p = ecma_get_object_from_value (this_arg);
+  ecma_value_t species_symbol = ecma_op_object_get_by_magic_id (this_obj_p,
+                                                                LIT_MAGIC_STRING_SYMBOL);
 
-  if (builtin_id != ECMA_BUILTIN_ID_PROMISE)
+  if (ECMA_IS_VALUE_ERROR (species_symbol))
   {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("'this' is not the Promise constructor."));
+    return species_symbol;
   }
 
-  ecma_value_t capability = ecma_promise_new_capability ();
+  ecma_value_t constructor_value = this_arg;
+
+  if (!ecma_is_value_null (species_symbol) && !ecma_is_value_undefined (species_symbol))
+  {
+    constructor_value = species_symbol;
+  }
+  else
+  {
+    ecma_ref_object (this_obj_p);
+  }
+
+  ecma_value_t capability = ecma_promise_new_capability (constructor_value);
 
   if (ECMA_IS_VALUE_ERROR (capability))
   {
+    ecma_free_value (constructor_value);
     return capability;
   }
 
@@ -595,22 +536,25 @@ ecma_builtin_promise_race_or_all (ecma_value_t this_arg, /**< 'this' argument */
       || ecma_get_object_type (ecma_get_object_from_value (array)) != ECMA_OBJECT_TYPE_ARRAY)
   {
     ret = ecma_builtin_promise_reject_abrupt (capability);
+    ecma_free_value (constructor_value);
     ecma_free_value (capability);
     return ret;
   }
 
   if (is_race)
   {
-    ret = ecma_builtin_promise_do_race (array, capability, this_arg);
+    ret = ecma_builtin_promise_do_race (array, capability, constructor_value);
   }
   else
   {
-    ret = ecma_builtin_promise_do_all (array, capability, this_arg);
+    ret = ecma_builtin_promise_do_all (array, capability, constructor_value);
   }
+
+  ecma_free_value (constructor_value);
 
   if (ECMA_IS_VALUE_ERROR (ret))
   {
-    ret = JERRY_CONTEXT (error_value);
+    ret = jcontext_take_exception ();
   }
 
   ecma_free_value (capability);
@@ -686,6 +630,18 @@ ecma_builtin_promise_dispatch_construct (const ecma_value_t *arguments_list_p, /
 
   return ecma_op_create_promise_object (arguments_list_p[0], ECMA_PROMISE_EXECUTOR_FUNCTION);
 } /* ecma_builtin_promise_dispatch_construct */
+
+/**
+ * 25.4.4.6 get Promise [ @@species ] accessor
+ *
+ * @return ecma_value
+ *         returned value must be freed with ecma_free_value
+ */
+ecma_value_t
+ecma_builtin_promise_species_get (ecma_value_t this_value) /**< This Value */
+{
+  return ecma_copy_value (this_value);
+} /* ecma_builtin_promise_species_get */
 
 /**
  * @}
