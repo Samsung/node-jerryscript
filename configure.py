@@ -41,8 +41,7 @@ import getnapibuildversion
 from gyp_node import run_gyp
 
 # imports in deps/v8/tools/node
-sys.path.insert(0, os.path.join('deps', 'v8', 'tools', 'node'))
-from fetch_deps import FetchDeps
+sys.path.insert(0, os.path.join('deps', 'jerry', 'tools', 'node'))
 
 # parse our options
 parser = optparse.OptionParser()
@@ -618,7 +617,7 @@ parser.add_option('--without-v8-platform',
 parser.add_option('--without-bundled-v8',
     action='store_true',
     dest='without_bundled_v8',
-    default=False,
+    default=True,
     help='do not use V8 includes from the bundled deps folder. ' +
          '(This mode is not officially supported for regular applications)')
 
@@ -1046,18 +1045,20 @@ def configure_node(o):
 
   o['variables']['want_separate_host_toolset'] = int(cross_compiling)
 
-  if options.without_node_snapshot or options.node_builtin_modules_path:
-    o['variables']['node_use_node_snapshot'] = 'false'
-  else:
-    o['variables']['node_use_node_snapshot'] = b(
-      not cross_compiling and not options.shared)
+#  if options.without_node_snapshot or options.node_builtin_modules_path:
+#    o['variables']['node_use_node_snapshot'] = 'false'
+#  else:
+#    o['variables']['node_use_node_snapshot'] = b(
+#      not cross_compiling and not options.shared)
+  o['variables']['node_use_node_snapshot'] = 'false'
 
-  if options.without_node_code_cache or options.node_builtin_modules_path:
-    o['variables']['node_use_node_code_cache'] = 'false'
-  else:
+#  if options.without_node_code_cache or options.node_builtin_modules_path:
+#    o['variables']['node_use_node_code_cache'] = 'false'
+#  else:
     # TODO(refack): fix this when implementing embedded code-cache when cross-compiling.
-    o['variables']['node_use_node_code_cache'] = b(
-      not cross_compiling and not options.shared)
+#    o['variables']['node_use_node_code_cache'] = b(
+#      not cross_compiling and not options.shared)
+  o['variables']['node_use_node_code_cache'] = 'false'
 
   if target_arch == 'arm':
     configure_arm(o)

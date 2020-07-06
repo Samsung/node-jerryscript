@@ -227,20 +227,6 @@
       'lib/internal/streams/state.js',
       'lib/internal/streams/pipeline.js',
       'lib/internal/streams/end-of-stream.js',
-      'deps/v8/tools/splaytree.js',
-      'deps/v8/tools/codemap.js',
-      'deps/v8/tools/consarray.js',
-      'deps/v8/tools/csvparser.js',
-      'deps/v8/tools/profile.js',
-      'deps/v8/tools/profile_view.js',
-      'deps/v8/tools/logreader.js',
-      'deps/v8/tools/arguments.js',
-      'deps/v8/tools/tickprocessor.js',
-      'deps/v8/tools/SourceMap.js',
-      'deps/v8/tools/tickprocessor-driver.js',
-      'deps/node-inspect/lib/_inspect.js',
-      'deps/node-inspect/lib/internal/inspect_client.js',
-      'deps/node-inspect/lib/internal/inspect_repl.js',
       'deps/acorn/acorn/dist/acorn.js',
       'deps/acorn/acorn-walk/dist/walk.js',
       'deps/acorn-plugins/acorn-class-fields/index.js',
@@ -349,7 +335,7 @@
 
       'include_dirs': [
         'src',
-        'deps/v8/include'
+        'deps/jerry/include'
       ],
 
       'sources': [
@@ -412,7 +398,7 @@
               'ldflags': [
                 '-Wl,--whole-archive',
                 '<(obj_dir)/<(STATIC_LIB_PREFIX)<(node_core_target_name)<(STATIC_LIB_SUFFIX)',
-                '<(obj_dir)/tools/v8_gypfiles/<(STATIC_LIB_PREFIX)v8_base_without_compiler<(STATIC_LIB_SUFFIX)',
+#                '<(obj_dir)/tools/v8_gypfiles/<(STATIC_LIB_PREFIX)v8_base_without_compiler<(STATIC_LIB_SUFFIX)',
                 '-Wl,--no-whole-archive',
               ],
             }],
@@ -733,7 +719,7 @@
         'src/util.h',
         'src/util-inl.h',
         # Dependency headers
-        'deps/v8/include/v8.h',
+        'deps/jerry/include/v8.h',
         # javascript files to make for an even more pleasant IDE experience
         '<@(library_files)',
         # node.gyp is added by default, common.gypi is added for change detection
@@ -1133,7 +1119,7 @@
       'include_dirs': [
         'src',
         'tools/msvs/genfiles',
-        'deps/v8/include',
+        'deps/jerry/include',
         'deps/cares/include',
         'deps/uv/include',
         'deps/uvwasi/include',
@@ -1229,7 +1215,7 @@
       'include_dirs': [
         'src',
         'tools/msvs/genfiles',
-        'deps/v8/include',
+        'deps/jerry/include',
         'deps/cares/include',
         'deps/uv/include',
         'deps/uvwasi/include',
@@ -1288,7 +1274,7 @@
       'include_dirs': [
         'src',
         'tools/msvs/genfiles',
-        'deps/v8/include',
+        'deps/jerry/include',
         'deps/cares/include',
         'deps/uv/include',
         'deps/uvwasi/include',
@@ -1343,7 +1329,7 @@
       'include_dirs': [
         'src',
         'tools/msvs/genfiles',
-        'deps/v8/include',
+        'deps/jerry/include',
         'deps/cares/include',
         'deps/uv/include',
         'deps/uvwasi/include',
@@ -1396,7 +1382,7 @@
           'dependencies': ['<(node_lib_target_name)'],
           'include_dirs': [
             'src',
-            'deps/v8/include',
+            'deps/jerry/include',
           ],
           'sources': [
             '<@(library_files)',

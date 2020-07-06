@@ -20,9 +20,11 @@ class TracingSession;
 
 namespace v8 {
 
+#if 0
 namespace base {
 class Mutex;
 }  // namespace base
+#endif
 
 namespace platform {
 namespace tracing {
@@ -294,7 +296,7 @@ class V8_PLATFORM_EXPORT TracingController
 
   std::unique_ptr<TraceBuffer> trace_buffer_;
   std::unique_ptr<TraceConfig> trace_config_;
-  std::unique_ptr<base::Mutex> mutex_;
+  //std::unique_ptr<base::Mutex> mutex_;
   std::unordered_set<v8::TracingController::TraceStateObserver*> observers_;
   std::atomic_bool recording_{false};
 #ifdef V8_USE_PERFETTO

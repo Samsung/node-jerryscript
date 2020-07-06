@@ -142,8 +142,7 @@ test-code-cache: with-code-cache
 
 out/Makefile: config.gypi common.gypi node.gyp \
 	deps/uv/uv.gyp deps/llhttp/llhttp.gyp deps/zlib/zlib.gyp \
-	tools/v8_gypfiles/toolchain.gypi tools/v8_gypfiles/features.gypi \
-	tools/v8_gypfiles/inspector.gypi tools/v8_gypfiles/v8.gyp
+	deps/jerry/jerryscript.gyp
 	$(PYTHON) tools/gyp_node.py -f make
 
 # node_version.h is listed because the N-API version is taken from there
@@ -377,7 +376,7 @@ ADDONS_BINDING_SOURCES := \
 
 ADDONS_PREREQS := config.gypi \
 	deps/npm/node_modules/node-gyp/package.json tools/build-addons.js \
-	deps/uv/include/*.h deps/v8/include/*.h \
+	deps/uv/include/*.h deps/jerry/include/*.h \
 	src/node.h src/node_buffer.h src/node_object_wrap.h src/node_version.h
 
 define run_build_addons

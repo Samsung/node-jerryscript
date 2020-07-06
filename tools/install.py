@@ -163,8 +163,8 @@ def files(action):
 def headers(action):
   def ignore_inspector_headers(files_arg, dest):
     inspector_headers = [
-      'deps/v8/include/v8-inspector.h',
-      'deps/v8/include/v8-inspector-protocol.h'
+      'deps/jerry/include/v8-inspector.h',
+      'deps/jerry/include/v8-inspector-protocol.h'
     ]
     files_arg = [name for name in files_arg if name not in inspector_headers]
     action(files_arg, dest)
@@ -186,7 +186,7 @@ def headers(action):
   if sys.platform.startswith('aix'):
     action(['out/Release/node.exp'], 'include/node/')
 
-  subdir_files('deps/v8/include', 'include/node/', ignore_inspector_headers)
+  subdir_files('deps/jerry/include', 'include/node/', ignore_inspector_headers)
 
   if 'false' == variables.get('node_shared_libuv'):
     subdir_files('deps/uv/include', 'include/node/', action)
