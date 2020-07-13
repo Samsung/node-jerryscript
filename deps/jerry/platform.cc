@@ -63,24 +63,24 @@ TraceWriter* TraceWriter::CreateJSONTraceWriter(std::ostream& stream,
 // tracing-controller.cc
 
 TracingController::TracingController() {
-  UNIMPLEMENTED(64);
+  // UNIMPLEMENTED(64);
 }
 
 TracingController::~TracingController() {
-  UNIMPLEMENTED(66);
+  // UNIMPLEMENTED(66);
 }
 
 void TracingController::Initialize(TraceBuffer* trace_buffer) {
-  UNIMPLEMENTED(81);
+  // UNIMPLEMENTED(81);
 }
 
 int64_t TracingController::CurrentTimestampMicroseconds() {
-  UNIMPLEMENTED(100);
+  // UNIMPLEMENTED(100);
   return 0;
 }
 
 int64_t TracingController::CurrentCpuTimestampMicroseconds() {
-  UNIMPLEMENTED(104);
+  // UNIMPLEMENTED(104);
   return 0;
 }
 
@@ -91,7 +91,7 @@ uint64_t TracingController::AddTraceEvent(
     const uint64_t* arg_values,
     std::unique_ptr<v8::ConvertableToTraceFormat>* arg_convertables,
     unsigned int flags) {
-  UNIMPLEMENTED(162);
+  // UNIMPLEMENTED(162);
   return 0;
 }
 
@@ -102,21 +102,21 @@ uint64_t TracingController::AddTraceEventWithTimestamp(
     const uint64_t* arg_values,
     std::unique_ptr<v8::ConvertableToTraceFormat>* arg_convertables,
     unsigned int flags, int64_t timestamp) {
-  UNIMPLEMENTED(176);
+  // UNIMPLEMENTED(176);
   return 0;
 }
 
 void TracingController::UpdateTraceEventDuration(
     const uint8_t* category_enabled_flag, const char* name, uint64_t handle) {
-  UNIMPLEMENTED(238);
+  // UNIMPLEMENTED(238);
 }
 
 void TracingController::StartTracing(TraceConfig* trace_config) {
-  UNIMPLEMENTED(279);
+  // UNIMPLEMENTED(279);
 }
 
 void TracingController::StopTracing() {
-  UNIMPLEMENTED(316);
+  // UNIMPLEMENTED(316);
 }
 
 const uint8_t* TracingController::GetCategoryGroupEnabled(
@@ -127,12 +127,12 @@ const uint8_t* TracingController::GetCategoryGroupEnabled(
 
 void TracingController::AddTraceStateObserver(
     v8::TracingController::TraceStateObserver* observer) {
-  UNIMPLEMENTED(437);
+  // UNIMPLEMENTED(437);
 }
 
 void TracingController::RemoveTraceStateObserver(
     v8::TracingController::TraceStateObserver* observer) {
-  UNIMPLEMENTED(448);
+  // UNIMPLEMENTED(448);
 }
 
 }
@@ -152,11 +152,11 @@ std::unique_ptr<v8::Platform> NewDefaultPlatform(
 // v8threads.cc
 
 void Locker::Initialize(v8::Isolate* isolate) {
-  UNIMPLEMENTED(27);
+  // UNIMPLEMENTED(27);
 }
 
 Locker::~Locker() {
-  UNIMPLEMENTED(58);
+  // UNIMPLEMENTED(58);
 }
 
 // v8.cc

@@ -228,15 +228,6 @@ Local<Float64Array> Float64Array::New(Local<ArrayBuffer> array_buffer,
   return Local<Float64Array>();
 }
 
-void Isolate::SetFatalErrorHandler(FatalErrorCallback that) {
-  UNIMPLEMENTED(-1);
-}
-
-void Isolate::SetAllowWasmCodeGenerationCallback(
-      AllowWasmCodeGenerationCallback callback) {
-  UNIMPLEMENTED(-1);
-}
-
 Local<v8::Symbol> Symbol::GetIterator(Isolate* isolate) {
   UNIMPLEMENTED(-1);
   return Local<v8::Symbol>();

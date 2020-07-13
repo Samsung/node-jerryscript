@@ -333,6 +333,35 @@ class Local {
   template <class F>
   friend class TracedReference;
 
+  // [[V8_API_CHANGE]]
+  friend class Script;
+  friend class String;
+  friend class Symbol;
+  friend class Array;
+  friend class ArrayBuffer;
+  friend class ArrayBufferView;
+  friend class Uint8Array;
+  friend class Uint32Array;
+  friend class BigUint64Array;
+  friend class Float64Array;
+  friend class Map;
+  friend class Integer;
+  friend class Number;
+  friend class Value;
+  friend class FunctionTemplate;
+  friend class ObjectTemplate;
+  friend class Function;
+  friend class External;
+  friend class Exception;
+  friend class Signature;
+  friend class TryCatch;
+  friend class Context;
+  friend class Isolate;
+  friend class Promise;
+  friend class UnboundScript;
+  friend class ScriptCompiler;
+  friend class EscapableHandleScope;
+  friend class PrimitiveArray;
   explicit V8_INLINE Local(T* that) : val_(that) {}
   V8_INLINE static Local<T> New(Isolate* isolate, T* that);
   T* val_;
@@ -3064,7 +3093,6 @@ class V8_EXPORT String : public Name {
     ExternalStringResourceBase(const ExternalStringResourceBase&) = delete;
     void operator=(const ExternalStringResourceBase&) = delete;
 
-   protected:
     ExternalStringResourceBase() = default;
 
     /**
@@ -3074,6 +3102,7 @@ class V8_EXPORT String : public Name {
      * control how allocated external string resources are disposed.
      */
     virtual void Dispose() { delete this; }
+   protected:
 
     /**
      * For a non-cacheable string, the value returned by
@@ -10636,9 +10665,13 @@ template <class T>
 Local<T> Local<T>::New(Isolate* isolate, T* that) {
   if (that == nullptr) return Local<T>();
   T* that_ptr = that;
-  internal::Address* p = reinterpret_cast<internal::Address*>(that_ptr);
+  // [[V8_API_CHANGE]]
+  // internal::Address* p = reinterpret_cast<internal::Address*>(that_ptr);
+  // return Local<T>(reinterpret_cast<T*>(HandleScope::CreateHandle(
+  //     reinterpret_cast<internal::Isolate*>(isolate), *p)));
+  internal::Address p = reinterpret_cast<internal::Address>(that_ptr);
   return Local<T>(reinterpret_cast<T*>(HandleScope::CreateHandle(
-      reinterpret_cast<internal::Isolate*>(isolate), *p)));
+      reinterpret_cast<internal::Isolate*>(isolate), p)));
 }
 
 
@@ -11797,7 +11830,9 @@ Local<Primitive> Undefined(Isolate* isolate) {
   typedef internal::Internals I;
   I::CheckInitialized(isolate);
   S* slot = I::GetRoot(isolate, I::kUndefinedValueRootIndex);
-  return Local<Primitive>(reinterpret_cast<Primitive*>(slot));
+  // [[V8_API_CHANGE]]
+  // return Local<Primitive>(reinterpret_cast<Primitive*>(slot));
+  return Local<Primitive>(reinterpret_cast<Primitive*>(*slot));
 }
 
 
@@ -11806,7 +11841,9 @@ Local<Primitive> Null(Isolate* isolate) {
   typedef internal::Internals I;
   I::CheckInitialized(isolate);
   S* slot = I::GetRoot(isolate, I::kNullValueRootIndex);
-  return Local<Primitive>(reinterpret_cast<Primitive*>(slot));
+  // [[V8_API_CHANGE]]
+  // return Local<Primitive>(reinterpret_cast<Primitive*>(slot));
+  return Local<Primitive>(reinterpret_cast<Primitive*>(*slot));
 }
 
 

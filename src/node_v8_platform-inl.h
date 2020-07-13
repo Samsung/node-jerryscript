@@ -86,20 +86,20 @@ struct V8Platform {
   inline void Initialize(int thread_pool_size) {
     CHECK(!initialized_);
     initialized_ = true;
-    tracing_agent_ = std::make_unique<tracing::Agent>();
-    node::tracing::TraceEventHelper::SetAgent(tracing_agent_.get());
-    node::tracing::TracingController* controller =
-        tracing_agent_->GetTracingController();
-    trace_state_observer_ =
-        std::make_unique<NodeTraceStateObserver>(controller);
-    controller->AddTraceStateObserver(trace_state_observer_.get());
-    tracing_file_writer_ = tracing_agent_->DefaultHandle();
-    // Only start the tracing agent if we enabled any tracing categories.
-    if (!per_process::cli_options->trace_event_categories.empty()) {
-      StartTracingAgent();
-    }
+    // tracing_agent_ = std::make_unique<tracing::Agent>();
+    // node::tracing::TraceEventHelper::SetAgent(tracing_agent_.get());
+    // node::tracing::TracingController* controller =
+    //     tracing_agent_->GetTracingController();
+    // trace_state_observer_ =
+    //     std::make_unique<NodeTraceStateObserver>(controller);
+    // controller->AddTraceStateObserver(trace_state_observer_.get());
+    // tracing_file_writer_ = tracing_agent_->DefaultHandle();
+    // // Only start the tracing agent if we enabled any tracing categories.
+    // if (!per_process::cli_options->trace_event_categories.empty()) {
+    //   StartTracingAgent();
+    // }
     // Tracing must be initialized before platform threads are created.
-    platform_ = new NodePlatform(thread_pool_size, controller);
+    platform_ = new NodePlatform(thread_pool_size, nullptr);
     v8::V8::InitializePlatform(platform_);
   }
 
@@ -114,7 +114,7 @@ struct V8Platform {
     platform_ = nullptr;
     // Destroy tracing after the platform (and platform threads) have been
     // stopped.
-    tracing_agent_.reset(nullptr);
+    // tracing_agent_.reset(nullptr);
     trace_state_observer_.reset(nullptr);
   }
 
@@ -125,18 +125,18 @@ struct V8Platform {
   inline void StartTracingAgent() {
     // Attach a new NodeTraceWriter only if this function hasn't been called
     // before.
-    if (tracing_file_writer_.IsDefaultHandle()) {
-      std::vector<std::string> categories =
-          SplitString(per_process::cli_options->trace_event_categories, ',');
+    // if (tracing_file_writer_.IsDefaultHandle()) {
+    //   std::vector<std::string> categories =
+    //       SplitString(per_process::cli_options->trace_event_categories, ',');
 
-      tracing_file_writer_ = tracing_agent_->AddClient(
-          std::set<std::string>(std::make_move_iterator(categories.begin()),
-                                std::make_move_iterator(categories.end())),
-          std::unique_ptr<tracing::AsyncTraceWriter>(
-              new tracing::NodeTraceWriter(
-                  per_process::cli_options->trace_event_file_pattern)),
-          tracing::Agent::kUseDefaultCategories);
-    }
+    //   tracing_file_writer_ = tracing_agent_->AddClient(
+    //       std::set<std::string>(std::make_move_iterator(categories.begin()),
+    //                             std::make_move_iterator(categories.end())),
+    //       std::unique_ptr<tracing::AsyncTraceWriter>(
+    //           new tracing::NodeTraceWriter(
+    //               per_process::cli_options->trace_event_file_pattern)),
+    //       tracing::Agent::kUseDefaultCategories);
+    // }
   }
 
   inline void StopTracingAgent() { tracing_file_writer_.reset(); }
@@ -148,7 +148,7 @@ struct V8Platform {
   inline NodePlatform* Platform() { return platform_; }
 
   std::unique_ptr<NodeTraceStateObserver> trace_state_observer_;
-  std::unique_ptr<tracing::Agent> tracing_agent_;
+  // std::unique_ptr<tracing::Agent> tracing_agent_;
   tracing::AgentWriterHandle tracing_file_writer_;
   NodePlatform* platform_;
 #else   // !NODE_USE_V8_PLATFORM
