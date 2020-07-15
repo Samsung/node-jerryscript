@@ -78,7 +78,9 @@
             'JERRY_SYSTEM_ALLOCATOR=1'
           ]
         }],
-
+        ['OS=="linux"', {
+          'defines': ['PATH_MAX=4096'],
+        }],
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
         }, {
