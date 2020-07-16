@@ -415,6 +415,9 @@
         ['node_shared=="true" and OS=="aix"', {
           'product_name': 'node_base',
         }],
+        ['node_use_bindings=="true"', {
+          'dependencies': [ './deps/bindings/bindings.gyp:glib' ],
+        }],
         [ 'v8_enable_inspector==1', {
           'defines': [
             'HAVE_INSPECTOR=1',
