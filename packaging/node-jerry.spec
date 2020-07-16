@@ -22,7 +22,12 @@ Node-JerryScript
 
 %if "%{build_mode}" == "debug"
 %define extra_option "--debug"
+%define build_mode_pascal "Debug"
+%else
+%define build_mode_pascal "Release"
 %endif
+
+%define output_path "./out/%{build_mode_pascal}"
 
 gcc --version
 
@@ -38,6 +43,7 @@ rm -rf out
   --without-bundled-v8
 
 make -j4
+strip -v %{output_path}/node
 
 %install
 rm -rf %{buildroot}
