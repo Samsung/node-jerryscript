@@ -554,6 +554,12 @@ parser.add_option('--tizen',
     default=False,
     help='support Tizen platform')
 
+parser.add_option('--without-bindings',
+    action='store_true',
+    dest='without_bindings',
+    default=False,
+    help='disable node bindings')
+
 # Create compile_commands.json in out/Debug and out/Release.
 parser.add_option('-C',
     action='store_true',
@@ -857,6 +863,8 @@ def configure_mips(o):
 def configure_node(o):
   if options.tizen == True:
     o['variables']['host_platform'] = 'tizen'
+  o['variables']['node_use_bindings'] = b(not options.without_bindings)
+
   if options.dest_os == 'android':
     o['variables']['OS'] = 'android'
   o['variables']['node_prefix'] = options.prefix

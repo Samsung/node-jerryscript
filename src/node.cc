@@ -4198,8 +4198,32 @@ inline int Start(Isolate* isolate, IsolateData* isolate_data,
 
   {
     SealHandleScope seal(isolate);
-    bool more;
     PERFORMANCE_MARK(&env, LOOP_START);
+#if defined(USE_NODE_BINDINGS)
+  nodejerry::NodeBindings::Platform platform  = {
+    .DrainVMTasks = [](Isolate* isolate) {
+      v8_platform.DrainVMTasks(isolate);
+    }
+  };
+
+  nodejerry::NodeBindings::Environment environment = {
+    .isolate = std::bind(&Environment::isolate, &env),
+    .event_loop = std::bind(&Environment::event_loop, &env),
+  };
+
+  nodejerry::NodeBindings::Node node = {
+    .EmitBeforeExit = std::bind(EmitBeforeExit, &env),
+  };
+
+  nodejerry::NodeBindings node_bindings;
+  node_bindings.Initialize(std::move(environment), 
+                           std::move(platform), 
+                           std::move(node));
+
+  node_bindings.StartEventLoop();
+
+#else
+    bool more;
     do {
       uv_run(env.event_loop(), UV_RUN_DEFAULT);
 
@@ -4215,6 +4239,7 @@ inline int Start(Isolate* isolate, IsolateData* isolate_data,
       // event, or after running some callbacks.
       more = uv_loop_alive(env.event_loop());
     } while (more == true);
+#endif
     PERFORMANCE_MARK(&env, LOOP_EXIT);
   }
 
