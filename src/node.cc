@@ -29,6 +29,10 @@
 #include "node_debug_options.h"
 #include "node_perf.h"
 
+#if defined(ENABLE_NODE_BINDINGS)
+#include "node_bindings.h"
+#endif
+
 #if defined HAVE_PERFCTR
 #include "node_counters.h"
 #endif
@@ -4199,7 +4203,7 @@ inline int Start(Isolate* isolate, IsolateData* isolate_data,
   {
     SealHandleScope seal(isolate);
     PERFORMANCE_MARK(&env, LOOP_START);
-#if defined(USE_NODE_BINDINGS)
+#if defined(ENABLE_NODE_BINDINGS)
   nodejerry::NodeBindings::Platform platform  = {
     .DrainVMTasks = [](Isolate* isolate) {
       v8_platform.DrainVMTasks(isolate);
