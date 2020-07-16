@@ -187,6 +187,17 @@
         'deps/v8/include',
       ],
       'conditions': [
+        ['host_platform=="tizen"', {
+          'variables': {
+            'pkg-config': 'pkg-config'
+          },
+          'cflags': [
+            '<!@(<(pkg-config) --cflags glib-2.0 dlog aul bundle capi-appfw-app-common)',
+          ],
+          'libraries': [
+            '<!@(<(pkg-config) --libs glib-2.0 dlog aul bundle capi-appfw-app-common)',
+          ],
+        }],
         [ 'node_intermediate_lib_type=="static_library" and '
             'node_shared=="true" and OS=="aix"', {
           # For AIX, shared lib is linked by static lib and .exp. In the
