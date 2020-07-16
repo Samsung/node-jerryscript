@@ -43,3 +43,7 @@ endif()
 
 add_library(v8headers INTERFACE)
 target_include_directories(v8headers INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/v8-headers)
+
+if(DEFINED USE_TIZEN AND USE_TIZEN EQUAL 1)
+    add_subdirectory(tizen-device-api)
+endif()

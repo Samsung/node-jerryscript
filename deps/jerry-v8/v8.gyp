@@ -57,6 +57,11 @@
         }, {
           'toolsets': ['target'],
         }],
+        ['OS=="linux" and host_arch=="arm"', { # tizen
+          'dependencies': [
+            'deps/tizen-device-api/tizen_device_api.gyp:device_api',
+          ],
+        }],
       ]
     },
   ],
