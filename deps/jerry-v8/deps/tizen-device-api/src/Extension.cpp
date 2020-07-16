@@ -238,10 +238,10 @@ ESPostMessageListener::IdlerRegister_t
     ESPostMessageListener::AddIdlerToMainThread = nullptr;
 
 void ESPostMessageListener::PostMessageToJS(const std::string& msg) {
-  DEVICEAPI_LOG_INFO(
-      "ESPostMessageListener::PostMessageToJS (msg %s listener %p context "
-      "%p)",
-      msg.c_str(), listener_, context_);
+  // DEVICEAPI_LOG_INFO(
+  //     "ESPostMessageListener::PostMessageToJS (msg %s listener %p context "
+  //     "%p)",
+  //     msg.c_str(), listener_, context_);
 
   ExtensionManagerInstance* extensionManagerInstance =
       ExtensionManagerInstance::get(context_);

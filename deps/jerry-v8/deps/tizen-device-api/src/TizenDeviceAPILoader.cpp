@@ -169,12 +169,12 @@ ExtensionManagerInstance* ExtensionManagerInstance::get(
 }
 
 ExtensionManagerInstance* initialize(v8::Local<v8::Context> context) {
-  DEVICEAPI_LOG_INFO("ExtensionManagerInstance Enter with context %p", context);
+  // DEVICEAPI_LOG_INFO("ExtensionManagerInstance Enter with context %p", context);
   return new ExtensionManagerInstance(context);
 }
 
 void close(v8::Local<v8::Context> context) {
-  DEVICEAPI_LOG_INFO("ExtensionManagerInstance Enter with context %p", context);
+  // DEVICEAPI_LOG_INFO("ExtensionManagerInstance Enter with context %p", context);
   delete ExtensionManagerInstance::get(context);
 }
 }  // namespace DeviceAPI
