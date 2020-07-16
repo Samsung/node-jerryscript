@@ -1,0 +1,40 @@
+diff --git a/deps/uv/include/uv.h b/deps/uv/include/uv.h
+index 717c2e570b..18a0569f28 100644
+--- a/deps/uv/include/uv.h
++++ b/deps/uv/include/uv.h
+@@ -1554,6 +1554,9 @@ UV_EXTERN uv_thread_t uv_thread_self(void);
+ UV_EXTERN int uv_thread_join(uv_thread_t *tid);
+ UV_EXTERN int uv_thread_equal(const uv_thread_t* t1, const uv_thread_t* t2);
+ 
++/* @nodejerry */
++UV_EXTERN int uv_watcher_queue_empty(uv_loop_t* loop);
++
+ /* The presence of these unions force similar struct layout. */
+ #define XX(_, name) uv_ ## name ## _t name;
+ union uv_any_handle {
+diff --git a/deps/uv/src/unix/core.c b/deps/uv/src/unix/core.c
+index f92446ff42..c4a7560f54 100644
+--- a/deps/uv/src/unix/core.c
++++ b/deps/uv/src/unix/core.c
+@@ -1378,3 +1378,8 @@ int uv_os_setpriority(uv_pid_t pid, int priority) {
+ 
+   return 0;
+ }
++
++/* nodejerry */
++int uv_watcher_queue_empty(uv_loop_t* loop) {
++  return QUEUE_EMPTY(&loop->watcher_queue);
++}
+diff --git a/deps/uv/src/win/core.c b/deps/uv/src/win/core.c
+index bf80d77e27..056d075930 100644
+--- a/deps/uv/src/win/core.c
++++ b/deps/uv/src/win/core.c
+@@ -623,3 +623,8 @@ int uv__socket_sockopt(uv_handle_t* handle, int optname, int* value) {
+ 
+   return 0;
+ }
++
++/* nodejerry */
++int uv_watcher_queue_empty(uv_loop_t* loop) {
++  return QUEUE_EMPTY(&loop->watcher_queue);
++}

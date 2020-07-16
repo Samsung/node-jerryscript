@@ -623,3 +623,8 @@ int uv__socket_sockopt(uv_handle_t* handle, int optname, int* value) {
 
   return 0;
 }
+
+/* nodejerry */
+int uv_watcher_queue_empty(uv_loop_t* loop) {
+  return QUEUE_EMPTY(&loop->watcher_queue);
+}
