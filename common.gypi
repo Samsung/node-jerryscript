@@ -1,5 +1,6 @@
 {
   'variables': {
+    'host_platform%': 'none',
     'node_use_jerry%': 'false',
 
     'asan%': 0,
@@ -79,6 +80,17 @@
       }],
     ],
   },
+
+  'conditions': [
+    ['host_platform=="tizen"', {
+      'target_defaults': {
+        'defines': [
+          'HOST_TIZEN',
+        ],
+        'ldflags': [ '-mthumb' ],
+      },
+    }],
+  ],
 
   'target_defaults': {
     'default_configuration': 'Release',

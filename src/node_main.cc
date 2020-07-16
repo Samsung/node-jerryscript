@@ -72,6 +72,8 @@ int wmain(int argc, wchar_t *wargv[]) {
   return node::Start(argc, argv);
 }
 #else
+#if !defined(HOST_TIZEN)
+
 // UNIX
 #ifdef __linux__
 #include <elf.h>
@@ -123,4 +125,67 @@ int main(int argc, char *argv[]) {
   setvbuf(stderr, nullptr, _IONBF, 0);
   return node::Start(argc, argv);
 }
+#else
+
+// TIZEN
+#include <aul.h>
+#include <bundle.h>
+#include <bundle_internal.h>
+#include <app_common.h>
+#include <uv.h>
+
+
+#define ENTRY_JS_FILENAME "index.js"
+
+static int aul_handler(aul_type type, bundle* kb, void* data) {
+  switch (type) {
+    case AUL_START: {
+      break;
+    }
+    case AUL_RESUME:
+      break;
+
+    case AUL_TERMINATE:
+      break;
+
+    default:
+      break;
+  }
+  return 0;
+}
+
+static bool check_aul_argv(int argc, char* argv[]) {
+  bool result = false;
+
+  bundle* parsed = bundle_import_from_argv(argc, argv);
+  if (parsed) {
+    if (bundle_get_val(parsed, AUL_K_STARTTIME)) {
+      result = true;
+    }
+    bundle_free(parsed);
+  }
+  return result;
+}
+
+int main(int argc, char* argv[]) {
+  setvbuf(stdout, nullptr, _IONBF, 0);
+  setvbuf(stderr, nullptr, _IONBF, 0);
+
+  if (check_aul_argv(argc, argv)) {
+    aul_launch_init(aul_handler, NULL);
+    aul_launch_argv_handler(argc, argv);
+
+    if (uv_chdir(app_get_resource_path()) != 0) {
+      return -errno;
+    }
+
+    char* args[] = {"", ENTRY_JS_FILENAME, NULL};
+    return node::Start(2, args);
+  }
+
+  // started from command line
+  return node::Start(argc, argv);
+}
+#endif
+
 #endif
