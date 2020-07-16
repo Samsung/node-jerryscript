@@ -187,15 +187,15 @@
         'deps/v8/include',
       ],
       'conditions': [
+        ['node_use_bindings=="true"', {
+          'dependencies': [ './deps/bindings/bindings.gyp:glib' ],
+        }],
         ['host_platform=="tizen"', {
-          'variables': {
-            'pkg-config': 'pkg-config'
-          },
           'cflags': [
-            '<!@(<(pkg-config) --cflags glib-2.0 dlog aul bundle capi-appfw-app-common)',
+            '<!@(pkg-config --cflags dlog aul bundle capi-appfw-app-common)',
           ],
           'libraries': [
-            '<!@(<(pkg-config) --libs glib-2.0 dlog aul bundle capi-appfw-app-common)',
+            '<!@(pkg-config --libs dlog aul bundle capi-appfw-app-common)',
           ],
         }],
         [ 'node_intermediate_lib_type=="static_library" and '
