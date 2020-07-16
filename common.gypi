@@ -42,19 +42,27 @@
     'icu_use_data_file_flag%': 0,
 
     'conditions': [
-      ['GENERATOR=="ninja"', {
-        'obj_dir': '<(PRODUCT_DIR)/obj',
-        'v8_base': '<(PRODUCT_DIR)/obj/deps/v8/src/libv8_base.a',
-       }, {
-         'obj_dir%': '<(PRODUCT_DIR)/obj.target',
-         'v8_base%': '<(PRODUCT_DIR)/obj.target/deps/v8/src/libv8_base.a',
-      }],
-
       ['node_use_jerry=="true"', {
-        'obj_dir%': '<(PRODUCT_DIR)/obj.target',
-        'v8_base': '<(PRODUCT_DIR)/obj.target/deps/jerry-v8/deps/libjerry.a',
+        'conditions': [
+          ['GENERATOR=="ninja"', {
+            'obj_dir%': '<(PRODUCT_DIR)/obj',
+            'v8_base': '<(PRODUCT_DIR)/obj/deps/jerry-v8/deps/libjerry.a',
+          }, {
+            'obj_dir%': '<(PRODUCT_DIR)/obj.target',
+            'v8_base': '<(PRODUCT_DIR)/obj.target/deps/jerry-v8/deps/libjerry.a',
+          }],
+        ],
+      }, {
+        'conditions': [
+          ['GENERATOR=="ninja"', {
+            'obj_dir': '<(PRODUCT_DIR)/obj',
+            'v8_base': '<(PRODUCT_DIR)/obj/deps/v8/src/libv8_base.a',
+          }, {
+            'obj_dir%': '<(PRODUCT_DIR)/obj.target',
+            'v8_base%': '<(PRODUCT_DIR)/obj.target/deps/v8/src/libv8_base.a',
+          }],
+        ],
       }],
-
       ['OS == "win"', {
         'os_posix': 0,
         'v8_postmortem_support%': 'false',

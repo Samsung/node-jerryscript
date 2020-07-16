@@ -40,9 +40,10 @@ rm -rf out
   --without-inspector --without-intl --without-snapshot \
   --dest-cpu arm \
   --with-arm-float-abi=hard --with-arm-fpu=neon \
-  --without-bundled-v8
+  --without-bundled-v8 \
+  --ninja
 
-make -j4
+ninja -C %{output_path}
 strip -v %{output_path}/node
 
 %install
