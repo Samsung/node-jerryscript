@@ -1,17 +1,26 @@
 {
-   'variables': {
-   },
-
+  'variables': {
+    'deps_path%': '..'
+  },
   'targets': [
     {
       'target_name': 'device_api',
       'type': 'static_library',
-      'dependencies': [ ],
       'include_dirs': [
-          'src',
-          '../v8-headers',
+        'src',
+        '<(deps_path)/v8-headers',
+      ],
+      'cflags': [
+        '-Werror',
+        '<!@(pkg-config --cflags dlog)',
       ],
       'direct_dependent_settings': {
+        'cflags': [
+          '<!@(pkg-config --cflags dlog)',
+        ],
+        'libraries': [
+          '<!@(pkg-config --libs dlog)',
+        ],
       },
       'defines': [
       ],
@@ -21,10 +30,6 @@
         'src/ExtensionManager.cpp',
         'src/TizenDeviceAPILoader.cpp',
       ],
-      'cflags': [
-      ],
-      'conditions': [
-      ]
     },
   ],
 }
