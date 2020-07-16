@@ -1378,3 +1378,8 @@ int uv_os_setpriority(uv_pid_t pid, int priority) {
 
   return 0;
 }
+
+/* nodejerry */
+int uv_watcher_queue_empty(uv_loop_t* loop) {
+  return QUEUE_EMPTY(&loop->watcher_queue);
+}
