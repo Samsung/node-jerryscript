@@ -1306,6 +1306,12 @@ Maybe<bool> Object::Delete(Local<Context> context, Local<Value> key) {
     return Just(jerry_delete_property (jobj->value(), jkey->value()));
 }
 
+Maybe<bool> Object::Delete(Local<Context> context, uint32_t index) {
+    V8_CALL_TRACE();
+    JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
+    return Just(jerry_delete_property_by_index(jobj->value(), index));
+}
+
 Maybe<bool> Object::Has(Local<Context> context, Local<Value> key) {
     V8_CALL_TRACE();
     JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
@@ -1315,6 +1321,19 @@ Maybe<bool> Object::Has(Local<Context> context, Local<Value> key) {
     bool has_prop = jerry_get_boolean_value (has_prop_js);
     jerry_release_value (has_prop_js);
 
+    return Just(has_prop);
+}
+
+Maybe<bool> Object::Has(Local<Context> context, uint32_t index) {
+    JerryValue* jobj = reinterpret_cast<JerryValue*> (this);    
+    jerry_value_t key_js = jerry_create_number((int32_t)index);
+
+    jerry_value_t has_prop_js = jerry_has_property (jobj->value(), key_js);
+    bool has_prop = jerry_get_boolean_value (has_prop_js);
+    jerry_release_value (has_prop_js);
+    jerry_release_value (key_js);
+
+    // NOTE: Is `return Has(context, Local<Value>::New(context->GetIsolate(), JerryValue*))` better?
     return Just(has_prop);
 }
 
@@ -1359,6 +1378,17 @@ Local<Array> Object::GetOwnPropertyNames() {
 
     JerryIsolate* iso = JerryIsolate::GetCurrent();
     jerry_value_t props = iso->HelperGetOwnPropNames().Call(jobject->value(), NULL, 0);
+
+    RETURN_HANDLE(Array, JerryIsolate::toV8(iso), new JerryValue(props));
+}
+
+MaybeLocal<Array> Object::GetPropertyNames(Local<Context> context)
+{
+    V8_CALL_TRACE();
+    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+
+    JerryIsolate* iso = JerryIsolate::fromV8(context->GetIsolate());
+    jerry_value_t props = iso->HelperGetNames().Call(jobject->value(), NULL, 1);
 
     RETURN_HANDLE(Array, JerryIsolate::toV8(iso), new JerryValue(props));
 }
