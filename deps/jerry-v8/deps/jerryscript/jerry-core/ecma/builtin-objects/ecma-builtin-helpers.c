@@ -18,6 +18,7 @@
 #include "ecma-alloc.h"
 #include "ecma-array-object.h"
 #include "ecma-builtins.h"
+#include "ecma-builtin-object.h"
 #include "ecma-conversion.h"
 #include "ecma-function-object.h"
 #include "ecma-exceptions.h"
@@ -36,7 +37,7 @@
  * @{
  */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 /**
  * Helper function for Object.prototype.toString routine when
  * the @@toStringTag property is present
@@ -97,7 +98,7 @@ ecma_builtin_helper_object_to_string_tag_helper (ecma_value_t tag_value) /**< st
 
   return ecma_make_string_value (ret_string_p);
 } /* ecma_builtin_helper_object_to_string_tag_helper */
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Common implementation of the Object.prototype.toString routine
@@ -116,15 +117,15 @@ ecma_builtin_helper_object_to_string_tag_helper (ecma_value_t tag_value) /**< st
 ecma_value_t
 ecma_builtin_helper_object_to_string (const ecma_value_t this_arg) /**< this argument */
 {
-  lit_magic_string_id_t type_string;
+  lit_magic_string_id_t builtin_tag;
 
   if (ecma_is_value_undefined (this_arg))
   {
-    type_string = LIT_MAGIC_STRING_UNDEFINED_UL;
+    builtin_tag = LIT_MAGIC_STRING_UNDEFINED_UL;
   }
   else if (ecma_is_value_null (this_arg))
   {
-    type_string = LIT_MAGIC_STRING_NULL_UL;
+    builtin_tag = LIT_MAGIC_STRING_NULL_UL;
   }
   else
   {
@@ -139,58 +140,49 @@ ecma_builtin_helper_object_to_string (const ecma_value_t this_arg) /**< this arg
 
     ecma_object_t *obj_p = ecma_get_object_from_value (obj_this);
 
-    type_string = ecma_object_get_class_name (obj_p);
+    builtin_tag = ecma_object_get_class_name (obj_p);
 
-#if ENABLED (JERRY_ES2015)
-    ecma_value_t tag_value = ecma_op_object_get_by_symbol_id (obj_p, LIT_MAGIC_STRING_TO_STRING_TAG);
+#if ENABLED (JERRY_ESNEXT)
+    ecma_value_t is_array = ecma_is_value_array (obj_this);
 
-    if (ECMA_IS_VALUE_ERROR (tag_value))
+    if (ECMA_IS_VALUE_ERROR (is_array))
     {
       ecma_deref_object (obj_p);
-      return tag_value;
+      return is_array;
     }
 
-    if (ecma_is_value_string (tag_value))
+    if (ecma_is_value_true (is_array))
+    {
+      builtin_tag = LIT_MAGIC_STRING_ARRAY_UL;
+    }
+
+    ecma_value_t tag = ecma_op_object_get_by_symbol_id (obj_p, LIT_GLOBAL_SYMBOL_TO_STRING_TAG);
+
+    if (ECMA_IS_VALUE_ERROR (tag))
     {
       ecma_deref_object (obj_p);
-      return ecma_builtin_helper_object_to_string_tag_helper (tag_value);
+      return tag;
     }
 
-    ecma_free_value (tag_value);
-#endif /* ENABLED (JERRY_ES2015) */
+    if (ecma_is_value_string (tag))
+    {
+      ecma_deref_object (obj_p);
+      return ecma_builtin_helper_object_to_string_tag_helper (tag);
+    }
+
+    ecma_free_value (tag);
+#endif /* ENABLED (JERRY_ESNEXT) */
 
     ecma_deref_object (obj_p);
   }
 
-  ecma_string_t *ret_string_p;
+  ecma_stringbuilder_t builder = ecma_stringbuilder_create ();
 
-  /* Building string "[object #type#]" where type is 'Undefined',
-     'Null' or one of possible object's classes.
-     The string with null character is maximum 27 characters long. */
-  const lit_utf8_size_t buffer_size = 27;
-  JERRY_VLA (lit_utf8_byte_t, str_buffer, buffer_size);
+  ecma_stringbuilder_append_magic (&builder, LIT_MAGIC_STRING_OBJECT_TO_STRING_UL);
+  ecma_stringbuilder_append_magic (&builder, builtin_tag);
+  ecma_stringbuilder_append_byte (&builder, LIT_CHAR_RIGHT_SQUARE);
 
-  lit_utf8_byte_t *buffer_ptr = str_buffer;
-
-  const lit_magic_string_id_t magic_string_ids[] =
-  {
-    LIT_MAGIC_STRING_LEFT_SQUARE_CHAR,
-    LIT_MAGIC_STRING_OBJECT,
-    LIT_MAGIC_STRING_SPACE_CHAR,
-    type_string,
-    LIT_MAGIC_STRING_RIGHT_SQUARE_CHAR
-  };
-
-  for (uint32_t i = 0; i < sizeof (magic_string_ids) / sizeof (lit_magic_string_id_t); ++i)
-  {
-    buffer_ptr = lit_copy_magic_string_to_buffer (magic_string_ids[i], buffer_ptr,
-                                                  (lit_utf8_size_t) ((str_buffer + buffer_size) - buffer_ptr));
-    JERRY_ASSERT (buffer_ptr <= str_buffer + buffer_size);
-  }
-
-  ret_string_p = ecma_new_ecma_string_from_utf8 (str_buffer, (lit_utf8_size_t) (buffer_ptr - str_buffer));
-
-  return ecma_make_string_value (ret_string_p);
+  return ecma_make_string_value (ecma_stringbuilder_finalize (&builder));
 } /* ecma_builtin_helper_object_to_string */
 
 /**
@@ -218,60 +210,27 @@ ecma_builtin_helper_get_to_locale_string_at_index (ecma_object_t *obj_p, /**< th
     return ecma_get_magic_string (LIT_MAGIC_STRING__EMPTY);
   }
 
-  ecma_value_t index_obj_value = ecma_op_to_object (index_value);
+  ecma_value_t call_value = ecma_op_invoke_by_magic_id (index_value, LIT_MAGIC_STRING_TO_LOCALE_STRING_UL, NULL, 0);
 
-
-  if (ECMA_IS_VALUE_ERROR (index_obj_value))
-  {
-    ecma_free_value (index_value);
-    return NULL;
-  }
-
-  ecma_string_t *ret_string_p = NULL;
-  ecma_object_t *index_obj_p = ecma_get_object_from_value (index_obj_value);
-  ecma_value_t to_locale_value = ecma_op_object_get_by_magic_id (index_obj_p, LIT_MAGIC_STRING_TO_LOCALE_STRING_UL);
-
-  if (ECMA_IS_VALUE_ERROR (to_locale_value))
-  {
-    goto cleanup;
-  }
-
-  if (!ecma_op_is_callable (to_locale_value))
-  {
-    ecma_free_value (to_locale_value);
-    ecma_raise_type_error (ECMA_ERR_MSG ("'toLocaleString' is missing or not a function."));
-    goto cleanup;
-  }
-
-  ecma_object_t *locale_func_obj_p = ecma_get_object_from_value (to_locale_value);
-  ecma_value_t call_value = ecma_op_function_call (locale_func_obj_p,
-                                                   index_obj_value,
-                                                   NULL,
-                                                   0);
-  ecma_deref_object (locale_func_obj_p);
+  ecma_free_value (index_value);
 
   if (ECMA_IS_VALUE_ERROR (call_value))
   {
-    goto cleanup;
+    return NULL;
   }
 
-  ret_string_p = ecma_op_to_string (call_value);
-  ecma_free_value (call_value);
+  ecma_string_t *ret_string_p = ecma_op_to_string (call_value);
 
-cleanup:
-  ecma_deref_object (index_obj_p);
-  ecma_free_value (index_value);
+  ecma_free_value (call_value);
 
   return ret_string_p;
 } /* ecma_builtin_helper_get_to_locale_string_at_index */
 
-
 /**
- * The Object.keys and Object.getOwnPropertyNames routine's common part.
+ * The Object's 'getOwnPropertyNames' routine.
  *
  * See also:
  *          ECMA-262 v5, 15.2.3.4 steps 2-5
- *          ECMA-262 v5, 15.2.3.14 steps 3-6
  *
  * @return ecma value - Array of property names.
  *         Returned value must be freed with ecma_free_value.
@@ -282,26 +241,23 @@ ecma_builtin_helper_object_get_properties (ecma_object_t *obj_p, /**< object */
 {
   JERRY_ASSERT (obj_p != NULL);
 
-  ecma_value_t new_array = ecma_op_create_array_object (NULL, 0, false);
-  JERRY_ASSERT (!ECMA_IS_VALUE_ERROR (new_array));
-  ecma_object_t *new_array_p = ecma_get_object_from_value (new_array);
-
   ecma_collection_t *props_p = ecma_op_object_get_property_names (obj_p, opts);
+
+#if ENABLED (JERRY_BUILTIN_PROXY)
+  if (props_p == NULL)
+  {
+    return ECMA_VALUE_ERROR;
+  }
+#endif /* ENABLED (JERRY_BUILTIN_PROXY) */
 
   if (props_p->item_count == 0)
   {
     ecma_collection_destroy (props_p);
-    return new_array;
+    return ecma_op_create_array_object (NULL, 0, false);
   }
 
-  JERRY_ASSERT (ecma_op_object_is_fast_array (new_array_p));
-
-  ecma_value_t *buffer_p = props_p->buffer_p;
-  ecma_value_t *values_p = ecma_fast_array_extend (new_array_p, props_p->item_count);
-
-  memcpy (values_p, buffer_p, props_p->item_count * sizeof (ecma_value_t));
-
-  ecma_collection_free_objects (props_p);
+  ecma_value_t new_array = ecma_op_create_array_object (props_p->buffer_p, props_p->item_count, false);
+  ecma_collection_free (props_p);
 
   return new_array;
 } /* ecma_builtin_helper_object_get_properties */
@@ -309,93 +265,49 @@ ecma_builtin_helper_object_get_properties (ecma_object_t *obj_p, /**< object */
 /**
  * Helper function to normalizing an array index
  *
- * This function clamps the given index to the [0, length] range.
- * If the index is negative, it is used as the offset from the end of the array,
- * to compute normalized index.
- * If the index is greater than the length of the array, the normalized index will be the length of the array.
- * If is_last_index_of is true, then we use the method in ECMA-262 v6, 22.2.3.16 to compute the normalized index.
  * See also:
- *          ECMA-262 v5, 15.4.4.10 steps 5-6, 7 (part 2) and 8
- *          ECMA-262 v5, 15.4.4.12 steps 5-6
- *          ECMA-262 v5, 15.4.4.14 steps 5
- *          ECMA-262 v5, 15.5.4.13 steps 4, 5 (part 2) and 6-7
+ *          ECMA-262 v5, 15.4.4.10 steps 5, 6, 7 part 2, 8
+ *          ECMA-262 v5, 15.4.4.12 steps 5, 6
+ *          ECMA-262 v5, 15.5.4.13 steps 4 - 7
+ *          ECMA-262 v6, 22.1.3.6 steps 5 - 7, 8 part 2, 9, 10
+ *          ECMA-262 v6, 22.1.3.3 steps 5 - 10, 11 part 2, 12, 13
+ *          ECMA-262 v6, 22.2.3.5 steps 5 - 10, 11 part 2, 12, 13
+ *          ECMA-262 v6, 22.2.3.23 steps 5 - 10
+ *          ECMA-262 v6, 24.1.4.3 steps 6 - 8, 9 part 2, 10, 11
+ *          ECMA-262 v6, 22.2.3.26 steps 7 - 9, 10 part 2, 11, 12
+ *          ECMA-262 v6, 22.2.3.8 steps 5 - 7, 8 part 2, 9, 10
  *
  * Used by:
  *         - The Array.prototype.slice routine.
  *         - The Array.prototype.splice routine.
- *         - The Array.prototype.indexOf routine.
  *         - The String.prototype.slice routine.
- *         - The TypedArray.prototype.indexOf routine.
- *         - The TypedArray.prototype.lastIndexOf routine
+ *         - The Array.prototype.fill routine.
+ *         - The Array.prototype.copyWithin routine.
+ *         - The TypedArray.prototype.copyWithin routine.
+ *         - The TypedArray.prototype.slice routine.
+ *         - The ArrayBuffer.prototype.slice routine.
+ *         - The TypedArray.prototype.subarray routine.
+ *         - The TypedArray.prototype.fill routine.
  *
- * @return uint32_t - the normalized value of the index
+ * @return ECMA_VALUE_EMPTY if successful
+ *         conversion error otherwise
  */
 uint32_t
-ecma_builtin_helper_array_index_normalize (ecma_number_t index, /**< index */
+ecma_builtin_helper_array_index_normalize (ecma_value_t arg, /**< index */
                                            uint32_t length, /**< array's length */
-                                           bool is_last_index_of) /**< true - normalize for lastIndexOf method*/
+                                           uint32_t *number_p) /**< [out] uint32_t */
 {
-  uint32_t norm_index;
+  ecma_number_t to_int;
 
-  if (!ecma_number_is_nan (index))
+  if (ECMA_IS_VALUE_ERROR (ecma_op_to_integer (arg, &to_int)))
   {
-
-    if (ecma_number_is_zero (index))
-    {
-      norm_index = 0;
-    }
-    else if (ecma_number_is_infinity (index))
-    {
-      if (is_last_index_of)
-      {
-        norm_index = ecma_number_is_negative (index) ? (uint32_t) -1 : length - 1;
-      }
-      else
-      {
-        norm_index = ecma_number_is_negative (index) ? 0 : length;
-      }
-    }
-    else
-    {
-      if (ecma_number_is_negative (index))
-      {
-        ecma_number_t index_neg = -index;
-
-        if (is_last_index_of)
-        {
-          norm_index = length - ecma_number_to_uint32 (index_neg);
-        }
-        else
-        {
-          if (index_neg > length)
-          {
-            norm_index = 0;
-          }
-          else
-          {
-            norm_index = length - ecma_number_to_uint32 (index_neg);
-          }
-        }
-      }
-      else
-      {
-        if (index > length)
-        {
-          norm_index = is_last_index_of ? length - 1 : length;
-        }
-        else
-        {
-          norm_index = ecma_number_to_uint32 (index);
-        }
-      }
-    }
-  }
-  else
-  {
-    norm_index = 0;
+    return ECMA_VALUE_ERROR;
   }
 
-  return norm_index;
+  *number_p = ((to_int < 0) ? (uint32_t) JERRY_MAX ((length + to_int), 0)
+                            : (uint32_t) JERRY_MIN (to_int, length));
+
+  return ECMA_VALUE_EMPTY;
 } /* ecma_builtin_helper_array_index_normalize */
 
 /**
@@ -416,7 +328,7 @@ ecma_builtin_helper_array_concat_value (ecma_object_t *array_obj_p, /**< array *
                                         ecma_value_t value) /**< value to concat */
 {
   /* 5.b */
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   ecma_value_t is_spreadable = ecma_op_is_concat_spreadable (value);
 
   if (ECMA_IS_VALUE_ERROR (is_spreadable))
@@ -425,15 +337,15 @@ ecma_builtin_helper_array_concat_value (ecma_object_t *array_obj_p, /**< array *
   }
 
   bool spread_object = is_spreadable == ECMA_VALUE_TRUE;
-#else /* !ENABLED (JERRY_ES2015) */
-  bool spread_object = ecma_is_value_array (value);
-#endif /* ENABLED (JERRY_ES2015) */
+#else /* !ENABLED (JERRY_ESNEXT) */
+  bool spread_object = ecma_is_value_true (ecma_is_value_array (value));
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   if (spread_object)
   {
     ecma_object_t *obj_p = ecma_get_object_from_value (value);
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
     uint32_t arg_len;
     ecma_value_t error = ecma_op_object_get_length (obj_p, &arg_len);
 
@@ -441,10 +353,10 @@ ecma_builtin_helper_array_concat_value (ecma_object_t *array_obj_p, /**< array *
     {
       return error;
     }
-#else /* !ENABLED (JERRY_ES2015) */
+#else /* !ENABLED (JERRY_ESNEXT) */
     /* 5.b.ii */
     uint32_t arg_len = ecma_array_get_length (obj_p);
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
     /* 5.b.iii */
     for (uint32_t array_index = 0; array_index < arg_len; array_index++)
     {
@@ -567,7 +479,7 @@ ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_st
   /* 5 (indexOf) -- 6 (lastIndexOf) */
   const ecma_length_t original_len = ecma_string_get_length (original_str_p);
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   /* 4, 6 (startsWith, includes, endsWith) */
   if (mode >= ECMA_STRING_STARTS_WITH)
   {
@@ -584,7 +496,7 @@ ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_st
       return ecma_raise_type_error (ECMA_ERR_MSG ("Search string can't be of type: RegExp"));
     }
   }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   /* 7, 8 */
   ecma_string_t *search_str_p = ecma_op_to_string (arg1);
@@ -596,7 +508,19 @@ ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_st
 
   /* 4 (indexOf, lastIndexOf), 9 (startsWith, includes), 10 (endsWith) */
   ecma_number_t pos_num;
-  ecma_value_t ret_value  = ecma_get_number (arg2, &pos_num);
+  ecma_value_t ret_value;
+#if ENABLED (JERRY_ESNEXT)
+  if (mode > ECMA_STRING_LAST_INDEX_OF)
+  {
+    ret_value = ecma_op_to_integer (arg2, &pos_num);
+  }
+  else
+  {
+#endif /* ENABLED (JERRY_ESNEXT) */
+    ret_value = ecma_get_number (arg2, &pos_num);
+#if ENABLED (JERRY_ESNEXT)
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   /* 10 (startsWith, includes), 11 (endsWith) */
   if (ECMA_IS_VALUE_ERROR (ret_value))
@@ -618,10 +542,12 @@ ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_st
 
   switch (mode)
   {
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
     case ECMA_STRING_STARTS_WITH:
     {
-      if (pos_num + start > original_len)
+      const ecma_length_t search_len = ecma_string_get_length (search_str_p);
+
+      if (search_len + start > original_len)
       {
         break;
       }
@@ -669,7 +595,7 @@ ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_st
       }
       break;
     }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
     case ECMA_STRING_INDEX_OF:
     case ECMA_STRING_LAST_INDEX_OF:
@@ -723,7 +649,7 @@ ecma_builtin_helper_string_find_index (ecma_string_t *original_str_p, /**< index
     if (!search_len)
     {
       match_found = true;
-      *ret_index_p = first_index ? 0 : original_len;
+      *ret_index_p = first_index ? start_pos : original_len;
     }
     else
     {
@@ -745,7 +671,7 @@ ecma_builtin_helper_string_find_index (ecma_string_t *original_str_p, /**< index
 
       /* iterate original string and try to match at each position */
       bool searching = true;
-      ecma_char_t first_char = lit_utf8_read_next (&search_str_curr_p);
+      ecma_char_t first_char = lit_cesu8_read_next (&search_str_curr_p);
       while (searching)
       {
         /* match as long as possible */
@@ -754,14 +680,14 @@ ecma_builtin_helper_string_find_index (ecma_string_t *original_str_p, /**< index
 
         if (match_len < search_len &&
             index + match_len < original_len &&
-            lit_utf8_read_next (&original_str_curr_p) == first_char)
+            lit_cesu8_read_next (&original_str_curr_p) == first_char)
         {
           const lit_utf8_byte_t *nested_search_str_curr_p = search_str_curr_p;
           match_len++;
 
           while (match_len < search_len &&
                  index + match_len < original_len &&
-                 lit_utf8_read_next (&original_str_curr_p) == lit_utf8_read_next (&nested_search_str_curr_p))
+                 lit_cesu8_read_next (&original_str_curr_p) == lit_cesu8_read_next (&nested_search_str_curr_p))
           {
             match_len++;
           }
@@ -851,7 +777,7 @@ ecma_builtin_helper_def_prop_by_index (ecma_object_t *obj_p, /**< object */
  */
 ecma_value_t
 ecma_builtin_helper_def_prop (ecma_object_t *obj_p, /**< object */
-                              ecma_string_t *index_p, /**< index string */
+                              ecma_string_t *name_p, /**< name string */
                               ecma_value_t value, /**< value */
                               uint32_t opts) /**< any combination of ecma_property_flag_t bits
                                               *   with the optional ECMA_IS_THROW flag */
@@ -863,7 +789,7 @@ ecma_builtin_helper_def_prop (ecma_object_t *obj_p, /**< object */
   prop_desc.value = value;
 
   return ecma_op_object_define_own_property (obj_p,
-                                             index_p,
+                                             name_p,
                                              &prop_desc);
 } /* ecma_builtin_helper_def_prop */
 
@@ -917,7 +843,7 @@ ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p) /**< replace con
         }
         case LIT_CHAR_AMPERSAND:
         {
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
           if (JERRY_UNLIKELY (ctx_p->matched_p == NULL))
           {
             JERRY_ASSERT (ctx_p->capture_count == 0);
@@ -929,7 +855,7 @@ ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p) /**< replace con
             ecma_stringbuilder_append (&(ctx_p->builder), ecma_get_string_from_value (match_value));
             break;
           }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
           JERRY_ASSERT (ctx_p->matched_p != NULL);
           ecma_stringbuilder_append_raw (&(ctx_p->builder), ctx_p->matched_p, ctx_p->matched_size);
@@ -942,7 +868,7 @@ ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p) /**< replace con
         }
         case LIT_CHAR_SINGLE_QUOTE:
         {
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
           if (JERRY_UNLIKELY (ctx_p->matched_p == NULL))
           {
             JERRY_ASSERT (ctx_p->capture_count == 0);
@@ -960,7 +886,7 @@ ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p) /**< replace con
                                            (lit_utf8_size_t) (ctx_p->string_p + ctx_p->string_size - begin_p));
             break;
           }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
           JERRY_ASSERT (ctx_p->matched_p != NULL);
           ecma_stringbuilder_append_raw (&(ctx_p->builder),
@@ -975,12 +901,12 @@ ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p) /**< replace con
           if (lit_char_is_decimal_digit (c))
           {
             uint32_t capture_count = ctx_p->capture_count;
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
             if (capture_count == 0 && ctx_p->u.collection_p != NULL)
             {
               capture_count = ctx_p->u.collection_p->item_count;
             }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
             uint8_t idx = (uint8_t) (c - LIT_CHAR_0);
             if (curr_p < replace_end_p && lit_char_is_decimal_digit (*(curr_p)))
@@ -1011,7 +937,7 @@ ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p) /**< replace con
                 break;
 #endif /* ENABLED (JERRY_BUILTIN_REGEXP) */
               }
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
               else if (ctx_p->u.collection_p != NULL)
               {
                 const ecma_value_t capture_value = ctx_p->u.collection_p->buffer_p[idx];
@@ -1022,7 +948,7 @@ ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p) /**< replace con
 
                 break;
               }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
             }
           }
 

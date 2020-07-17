@@ -30,14 +30,18 @@
  * @{
  */
 
-void ecma_init_global_lex_env (void);
-void ecma_finalize_global_lex_env (void);
+void ecma_init_global_environment (void);
+void ecma_finalize_global_environment (void);
 ecma_object_t *ecma_get_global_environment (void);
+ecma_object_t *ecma_get_global_scope (void);
+#if ENABLED (JERRY_ESNEXT)
+void ecma_create_global_lexical_block (void);
+#endif /* ENABLED (JERRY_ESNEXT) */
 
-#if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
+#if ENABLED (JERRY_MODULE_SYSTEM)
 void ecma_module_add_lex_env (ecma_object_t *lex_env_p);
 void ecma_module_finalize_lex_envs (void);
-#endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 
 /**
  * @}
@@ -51,7 +55,7 @@ ecma_value_t ecma_op_put_value_lex_env_base (ecma_object_t *lex_env_p, ecma_stri
                                              bool is_strict, ecma_value_t value);
 
 /* ECMA-262 v5, Table 17. Abstract methods of Environment Records */
-bool ecma_op_has_binding (ecma_object_t *lex_env_p, ecma_string_t *name_p);
+ecma_value_t ecma_op_has_binding (ecma_object_t *lex_env_p, ecma_string_t *name_p);
 ecma_value_t ecma_op_create_mutable_binding (ecma_object_t *lex_env_p, ecma_string_t *name_p, bool is_deletable);
 ecma_value_t ecma_op_set_mutable_binding (ecma_object_t *lex_env_p, ecma_string_t *name_p, ecma_value_t value,
                                           bool is_strict);
@@ -61,6 +65,25 @@ ecma_value_t ecma_op_implicit_this_value (ecma_object_t *lex_env_p);
 
 /* ECMA-262 v5, Table 18. Additional methods of Declarative Environment Records */
 void ecma_op_create_immutable_binding (ecma_object_t *lex_env_p, ecma_string_t *name_p, ecma_value_t value);
+
+#if ENABLED (JERRY_ESNEXT)
+void ecma_op_initialize_binding (ecma_object_t *lex_env_p, ecma_string_t *name_p, ecma_value_t value);
+
+void
+ecma_op_init_this_binding (ecma_object_t *lex_env_p, ecma_value_t this_binding);
+
+ecma_property_t *
+ecma_op_get_this_property (ecma_object_t *lex_env_p);
+
+bool
+ecma_op_this_binding_is_initialized (ecma_property_t *prop_p);
+
+ecma_value_t
+ecma_op_get_this_binding (ecma_object_t *lex_env_p);
+
+void
+ecma_op_bind_this_value (ecma_property_t *prop_p, ecma_value_t this_binding);
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * @}

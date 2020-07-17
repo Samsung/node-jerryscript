@@ -32,10 +32,15 @@ OBJECT_VALUE (LIT_MAGIC_STRING_PROTOTYPE,
 /* Number properties:
  *  (property name, object pointer getter) */
 
-/* ECMA-262 v5, 15.6.3 */
 NUMBER_VALUE (LIT_MAGIC_STRING_LENGTH,
               1,
-              ECMA_PROPERTY_FIXED)
+              ECMA_PROPERTY_FLAG_DEFAULT_LENGTH)
+
+#if ENABLED (JERRY_ESNEXT)
+STRING_VALUE (LIT_MAGIC_STRING_NAME,
+              LIT_MAGIC_STRING_BOOLEAN_UL,
+              ECMA_PROPERTY_FLAG_CONFIGURABLE)
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 #endif /* ENABLED (JERRY_BUILTIN_BOOLEAN) */
 

@@ -21,6 +21,7 @@
 
 #include "debugger.h"
 #include "ecma-builtins.h"
+#include "ecma-helpers.h"
 #include "ecma-jobqueue.h"
 #include "jerryscript-port.h"
 #include "jmem.h"
@@ -126,7 +127,7 @@ struct jerry_context_t
   /* Update JERRY_CONTEXT_FIRST_MEMBER if the first non-external member changes */
   jmem_cpointer_t ecma_builtin_objects[ECMA_BUILTIN_ID__COUNT]; /**< pointer to instances of built-in objects */
 #if ENABLED (JERRY_BUILTIN_REGEXP)
-  const re_compiled_code_t *re_cache[RE_CACHE_SIZE]; /**< regex cache */
+  re_compiled_code_t *re_cache[RE_CACHE_SIZE]; /**< regex cache */
 #endif /* ENABLED (JERRY_BUILTIN_REGEXP) */
   jmem_cpointer_t ecma_gc_objects_cp; /**< List of currently alive objects. */
   jmem_heap_free_t *jmem_heap_list_skip_p; /**< This is used to speed up deallocation. */
@@ -137,16 +138,19 @@ struct jerry_context_t
   const lit_utf8_byte_t * const *lit_magic_string_ex_array; /**< array of external magic strings */
   const lit_utf8_size_t *lit_magic_string_ex_sizes; /**< external magic string lengths */
   jmem_cpointer_t string_list_first_cp; /**< first item of the literal string list */
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   jmem_cpointer_t symbol_list_first_cp; /**< first item of the global symbol list */
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
   jmem_cpointer_t number_list_first_cp; /**< first item of the literal number list */
-  jmem_cpointer_t ecma_global_lex_env_cp; /**< global lexical environment */
+  jmem_cpointer_t ecma_global_env_cp; /**< global lexical environment */
+#if ENABLED (JERRY_ESNEXT)
+  jmem_cpointer_t ecma_global_scope_cp; /**< global lexical scope */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
-#if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
+#if ENABLED (JERRY_MODULE_SYSTEM)
   ecma_module_t *ecma_modules_p; /**< list of referenced modules */
   ecma_module_context_t *module_top_context_p; /**< top (current) module parser context */
-#endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 
   vm_frame_ctx_t *vm_top_context_p; /**< top (current) interpreter context */
   jerry_context_data_header_t *context_data_p; /**< linked list of user-provided context-specific pointers */
@@ -172,10 +176,10 @@ struct jerry_context_t
   uint8_t re_cache_idx; /**< evicted item index when regex cache is full (round-robin) */
 #endif /* ENABLED (JERRY_BUILTIN_REGEXP) */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_PROMISE)
-  ecma_job_queueitem_t *job_queue_head_p; /**< points to the head item of the jobqueue */
-  ecma_job_queueitem_t *job_queue_tail_p; /**< points to the tail item of the jobqueue*/
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_PROMISE) */
+#if ENABLED (JERRY_BUILTIN_PROMISE)
+  ecma_job_queue_item_t *job_queue_head_p; /**< points to the head item of the job queue */
+  ecma_job_queue_item_t *job_queue_tail_p; /**< points to the tail item of the job queue */
+#endif /* ENABLED (JERRY_BUILTIN_PROMISE) */
 
 #if ENABLED (JERRY_VM_EXEC_STOP)
   uint32_t vm_exec_stop_frequency; /**< reset value for vm_exec_stop_counter */
@@ -206,10 +210,6 @@ struct jerry_context_t
   uint8_t debugger_max_receive_size; /**< maximum amount of data that can be received */
 #endif /* ENABLED (JERRY_DEBUGGER) */
 
-#if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ERROR_MESSAGES) || ENABLED (JERRY_ES2015_MODULE_SYSTEM)
-  ecma_value_t resource_name; /**< resource name (usually a file name) */
-#endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ERROR_MESSAGES) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
-
 #if ENABLED (JERRY_MEM_STATS)
   jmem_heap_stats_t jmem_heap_stats; /**< heap's memory usage statistics */
 #endif /* ENABLED (JERRY_MEM_STATS) */
@@ -219,8 +219,18 @@ struct jerry_context_t
   /** hash table for caching the last access of properties */
   ecma_lcache_hash_entry_t lcache[ECMA_LCACHE_HASH_ROWS_COUNT][ECMA_LCACHE_HASH_ROW_LENGTH];
 #endif /* ENABLED (JERRY_LCACHE) */
-};
 
+#if ENABLED (JERRY_ESNEXT)
+  /**
+   * Allowed values and it's meaning:
+   * * NULL (0x0): the current "new.target" is undefined, that is the execution is inside a normal method.
+   * * Any other valid function object pointer: the current "new.target" is valid and it is constructor call.
+   */
+  ecma_object_t *current_new_target;
+  ecma_object_t *current_function_obj_p; /** currently invoked function object
+                                             (Note: currently used only in generator functions) */
+#endif /* ENABLED (JERRY_ESNEXT) */
+};
 
 #if ENABLED (JERRY_EXTERNAL_CONTEXT)
 
@@ -228,6 +238,7 @@ struct jerry_context_t
  * This part is for JerryScript which uses external context.
  */
 
+#define JERRY_CONTEXT_STRUCT (*jerry_port_get_current_context ())
 #define JERRY_CONTEXT(field) (jerry_port_get_current_context ()->field)
 
 #if !ENABLED (JERRY_SYSTEM_ALLOCATOR)
@@ -256,6 +267,11 @@ struct jmem_heap_t
  * Global context.
  */
 extern jerry_context_t jerry_global_context;
+
+/**
+ * Config-independent name for context.
+ */
+#define JERRY_CONTEXT_STRUCT (jerry_global_context)
 
 /**
  * Provides a reference to a field in the current context.
@@ -293,6 +309,27 @@ extern jmem_heap_t jerry_global_heap;
 #endif /* !ENABLED (JERRY_SYSTEM_ALLOCATOR) */
 
 #endif /* ENABLED (JERRY_EXTERNAL_CONTEXT) */
+
+void
+jcontext_set_exception_flag (bool is_exception);
+
+void
+jcontext_set_abort_flag (bool is_abort);
+
+bool
+jcontext_has_pending_exception (void);
+
+bool
+jcontext_has_pending_abort (void);
+
+void
+jcontext_raise_exception (ecma_value_t error);
+
+void
+jcontext_release_exception (void);
+
+ecma_value_t
+jcontext_take_exception (void);
 
 /**
  * @}

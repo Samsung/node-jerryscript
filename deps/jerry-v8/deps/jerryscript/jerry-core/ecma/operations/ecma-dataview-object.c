@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+#include "jcontext.h"
+#include "ecma-function-object.h"
 #include "ecma-arraybuffer-object.h"
 #include "ecma-builtins.h"
 #include "ecma-exceptions.h"
@@ -22,7 +24,7 @@
 #include "ecma-typedarray-object.h"
 #include "ecma-objects.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW)
+#if ENABLED (JERRY_BUILTIN_DATAVIEW)
 
 /** \addtogroup ecma ECMA
  * @{
@@ -45,6 +47,7 @@ ecma_op_dataview_create (const ecma_value_t *arguments_list_p, /**< arguments li
                          ecma_length_t arguments_list_len) /**< number of arguments */
 {
   JERRY_ASSERT (arguments_list_len == 0 || arguments_list_p != NULL);
+  JERRY_ASSERT (JERRY_CONTEXT (current_new_target));
 
   ecma_value_t buffer = arguments_list_len > 0 ? arguments_list_p[0] : ECMA_VALUE_UNDEFINED;
 
@@ -63,25 +66,27 @@ ecma_op_dataview_create (const ecma_value_t *arguments_list_p, /**< arguments li
   }
 
   /* 4 - 6. */
-  int32_t offset = 0;
+  uint32_t offset = 0;
 
   if (arguments_list_len > 1)
   {
-    ecma_number_t number_offset;
-    ecma_value_t number_offset_value = ecma_get_number (arguments_list_p[1], &number_offset);
-
-    if (ECMA_IS_VALUE_ERROR (number_offset_value))
+    ecma_number_t number_offset, offset_num;
+    if (ECMA_IS_VALUE_ERROR (ecma_get_number (arguments_list_p[1], &number_offset)))
     {
-      return number_offset_value;
+      return ECMA_VALUE_ERROR;
+    }
+    if (ECMA_IS_VALUE_ERROR (ecma_op_to_integer (arguments_list_p[1], &offset_num)))
+    {
+      return ECMA_VALUE_ERROR;
     }
 
-    offset = ecma_number_to_int32 (number_offset);
-
     /* 7. */
-    if (number_offset != offset || offset < 0)
+    if (number_offset != offset_num || offset_num < 0)
     {
       return ecma_raise_range_error (ECMA_ERR_MSG ("Start offset is outside the bounds of the buffer."));
     }
+
+    offset = (uint32_t) offset_num;
   }
 
   /* 8. */
@@ -101,7 +106,7 @@ ecma_op_dataview_create (const ecma_value_t *arguments_list_p, /**< arguments li
 
   /* 11 - 12. */
   uint32_t viewByteLength;
-  if (arguments_list_len > 2)
+  if (arguments_list_len > 2 && !ecma_is_value_undefined (arguments_list_p[2]))
   {
     /* 12.a */
     ecma_value_t byte_length_value = ecma_op_to_length (arguments_list_p[2], &viewByteLength);
@@ -125,7 +130,14 @@ ecma_op_dataview_create (const ecma_value_t *arguments_list_p, /**< arguments li
   }
 
   /* 13. */
-  ecma_object_t *object_p = ecma_create_object (ecma_builtin_get (ECMA_BUILTIN_ID_DATAVIEW_PROTOTYPE),
+  ecma_object_t *prototype_obj_p = ecma_op_get_prototype_from_constructor (JERRY_CONTEXT (current_new_target),
+                                                                           ECMA_BUILTIN_ID_DATAVIEW_PROTOTYPE);
+  if (JERRY_UNLIKELY (prototype_obj_p == NULL))
+  {
+    return ECMA_VALUE_ERROR;
+  }
+
+  ecma_object_t *object_p = ecma_create_object (prototype_obj_p,
                                                 sizeof (ecma_dataview_object_t),
                                                 ECMA_OBJECT_TYPE_CLASS);
 
@@ -135,6 +147,7 @@ ecma_op_dataview_create (const ecma_value_t *arguments_list_p, /**< arguments li
   dataview_obj_p->buffer_p = buffer_p;
   dataview_obj_p->byte_offset = (uint32_t) offset;
 
+  ecma_deref_object (prototype_obj_p);
   return ecma_make_object_value (object_p);
 } /* ecma_op_dataview_create */
 
@@ -240,7 +253,7 @@ ecma_op_dataview_get_set_view_value (ecma_value_t view, /**< the operation's 'vi
 
   /* 3 - 5. */
   ecma_number_t number_index;
-  ecma_value_t number_index_value = ecma_get_number (request_index, &number_index);
+  ecma_value_t number_index_value = ecma_op_to_integer (request_index, &number_index);
 
   if (ECMA_IS_VALUE_ERROR (number_index_value))
   {
@@ -331,4 +344,4 @@ ecma_is_dataview (ecma_value_t value) /**< the target need to be checked */
  * @}
  */
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW */
+#endif /* ENABLED (JERRY_BUILTIN_DATAVIEW */

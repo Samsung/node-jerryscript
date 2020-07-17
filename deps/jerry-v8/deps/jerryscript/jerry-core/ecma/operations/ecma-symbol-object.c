@@ -22,8 +22,9 @@
 #include "ecma-objects.h"
 #include "ecma-objects-general.h"
 #include "ecma-symbol-object.h"
+#include "lit-char-helpers.h"
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 
 /** \addtogroup ecma ECMA
  * @{
@@ -128,12 +129,11 @@ ecma_get_symbol_descriptive_string (ecma_value_t symbol_value) /**< symbol to st
   ecma_string_t *string_desc_p = ecma_get_symbol_description (symbol_p);
 
   /* 5. */
-  ecma_string_t *concat_p = ecma_concat_ecma_strings (ecma_get_magic_string (LIT_MAGIC_STRING_SYMBOL_LEFT_PAREN_UL),
-                                                      string_desc_p);
+  ecma_stringbuilder_t builder = ecma_stringbuilder_create_raw ((lit_utf8_byte_t *) ("Symbol("), 7);
+  ecma_stringbuilder_append (&builder, string_desc_p);
+  ecma_stringbuilder_append_byte (&builder, LIT_CHAR_RIGHT_PAREN);
 
-  ecma_string_t *final_str_p = ecma_append_magic_string_to_string (concat_p, LIT_MAGIC_STRING_RIGHT_PAREN);
-
-  return ecma_make_string_value (final_str_p);
+  return ecma_make_string_value (ecma_stringbuilder_finalize (&builder));
 } /* ecma_get_symbol_descriptive_string */
 
 /**
@@ -173,7 +173,7 @@ ecma_symbol_to_string_helper (ecma_value_t this_arg, /**< this argument value */
   return ecma_raise_type_error (ECMA_ERR_MSG ("Argument 'this' is must be a Symbol."));
 } /* ecma_symbol_to_string_helper */
 
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * @}

@@ -41,32 +41,77 @@ typedef enum
   RE_FLAG_MULTILINE = (1u << 3),   /**< ECMA-262 v5, 15.10.7.4 */
   RE_FLAG_STICKY = (1u << 4),      /**< ECMA-262 v6, 21.2.5.12 */
   RE_FLAG_UNICODE = (1u << 5)      /**< ECMA-262 v6, 21.2.5.15 */
+
+  /* Bits from bit 13 is reserved for function types (see CBC_FUNCTION_TYPE_SHIFT). */
 } ecma_regexp_flags_t;
 
 /**
- * Structure for storing capturing group results
+ * Class escapes
+ */
+typedef enum
+{
+  RE_ESCAPE__START,                   /**< escapes start */
+  RE_ESCAPE_DIGIT = RE_ESCAPE__START, /**< digit */
+  RE_ESCAPE_NOT_DIGIT,                /**< not digit */
+  RE_ESCAPE_WORD_CHAR,                /**< word char */
+  RE_ESCAPE_NOT_WORD_CHAR,            /**< not word char */
+  RE_ESCAPE_WHITESPACE,               /**< whitespace */
+  RE_ESCAPE_NOT_WHITESPACE,           /**< not whitespace */
+  RE_ESCAPE__COUNT,                   /**< escape count */
+} ecma_class_escape_t;
+
+/**
+ * Character class flags escape count mask size.
+ */
+#define RE_CLASS_ESCAPE_COUNT_MASK_SIZE (3u)
+
+/**
+ * Character class flags escape count mask.
+ */
+#define RE_CLASS_ESCAPE_COUNT_MASK ((1 << RE_CLASS_ESCAPE_COUNT_MASK_SIZE) - 1u)
+
+/**
+ * Character class flags that are present in the upper bits of the class flags byte, while the 3 least significant bits
+ * hold a value that contains the number of class escapes present in the character class.
+ */
+typedef enum
+{
+  RE_CLASS_HAS_CHARS = (1 << 5),    /**< contains individual characters */
+  RE_CLASS_HAS_RANGES = (1 << 6),   /**< contains character ranges */
+  RE_CLASS_INVERT = (1 << 7),       /**< inverted */
+} ecma_char_class_flags_t;
+
+/**
+ * Structure for matching capturing groups and storing their result
+ */
+typedef struct
+{
+  const lit_utf8_byte_t *begin_p; /**< capture start pointer */
+  const lit_utf8_byte_t *end_p;   /**< capture end pointer */
+  const uint8_t *bc_p;            /**< group bytecode pointer */
+  uint32_t iterator;              /**< iteration counter */
+  uint32_t subcapture_count;      /**< number of nested capturing groups */
+} ecma_regexp_capture_t;
+
+/**
+ * Structure for matching non-capturing groups
  */
 typedef struct
 {
   const lit_utf8_byte_t *begin_p; /**< substring start pointer */
-  const lit_utf8_byte_t *end_p;   /**< substring end pointer */
-} ecma_regexp_capture_t;
+  const uint8_t *bc_p;            /**< group bytecode pointer */
+  uint32_t iterator;              /**< iteration counter */
+  uint32_t subcapture_start;      /**< first nested capturing group index */
+  uint32_t subcapture_count;      /**< number of nested capturing groups */
+} ecma_regexp_non_capture_t;
 
 /**
  * Check if an ecma_regexp_capture_t contains a defined capture
  */
-#define ECMA_RE_IS_CAPTURE_DEFINED(c) ((c)->begin_p != NULL && (c)->end_p >= (c)->begin_p)
+#define ECMA_RE_IS_CAPTURE_DEFINED(c) ((c)->begin_p != NULL)
 
 ecma_value_t
 ecma_regexp_get_capture_value (const ecma_regexp_capture_t *const capture_p);
-
-/**
- * Structure for storing non-capturing group results
- */
-typedef struct
-{
-  const lit_utf8_byte_t *str_p; /**< string pointer */
-} ecma_regexp_non_capture_t;
 
 #if (JERRY_STACK_LIMIT != 0)
 /**
@@ -83,35 +128,55 @@ typedef struct
 #endif /* JERRY_STACK_LIMIT != 0 */
 
 /**
+ * Offset applied to qmax when encoded into the bytecode.
+ *
+ * It's common for qmax to be Infinity, which is represented a UINT32_MAX. By applying the offset we are able to store
+ * it in a single byte az zero.
+ */
+#define RE_QMAX_OFFSET 1
+
+/**
  * RegExp executor context
  */
 typedef struct
 {
-  const lit_utf8_byte_t *input_end_p;          /**< end of input string */
   const lit_utf8_byte_t *input_start_p;        /**< start of input string */
+  const lit_utf8_byte_t *input_end_p;          /**< end of input string */
   uint32_t captures_count;                     /**< number of capture groups */
-  ecma_regexp_capture_t *captures_p;           /**< capturing groups */
   uint32_t non_captures_count;                 /**< number of non-capture groups */
+  ecma_regexp_capture_t *captures_p;           /**< capturing groups */
   ecma_regexp_non_capture_t *non_captures_p;   /**< non-capturing groups */
-  uint32_t *iterations_p;                      /**< number of iterations */
   uint16_t flags;                              /**< RegExp flags */
+  uint8_t char_size;                           /**< size of encoded characters */
 } ecma_regexp_ctx_t;
 
-ecma_value_t ecma_op_create_regexp_object_from_bytecode (re_compiled_code_t *bytecode_p);
-ecma_value_t ecma_op_create_regexp_object (ecma_string_t *pattern_p, uint16_t flags);
-ecma_value_t ecma_regexp_exec_helper (ecma_value_t regexp_value, ecma_value_t input_string, bool ignore_global);
-ecma_string_t *ecma_regexp_read_pattern_str_helper (ecma_value_t pattern_arg);
-lit_code_point_t ecma_regexp_canonicalize (lit_code_point_t ch, bool is_ignorecase);
-lit_code_point_t ecma_regexp_canonicalize_char (lit_code_point_t ch);
-ecma_value_t ecma_regexp_parse_flags (ecma_string_t *flags_str_p, uint16_t *flags_p);
-void ecma_regexp_initialize_props (ecma_object_t *re_obj_p, ecma_string_t *source_p, uint16_t flags);
+#if ENABLED (JERRY_ESNEXT)
+lit_code_point_t ecma_regexp_unicode_advance (const lit_utf8_byte_t **str_p, const lit_utf8_byte_t *end_p);
+#endif /* ENABLED (JERRY_ESNEXT) */
 
-ecma_value_t
-ecma_regexp_replace_helper (ecma_value_t this_arg,
-                            ecma_value_t string_arg,
-                            ecma_value_t replace_arg);
+ecma_object_t *ecma_op_regexp_alloc (ecma_object_t *new_target_obj_p);
+ecma_value_t ecma_regexp_exec_helper (ecma_object_t *regexp_object_p,
+                                      ecma_string_t *input_string_p);
+ecma_string_t *ecma_regexp_read_pattern_str_helper (ecma_value_t pattern_arg);
+lit_code_point_t ecma_regexp_canonicalize_char (lit_code_point_t ch, bool unicode);
+ecma_value_t ecma_regexp_parse_flags (ecma_string_t *flags_str_p, uint16_t *flags_p);
+void ecma_regexp_create_and_initialize_props (ecma_object_t *re_object_p,
+                                              ecma_string_t *source_p,
+                                              uint16_t flags);
+ecma_value_t ecma_regexp_replace_helper (ecma_value_t this_arg, ecma_value_t string_arg, ecma_value_t replace_arg);
+ecma_value_t ecma_regexp_search_helper (ecma_value_t regexp_arg, ecma_value_t string_arg);
+ecma_value_t ecma_regexp_split_helper (ecma_value_t this_arg, ecma_value_t string_arg, ecma_value_t limit_arg);
+ecma_value_t ecma_regexp_match_helper (ecma_value_t this_arg, ecma_value_t string_arg);
 
 ecma_value_t ecma_op_regexp_exec (ecma_value_t this_arg, ecma_string_t *str_p);
+
+ecma_value_t ecma_op_create_regexp_from_bytecode (ecma_object_t *regexp_obj_p, re_compiled_code_t *bc_p);
+ecma_value_t ecma_op_create_regexp_from_pattern (ecma_object_t *regexp_obj_p,
+                                                 ecma_value_t pattern_value,
+                                                 ecma_value_t flags_value);
+ecma_value_t ecma_op_create_regexp_with_flags (ecma_object_t *regexp_obj_p,
+                                               ecma_value_t pattern_value,
+                                               uint16_t flags);
 /**
  * @}
  * @}

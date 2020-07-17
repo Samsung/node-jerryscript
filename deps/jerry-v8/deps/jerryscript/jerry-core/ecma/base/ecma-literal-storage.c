@@ -25,7 +25,7 @@
  * @{
  */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 /**
  * Free symbol list
  */
@@ -53,7 +53,7 @@ ecma_free_symbol_list (jmem_cpointer_t symbol_list_cp) /**< symbol list */
     symbol_list_cp = next_item_cp;
   }
 } /* ecma_free_symbol_list */
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Free string list
@@ -115,9 +115,9 @@ ecma_free_number_list (jmem_cpointer_t number_list_cp) /**< string list */
 void
 ecma_finalize_lit_storage (void)
 {
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   ecma_free_symbol_list (JERRY_CONTEXT (symbol_list_first_cp));
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
   ecma_free_string_list (JERRY_CONTEXT (string_list_first_cp));
   ecma_free_number_list (JERRY_CONTEXT (number_list_first_cp));
 } /* ecma_finalize_lit_storage */
@@ -329,12 +329,12 @@ ecma_save_literals_add_compiled_code (const ecma_compiled_code_t *compiled_code_
                                       ecma_collection_t *lit_pool_p) /**< list of known values */
 {
   ecma_value_t *literal_p;
-  uint32_t argument_end = 0;
+  uint32_t argument_end;
   uint32_t register_end;
   uint32_t const_literal_end;
   uint32_t literal_end;
 
-  JERRY_ASSERT (compiled_code_p->status_flags & CBC_CODE_FLAGS_FUNCTION);
+  JERRY_ASSERT (CBC_IS_FUNCTION (compiled_code_p->status_flags));
 
   if (compiled_code_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
   {
@@ -345,11 +345,7 @@ ecma_save_literals_add_compiled_code (const ecma_compiled_code_t *compiled_code_
     register_end = args_p->register_end;
     const_literal_end = args_p->const_literal_end - register_end;
     literal_end = args_p->literal_end - register_end;
-
-    if (compiled_code_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
-    {
-      argument_end = args_p->argument_end;
-    }
+    argument_end = args_p->argument_end;
   }
   else
   {
@@ -360,16 +356,15 @@ ecma_save_literals_add_compiled_code (const ecma_compiled_code_t *compiled_code_
     register_end = args_p->register_end;
     const_literal_end = args_p->const_literal_end - register_end;
     literal_end = args_p->literal_end - register_end;
-
-    if (compiled_code_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
-    {
-      argument_end = args_p->argument_end;
-    }
+    argument_end = args_p->argument_end;
   }
 
-  for (uint32_t i = 0; i < argument_end; i++)
+  if (compiled_code_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
   {
-    ecma_save_literals_append_value (literal_p[i], lit_pool_p);
+    for (uint32_t i = 0; i < argument_end; i++)
+    {
+      ecma_save_literals_append_value (literal_p[i], lit_pool_p);
+    }
   }
 
   for (uint32_t i = 0; i < const_literal_end; i++)
@@ -382,23 +377,20 @@ ecma_save_literals_add_compiled_code (const ecma_compiled_code_t *compiled_code_
     ecma_compiled_code_t *bytecode_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_compiled_code_t,
                                                                         literal_p[i]);
 
-    if ((bytecode_p->status_flags & CBC_CODE_FLAGS_FUNCTION)
+    if (CBC_IS_FUNCTION (bytecode_p->status_flags)
         && bytecode_p != compiled_code_p)
     {
       ecma_save_literals_add_compiled_code (bytecode_p, lit_pool_p);
     }
   }
 
-  if (argument_end != 0)
-  {
-    uint8_t *byte_p = (uint8_t *) compiled_code_p;
-    byte_p += ((size_t) compiled_code_p->size) << JMEM_ALIGNMENT_LOG;
-    literal_p = ((ecma_value_t *) byte_p) - argument_end;
+  uint8_t *byte_p = ((uint8_t *) compiled_code_p) + (((size_t) compiled_code_p->size) << JMEM_ALIGNMENT_LOG);
+  literal_p = ecma_snapshot_resolve_serializable_values ((ecma_compiled_code_t *) compiled_code_p, byte_p);
 
-    for (uint32_t i = 0; i < argument_end; i++)
-    {
-      ecma_save_literals_append_value (literal_p[i], lit_pool_p);
-    }
+  while (literal_p < (ecma_value_t *) byte_p)
+  {
+    ecma_save_literals_append_value (*literal_p, lit_pool_p);
+    literal_p++;
   }
 } /* ecma_save_literals_add_compiled_code */
 
@@ -546,6 +538,45 @@ ecma_snapshot_get_literal (const uint8_t *literal_base_p, /**< literal start */
   return ecma_find_or_create_literal_string (literal_p + sizeof (uint16_t), length);
 } /* ecma_snapshot_get_literal */
 
+/**
+ * Compute the start of the serializable ecma-values of the bytecode
+ * Related values:
+ *  - function argument names, if CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED is present
+ *  - function name, if CBC_CODE_FLAGS_CLASS_CONSTRUCTOR is not present and ES.next profile is enabled
+ *
+ * @return pointer to the beginning of the serializable ecma-values
+ */
+ecma_value_t *
+ecma_snapshot_resolve_serializable_values (ecma_compiled_code_t *compiled_code_p, /**< compiled code */
+                                           uint8_t *bytecode_end_p) /**< end of the bytecode */
+{
+  ecma_value_t *base_p = (ecma_value_t *) bytecode_end_p;
+
+  if (compiled_code_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
+  {
+    uint32_t argument_end;
+    if (compiled_code_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
+    {
+      argument_end = ((cbc_uint16_arguments_t *) compiled_code_p)->argument_end;
+    }
+    else
+    {
+      argument_end = ((cbc_uint8_arguments_t *) compiled_code_p)->argument_end;
+    }
+
+    base_p -= argument_end;
+  }
+
+#if ENABLED (JERRY_ESNEXT)
+  /* function name */
+  if (CBC_FUNCTION_GET_TYPE (compiled_code_p->status_flags) != CBC_FUNCTION_CONSTRUCTOR)
+  {
+    base_p--;
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+  return base_p;
+} /* ecma_snapshot_resolve_serializable_values */
 #endif /* ENABLED (JERRY_SNAPSHOT_EXEC) || ENABLED (JERRY_SNAPSHOT_SAVE) */
 
 /**

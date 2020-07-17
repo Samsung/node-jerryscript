@@ -37,22 +37,18 @@ typedef enum
   LIT_INTERNAL_MAGIC_STRING_ALREADY_RESOLVED, /**< [[AlreadyResolved]] of promise reject or resolve functions */
   LIT_INTERNAL_MAGIC_STRING_RESOLVE_FUNCTION, /**< the resolve funtion of the promise object */
   LIT_INTERNAL_MAGIC_STRING_REJECT_FUNCTION, /**< the reject function of the promise object */
-  LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_PROMISE, /**< [[Promise]] property */
-  LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_RESOLVE, /**< [[Resolve]] property */
-  LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_REJECT, /**< [[Reject]] property */
-  LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_CAPABILITY, /**< [[Capability]] property */
-  LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_HANDLER, /**< [[Handler]] property */
-  LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_ALREADY_CALLED, /**< [[AlreadyCalled]] property */
-  LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_INDEX, /**< [[Index]] property */
-  LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_VALUE, /**< [[Values]] property */
-  LIT_INTERNAL_MAGIC_STRING_PROMISE_PROPERTY_REMAINING_ELEMENT, /**< [[RemainingElement]] property */
   LIT_INTERNAL_MAGIC_STRING_ITERATOR_NEXT_INDEX, /**< [[%Iterator%NextIndex]] property */
   LIT_INTERNAL_MAGIC_STRING_MAP_KEY, /**< Property key used when an object is a key in a map object */
   LIT_INTERNAL_MAGIC_API_INTERNAL, /**< Property key used to add non-visible JS properties from the public API  */
+  LIT_INTERNAL_MAGIC_STRING_ARRAY_PROTOTYPE_VALUES, /**< %ArrayProto_values% intrinsic routine */
+  LIT_INTERNAL_MAGIC_STRING_SET_PROTOTYPE_KEYS, /**< Set.prototype values, keys and [@@iterator] routines */
+  LIT_INTERNAL_MAGIC_THIS_BINDING_VALUE, /**< FunctionEnvironmentRecord [[ThisBindingValue]] internal slot */
+  LIT_INTERNAL_MAGIC_PROMISE_CAPABILITY, /**< PromiseCapability record */
   /* List of well known symbols */
   LIT_GLOBAL_SYMBOL_HAS_INSTANCE, /**< @@hasInstance well known symbol */
   LIT_GLOBAL_SYMBOL_IS_CONCAT_SPREADABLE, /**< @@isConcatSpreadable well known symbol */
   LIT_GLOBAL_SYMBOL_ITERATOR, /**< @@iterator well known symbol */
+  LIT_GLOBAL_SYMBOL_ASYNC_ITERATOR, /**< @@asyncIterator well known symbol */
   LIT_GLOBAL_SYMBOL_MATCH, /**< @@match well known symbol */
   LIT_GLOBAL_SYMBOL_REPLACE, /**< @@replace well known symbol */
   LIT_GLOBAL_SYMBOL_SEARCH, /**< @@search well known symbol */
@@ -69,11 +65,15 @@ typedef enum
   LIT_INTERNAL_MAGIC_STRING_NATIVE_POINTER, /**< native pointer info associated with an object */
   LIT_FIRST_INTERNAL_MAGIC_STRING = LIT_INTERNAL_MAGIC_STRING_NATIVE_POINTER,  /**< first index of internal
                                                                                 *   magic strings */
-  LIT_INTERNAL_MAGIC_STRING_CLASS_THIS_BINDING, /**< the this binding of the class constructor */
   LIT_INTERNAL_MAGIC_STRING_WEAK_REFS, /**< Weak references to the current object */
-  LIT_INTERNAL_MAGIC_STRING_CONTAINER, /**< Literal ID for internal container objects */
+  LIT_INTERNAL_MAGIC_STRING_INTERNAL_OBJECT, /**< Internal object ID for internal properties */
   LIT_MAGIC_STRING__COUNT /**< number of magic strings */
 } lit_magic_string_id_t;
+
+/**
+ * Checks whether the given id corresponds to a global symbol
+ */
+#define LIT_IS_GLOBAL_SYMBOL(id) ((id) >= LIT_GLOBAL_SYMBOL_HAS_INSTANCE && (id) <= LIT_GLOBAL_SYMBOL_UNSCOPABLES)
 
 /**
  * Identifiers of implementation-defined external magic string constants

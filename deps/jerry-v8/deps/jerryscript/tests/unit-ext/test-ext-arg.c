@@ -401,7 +401,6 @@ test_validator_prop2_handler (const jerry_value_t func_obj_val, /**< function ob
 
   jerry_value_t is_ok = jerryx_arg_transform_args (args_p, args_cnt, mapping, ARRAY_SIZE (mapping));
 
-
   TEST_ASSERT (!jerry_value_is_error (is_ok));
 
   if (validator_prop_count == 1)
@@ -622,7 +621,6 @@ test_validator_array1_handler (const jerry_value_t func_obj_val, /**< function o
 
   jerry_value_t is_ok = jerryx_arg_transform_args (args_p, args_cnt, mapping, ARRAY_SIZE (mapping));
 
-
   TEST_ASSERT (!jerry_value_is_error (is_ok));
 
   if (validator_array_count == 0)
@@ -730,7 +728,7 @@ jerry_arg_to_double_or_bool_t (jerryx_arg_js_iterator_t *js_arg_iter_p,
    * the stack more times than there are actual stack values to ensure
    * that the restore function doesn't produce an error. */
   double_or_bool_t *destination = c_arg_p->dest;
-  uintptr_t *extra_info = (uintptr_t *)(c_arg_p->extra_info);
+  uintptr_t *extra_info = (uintptr_t *) (c_arg_p->extra_info);
   jerryx_arg_t conversion_function;
   jerry_value_t conversion_result;
   jerry_value_t restore_result;

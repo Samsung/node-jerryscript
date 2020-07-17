@@ -62,7 +62,7 @@
 static inline jmem_heap_free_t *  JERRY_ATTR_ALWAYS_INLINE JERRY_ATTR_PURE
 jmem_heap_get_region_end (jmem_heap_free_t *curr_p) /**< current region */
 {
-  return (jmem_heap_free_t *)((uint8_t *) curr_p + curr_p->size);
+  return (jmem_heap_free_t *) ((uint8_t *) curr_p + curr_p->size);
 } /* jmem_heap_get_region_end */
 #endif /* !ENABLED (JERRY_SYSTEM_ALLOCATOR) */
 
@@ -288,6 +288,7 @@ jmem_heap_gc_and_alloc_block (const size_t size, /**< required memory size */
 
   void *data_space_p = jmem_heap_alloc (size);
 
+  /* cppcheck-suppress memleak */
   while (JERRY_UNLIKELY (data_space_p == NULL) && JERRY_LIKELY (pressure < max_pressure))
   {
     pressure++;
@@ -409,7 +410,6 @@ jmem_heap_insert_block (jmem_heap_free_t *block_p, /**< block to insert */
   JMEM_VALGRIND_DEFINED_SPACE (block_p, sizeof (jmem_heap_free_t));
   JMEM_VALGRIND_DEFINED_SPACE (next_p, sizeof (jmem_heap_free_t));
 
-
   const uint32_t block_offset = JMEM_HEAP_GET_OFFSET_FROM_ADDR (block_p);
 
   /* Update prev. */
@@ -516,7 +516,7 @@ jmem_heap_realloc_block (void *ptr, /**< memory region to reallocate */
     JMEM_VALGRIND_RESIZE_SPACE (block_p, old_size, new_size);
     JMEM_HEAP_STAT_FREE (old_size);
     JMEM_HEAP_STAT_ALLOC (new_size);
-    jmem_heap_insert_block ((jmem_heap_free_t *)((uint8_t *) block_p + aligned_new_size),
+    jmem_heap_insert_block ((jmem_heap_free_t *) ((uint8_t *) block_p + aligned_new_size),
                             jmem_heap_find_prev (block_p),
                             aligned_old_size - aligned_new_size);
 

@@ -119,7 +119,6 @@ handler_construct_2_freecb (void *native_p)
   test_api_is_free_callback_was_called = true;
 } /* handler_construct_2_freecb */
 
-
 /**
  * The name of the jerry_object_native_info_t struct.
  */
@@ -271,8 +270,6 @@ foreach (const jerry_value_t name, /**< field name */
 
   TEST_ASSERT (false);
   return false;
-
-
 } /* foreach */
 
 static bool
@@ -686,10 +683,34 @@ main (void)
   jerry_release_value (prim_val);
 
   /* Test: jerry_get_prototype */
+  proto_val = jerry_get_prototype (jerry_create_undefined ());
+  TEST_ASSERT (jerry_value_is_error (proto_val));
+  jerry_value_t error = jerry_get_value_from_error (proto_val, true);
+  TEST_ASSERT (jerry_get_error_type (error) == JERRY_ERROR_TYPE);
+  jerry_release_value (error);
+
   proto_val = jerry_get_prototype (obj_val);
   TEST_ASSERT (!jerry_value_is_error (proto_val));
   TEST_ASSERT (jerry_value_is_object (proto_val));
+  jerry_release_value (proto_val);
   jerry_release_value (obj_val);
+
+  if (jerry_is_feature_enabled (JERRY_FEATURE_PROXY))
+  {
+    jerry_value_t target = jerry_create_object ();
+    jerry_value_t handler = jerry_create_object ();
+    jerry_value_t proxy = jerry_create_proxy (target, handler);
+    jerry_value_t obj_proto = jerry_eval ((jerry_char_t *) "Object.prototype", 16, JERRY_PARSE_NO_OPTS);
+
+    jerry_release_value (target);
+    jerry_release_value (handler);
+    proto_val = jerry_get_prototype (proxy);
+    TEST_ASSERT (!jerry_value_is_error (proto_val));
+    TEST_ASSERT (proto_val == obj_proto);
+    jerry_release_value (proto_val);
+    jerry_release_value (obj_proto);
+    jerry_release_value (proxy);
+  }
 
   /* Test: jerry_set_prototype */
   obj_val = jerry_create_object ();
@@ -698,7 +719,9 @@ main (void)
   TEST_ASSERT (jerry_value_is_boolean (res));
   TEST_ASSERT (jerry_get_boolean_value (res));
 
-  res = jerry_set_prototype (obj_val, jerry_create_object ());
+  jerry_value_t new_proto = jerry_create_object ();
+  res = jerry_set_prototype (obj_val, new_proto);
+  jerry_release_value (new_proto);
   TEST_ASSERT (!jerry_value_is_error (res));
   TEST_ASSERT (jerry_value_is_boolean (res));
   TEST_ASSERT (jerry_get_boolean_value (res));
@@ -707,6 +730,25 @@ main (void)
   TEST_ASSERT (jerry_value_is_object (proto_val));
   jerry_release_value (proto_val);
   jerry_release_value (obj_val);
+
+  if (jerry_is_feature_enabled (JERRY_FEATURE_PROXY))
+  {
+    jerry_value_t target = jerry_create_object ();
+    jerry_value_t handler = jerry_create_object ();
+    jerry_value_t proxy = jerry_create_proxy (target, handler);
+    new_proto = jerry_eval ((jerry_char_t *) "Function.prototype", 18, JERRY_PARSE_NO_OPTS);
+
+    res = jerry_set_prototype (proxy, new_proto);
+    TEST_ASSERT (!jerry_value_is_error (res));
+    jerry_value_t target_proto = jerry_get_prototype (target);
+    TEST_ASSERT (target_proto == new_proto);
+
+    jerry_release_value (target);
+    jerry_release_value (handler);
+    jerry_release_value (proxy);
+    jerry_release_value (new_proto);
+    jerry_release_value (target_proto);
+  }
 
   /* Test: eval */
   const jerry_char_t eval_code_src1[] = "(function () { return 123; })";
@@ -802,6 +844,47 @@ main (void)
     num = jerry_get_number_value (num2_val);
     TEST_ASSERT (num == 123);
     jerry_release_value (num2_val);
+    jerry_cleanup ();
+  }
+
+  /* Test parsing/executing scripts with lexically scoped global variables multiple times. */
+  if (jerry_is_feature_enabled (JERRY_FEATURE_SYMBOL))
+  {
+    jerry_init (JERRY_INIT_EMPTY);
+    const jerry_char_t scoped_src_p[] = "let a;";
+    jerry_value_t parse_result = jerry_parse (NULL,
+                                              0,
+                                              scoped_src_p,
+                                              sizeof (scoped_src_p) - 1,
+                                              JERRY_PARSE_NO_OPTS);
+    TEST_ASSERT (!jerry_value_is_error (parse_result));
+    jerry_release_value (parse_result);
+
+    parse_result = jerry_parse (NULL,
+                                0,
+                                scoped_src_p,
+                                sizeof (scoped_src_p) - 1,
+                                JERRY_PARSE_NO_OPTS);
+    TEST_ASSERT (!jerry_value_is_error (parse_result));
+
+    jerry_value_t run_result = jerry_run (parse_result);
+    TEST_ASSERT (!jerry_value_is_error (run_result));
+    jerry_release_value (run_result);
+
+    /* Should be a syntax error due to redeclaration. */
+    run_result = jerry_run (parse_result);
+    TEST_ASSERT (jerry_value_is_error (run_result));
+    jerry_release_value (run_result);
+    jerry_release_value (parse_result);
+
+    /* The variable should have no effect on parsing. */
+    parse_result = jerry_parse (NULL,
+                                0,
+                                scoped_src_p,
+                                sizeof (scoped_src_p) - 1,
+                                JERRY_PARSE_NO_OPTS);
+    TEST_ASSERT (!jerry_value_is_error (parse_result));
+    jerry_release_value (parse_result);
     jerry_cleanup ();
   }
 
@@ -932,49 +1015,6 @@ main (void)
 
   jerry_release_value (args[1]);
 
-  {
-    /*json parser check*/
-    const char data_check[]="John";
-    jerry_value_t key = jerry_create_string ((const jerry_char_t *) "name");
-    const jerry_char_t data[] = "{\"name\": \"John\", \"age\": 5}";
-    jerry_value_t parsed_json = jerry_json_parse (data, sizeof (data) - 1);
-    jerry_value_t has_prop_js = jerry_has_property (parsed_json, key);
-    TEST_ASSERT (jerry_get_boolean_value (has_prop_js));
-    jerry_release_value (has_prop_js);
-    jerry_value_t parsed_data = jerry_get_property (parsed_json, key);
-    TEST_ASSERT (jerry_value_is_string (parsed_data)== true);
-    jerry_size_t buff_size = jerry_get_string_size (parsed_data);
-    JERRY_VLA (char, buff, buff_size + 1);
-    jerry_string_to_char_buffer (parsed_data, (jerry_char_t *) buff, buff_size);
-    buff[buff_size] = '\0';
-    TEST_ASSERT (strcmp (data_check, buff) == false);
-    jerry_release_value (parsed_json);
-    jerry_release_value (key);
-    jerry_release_value (parsed_data);
-  }
-
-  /*json stringify test*/
-  {
-    jerry_value_t obj = jerry_create_object ();
-    char check_value[] = "{\"name\":\"John\"}";
-    jerry_value_t key = jerry_create_string ((const jerry_char_t *) "name");
-    jerry_value_t value = jerry_create_string ((const jerry_char_t *) "John");
-    res = jerry_set_property (obj, key, value);
-    TEST_ASSERT (!jerry_value_is_error (res));
-    TEST_ASSERT (jerry_value_is_boolean (res) && jerry_get_boolean_value (res));
-    jerry_release_value (res);
-    jerry_value_t stringified = jerry_json_stringify (obj);
-    TEST_ASSERT (jerry_value_is_string (stringified));
-    jerry_size_t buff_size = jerry_get_string_size (stringified);
-    JERRY_VLA (char, buff, buff_size + 1);
-    jerry_string_to_char_buffer (stringified, (jerry_char_t *) buff, buff_size);
-    buff[buff_size] = '\0';
-    TEST_ASSERT (strcmp ((const char *) check_value, (const char *) buff)  == 0);
-    jerry_release_value (stringified);
-    jerry_release_value (obj);
-    jerry_release_value (key);
-    jerry_release_value (value);
-  }
   jerry_cleanup ();
 
   return 0;

@@ -13,7 +13,17 @@
 // limitations under the License.
 
 // check properties
-assert(Object.getOwnPropertyDescriptor(String.prototype.trim, 'length').configurable === false);
+
+function length_configurable()
+{
+  function is_es51() {
+    return (typeof g === "function");
+    { function g() {} }
+  }
+  return is_es51() ? false : true;
+}
+
+assert(Object.getOwnPropertyDescriptor(String.prototype.trim, 'length').configurable === length_configurable());
 
 assert(Object.getOwnPropertyDescriptor(String.prototype.trim, 'length').enumerable === false);
 
@@ -75,3 +85,5 @@ assert("\u000A\u000D\u2028\u202911".trim() === "11");
 
 assert("\u0009\u000B\u000C\u0020\u00A01\u0009\u000B\u000C\u0020\u00A0".trim() === "1");
 assert("\u000A\u000D\u2028\u202911\u000A\u000D\u2028\u2029".trim() === "11");
+
+assert ("\u200B".trim() === '\u200B')

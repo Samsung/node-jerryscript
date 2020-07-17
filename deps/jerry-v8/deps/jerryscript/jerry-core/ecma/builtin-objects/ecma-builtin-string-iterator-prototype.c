@@ -17,7 +17,7 @@
 #include "ecma-builtins.h"
 #include "ecma-iterator-object.h"
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 
 #define ECMA_BUILTINS_INTERNAL
 #include "ecma-builtins-internal.h"
@@ -76,7 +76,6 @@ ecma_builtin_string_iterator_prototype_object_next (ecma_value_t this_val) /**< 
   }
 
   JERRY_ASSERT (ecma_is_value_string (iterated_value));
-
 
   ecma_string_t *string_p = ecma_get_string_from_value (iterated_value);
 
@@ -145,4 +144,4 @@ ecma_builtin_string_iterator_prototype_object_next (ecma_value_t this_val) /**< 
  * @}
  */
 
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */

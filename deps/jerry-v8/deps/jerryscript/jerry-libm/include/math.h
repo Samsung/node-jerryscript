@@ -56,13 +56,28 @@ double asin (double);
 double atan (double);
 double atan2 (double, double);
 
+/* Hyperbolic functions. */
+double cosh (double x);
+double sinh (double x);
+double tanh (double x);
+
+/* Inverse hyperbolic functions */
+double acosh (double);
+double asinh (double);
+double atanh (double);
+
 /* Exponential and logarithmic functions. */
 double exp (double);
+double expm1 (double);
 double log (double);
+double log1p (double);
+double log2 (double);
+double log10 (double);
 
 /* Power functions. */
 double pow (double, double);
 double sqrt (double);
+double cbrt (double);
 
 /* Rounding and remainder functions. */
 double ceil (double);

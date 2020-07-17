@@ -15,6 +15,7 @@
 
 #include "ecma-alloc.h"
 #include "ecma-array-object.h"
+#include "ecma-iterator-object.h"
 #include "ecma-builtin-helpers.h"
 #include "ecma-builtins.h"
 #include "ecma-exceptions.h"
@@ -72,7 +73,7 @@ ecma_op_new_array_object (ecma_length_t length) /**< length of the new array */
   ecma_object_t *array_prototype_object_p = ecma_builtin_get (ECMA_BUILTIN_ID_ARRAY_PROTOTYPE);
 #else /* !ENABLED (JERRY_BUILTIN_ARRAY) */
   ecma_object_t *array_prototype_object_p = ecma_builtin_get (ECMA_BUILTIN_ID_OBJECT_PROTOTYPE);
-#endif /* (ENABLED (JERRY_BUILTIN_ARRAY)) */
+#endif /* ENABLED (JERRY_BUILTIN_ARRAY) */
 
   ecma_object_t *object_p = ecma_create_object (array_prototype_object_p,
                                                 sizeof (ecma_extended_object_t),
@@ -300,6 +301,18 @@ ecma_fast_array_set_property (ecma_object_t *object_p, /**< fast access mode arr
   return true;
 } /* ecma_fast_array_set_property */
 
+/**
+ * Get the number of array holes in a fast access array object
+ *
+ * @return number of array holes in a fast access array object
+ */
+inline uint32_t JERRY_ATTR_ALWAYS_INLINE
+ecma_fast_array_get_hole_count (ecma_object_t *obj_p) /**< fast access mode array object */
+{
+  JERRY_ASSERT (ecma_op_object_is_fast_array (obj_p));
+
+  return ((ecma_extended_object_t *) obj_p)->u.array.u.hole_count >> ECMA_FAST_ARRAY_HOLE_SHIFT;
+} /* ecma_fast_array_get_hole_count */
 
 /**
  * Extend the underlying buffer of a fast mode access array for the given new length
@@ -506,12 +519,12 @@ ecma_fast_array_get_property_names (ecma_object_t *object_p, /**< fast access mo
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
   ecma_collection_t *ret_p = ecma_new_collection ();
 
-#if ENABLED (JERRY_ES2015)
-  if (opts & ECMA_LIST_SYMBOLS)
+#if ENABLED (JERRY_ESNEXT)
+  if (opts & ECMA_LIST_SYMBOLS_ONLY)
   {
     return ret_p;
   }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   uint32_t length = ext_obj_p->u.array.length;
 
@@ -653,7 +666,7 @@ ecma_op_create_array_object (const ecma_value_t *arguments_list_p, /**< list of 
   return ecma_make_object_value (object_p);
 } /* ecma_op_create_array_object */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 /**
  * Array object creation with custom prototype.
  *
@@ -663,28 +676,108 @@ ecma_op_create_array_object (const ecma_value_t *arguments_list_p, /**< list of 
  *         Returned value must be freed with ecma_free_value
  */
 ecma_value_t
-ecma_op_create_array_object_by_constructor (const ecma_value_t *arguments_list_p, /**< list of arguments that
-                                                                                   *   are passed to
-                                                                                   *   Array constructor */
-                                            ecma_length_t arguments_list_len, /**< length of the arguments' list */
-                                            bool is_treat_single_arg_as_length, /**< if the value is true,
-                                                                                 *   arguments_list_len is 1
-                                                                                 *   and single argument is Number,
-                                                                                 *   then treat the single argument
-                                                                                 *   as new Array's length rather
-                                                                                 *   than as single item of the
-                                                                                 *   Array */
-                                            ecma_object_t *object_p) /**< The object from whom the new array object
-                                                                      *   is being created */
+ecma_op_array_species_create (ecma_object_t *original_array_p, /**< The object from whom the new array object
+                                                                *   is being created */
+                              ecma_length_t length) /**< length of the array */
 {
-  /* TODO: Use @@species after Symbol has been implemented */
-  JERRY_UNUSED (object_p);
+  ecma_value_t constructor = ECMA_VALUE_UNDEFINED;
+  ecma_value_t original_array = ecma_make_object_value (original_array_p);
 
-  return ecma_op_create_array_object (arguments_list_p,
-                                      arguments_list_len,
-                                      is_treat_single_arg_as_length);
-} /* ecma_op_create_array_object_by_constructor */
-#endif /* ENABLED (JERRY_ES2015) */
+  ecma_value_t is_array = ecma_is_value_array (original_array);
+
+  if (ECMA_IS_VALUE_ERROR (is_array))
+  {
+    return is_array;
+  }
+
+  if (ecma_is_value_true (is_array))
+  {
+    constructor = ecma_op_object_get_by_magic_id (original_array_p, LIT_MAGIC_STRING_CONSTRUCTOR);
+    if (ECMA_IS_VALUE_ERROR (constructor))
+    {
+      return constructor;
+    }
+
+    if (ecma_is_constructor (constructor)
+        && ecma_get_object_from_value (constructor) == ecma_builtin_get (ECMA_BUILTIN_ID_ARRAY))
+    {
+      ecma_free_value (constructor);
+      constructor = ECMA_VALUE_UNDEFINED;
+    }
+    else if (ecma_is_value_object (constructor))
+    {
+      ecma_object_t *ctor_object_p = ecma_get_object_from_value (constructor);
+      constructor = ecma_op_object_get_by_symbol_id (ctor_object_p, LIT_GLOBAL_SYMBOL_SPECIES);
+      ecma_deref_object (ctor_object_p);
+
+      if (ECMA_IS_VALUE_ERROR (constructor))
+      {
+        return constructor;
+      }
+
+      if (ecma_is_value_null (constructor))
+      {
+        constructor = ECMA_VALUE_UNDEFINED;
+      }
+    }
+  }
+
+  if (ecma_is_value_undefined (constructor))
+  {
+    ecma_value_t length_val = ecma_make_uint32_value (length);
+    ecma_value_t new_array = ecma_op_create_array_object (&length_val, 1, true);
+    ecma_free_value (length_val);
+
+    return new_array;
+  }
+
+  if (!ecma_is_constructor (constructor))
+  {
+    ecma_free_value (constructor);
+    return ecma_raise_type_error (ECMA_ERR_MSG ("Invalid species constructor"));
+  }
+
+  ecma_value_t len_val = ecma_make_uint32_value (length);
+  ecma_object_t *ctor_object_p = ecma_get_object_from_value (constructor);
+  ecma_value_t ret_val = ecma_op_function_construct (ctor_object_p,
+                                                     ctor_object_p,
+                                                     &len_val,
+                                                     1);
+
+  ecma_deref_object (ctor_object_p);
+  ecma_free_value (len_val);
+  return ret_val;
+} /* ecma_op_array_species_create */
+
+/**
+ * CreateArrayIterator Abstract Operation
+ *
+ * See also:
+ *          ECMA-262 v6, 22.1.5.1
+ *
+ * Referenced by:
+ *          ECMA-262 v6, 22.1.3.4
+ *          ECMA-262 v6, 22.1.3.13
+ *          ECMA-262 v6, 22.1.3.29
+ *          ECMA-262 v6, 22.1.3.30
+ *
+ * Note:
+ *      Returned value must be freed with ecma_free_value.
+ *
+ * @return array iterator object
+ */
+ecma_value_t
+ecma_op_create_array_iterator (ecma_object_t *obj_p, /**< array object */
+                               ecma_array_iterator_type_t type) /**< array iterator type */
+{
+  ecma_object_t *prototype_obj_p = ecma_builtin_get (ECMA_BUILTIN_ID_ARRAY_ITERATOR_PROTOTYPE);
+
+  return ecma_op_create_iterator_object (ecma_make_object_value (obj_p),
+                                         prototype_obj_p,
+                                         ECMA_PSEUDO_ARRAY_ITERATOR,
+                                         (uint8_t) type);
+} /* ecma_op_create_array_iterator */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Low level delete of array items from new_length to old_length
@@ -1110,13 +1203,8 @@ ecma_array_get_length (ecma_object_t *array_p) /**< array object */
  */
 void
 ecma_op_array_list_lazy_property_names (ecma_object_t *obj_p, /**< a String object */
-                                        bool separate_enumerable, /**< true -  list enumerable properties
-                                                                   *           into main collection,
-                                                                   *           and non-enumerable to collection of
-                                                                   *           'skipped non-enumerable' properties,
-                                                                   *   false - list all properties into main
-                                                                   *           collection.
-                                                                   */
+                                        uint32_t opts, /**< listing options using flags
+                                                        *   from ecma_list_properties_options_t */
                                         ecma_collection_t *main_collection_p, /**< 'main'  collection */
                                         ecma_collection_t *non_enum_collection_p) /**< skipped
                                                                                    *   'non-enumerable'
@@ -1124,9 +1212,12 @@ ecma_op_array_list_lazy_property_names (ecma_object_t *obj_p, /**< a String obje
 {
   JERRY_ASSERT (ecma_get_object_type (obj_p) == ECMA_OBJECT_TYPE_ARRAY);
 
-  ecma_collection_t *for_non_enumerable_p = separate_enumerable ? non_enum_collection_p : main_collection_p;
+  ecma_collection_t *for_non_enumerable_p = (opts & ECMA_LIST_ENUMERABLE) ? non_enum_collection_p : main_collection_p;
 
-  ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+  if ((opts & ECMA_LIST_ARRAY_INDICES) == 0)
+  {
+    ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+  }
 } /* ecma_op_array_list_lazy_property_names */
 
 /**

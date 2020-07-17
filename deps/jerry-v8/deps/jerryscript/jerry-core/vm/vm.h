@@ -1,4 +1,3 @@
-
 /* Copyright JS Foundation and other contributors, http://js.foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -162,7 +161,7 @@ typedef enum
   VM_OC_ERROR,                   /**< error while the vm_loop is suspended */
 
   VM_OC_JUMP,                    /**< jump */
-  VM_OC_BRANCH_IF_STRICT_EQUAL,  /**< branch if stric equal */
+  VM_OC_BRANCH_IF_STRICT_EQUAL,  /**< branch if strict equal */
 
   /* These four opcodes must be in this order. */
   VM_OC_BRANCH_IF_TRUE,          /**< branch if true */
@@ -183,6 +182,9 @@ typedef enum
   VM_OC_MUL,                     /**< mul */
   VM_OC_DIV,                     /**< div */
   VM_OC_MOD,                     /**< mod */
+#if ENABLED (JERRY_ESNEXT)
+  VM_OC_EXP,                     /**< exponentiation */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   VM_OC_EQUAL,                   /**< equal */
   VM_OC_NOT_EQUAL,               /**< not equal */
@@ -204,7 +206,7 @@ typedef enum
 
   VM_OC_BLOCK_CREATE_CONTEXT,    /**< create lexical environment for blocks enclosed in braces */
   VM_OC_WITH,                    /**< with */
-  VM_OC_FOR_IN_CREATE_CONTEXT,   /**< for in create context */
+  VM_OC_FOR_IN_INIT,             /**< for-in init context */
   VM_OC_FOR_IN_GET_NEXT,         /**< get next */
   VM_OC_FOR_IN_HAS_NEXT,         /**< has next */
 
@@ -214,39 +216,53 @@ typedef enum
   VM_OC_CONTEXT_END,             /**< context end */
   VM_OC_JUMP_AND_EXIT_CONTEXT,   /**< jump and exit context */
 
+  VM_OC_CREATE_BINDING,          /**< create variables */
+  VM_OC_SET_BYTECODE_PTR,        /**< setting bytecode pointer */
+  VM_OC_VAR_EVAL,                /**< variable and function evaluation */
+#if ENABLED (JERRY_ESNEXT)
+  VM_OC_EXT_VAR_EVAL,            /**< variable and function evaluation for
+                                  *   functions with separate argument context */
+#endif /* ENABLED (JERRY_ESNEXT) */
+  VM_OC_INIT_ARG_OR_FUNC,        /**< create and init a function or argument binding */
+
 #if ENABLED (JERRY_DEBUGGER)
   VM_OC_BREAKPOINT_ENABLED,      /**< enabled breakpoint for debugger */
   VM_OC_BREAKPOINT_DISABLED,     /**< disabled breakpoint for debugger */
 #endif /* ENABLED (JERRY_DEBUGGER) */
-#if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM)
-  VM_OC_RESOURCE_NAME,           /**< resource name of the current function */
-#endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
 #if ENABLED (JERRY_LINE_INFO)
   VM_OC_LINE,                    /**< line number of the next statement */
 #endif /* ENABLED (JERRY_LINE_INFO) */
-#if ENABLED (JERRY_ES2015)
-  VM_OC_INIT_LOCALS,             /**< call vm_init_loop() */
+#if ENABLED (JERRY_ESNEXT)
+  VM_OC_CHECK_VAR,               /**< check redeclared vars in the global scope */
+  VM_OC_CHECK_LET,               /**< check redeclared lets in the global scope */
   VM_OC_ASSIGN_LET_CONST,        /**< assign values to let/const declarations */
+  VM_OC_INIT_BINDING,            /**< create and intialize a binding */
+  VM_OC_THROW_CONST_ERROR,       /**< throw invalid assignment to const variable error */
+  VM_OC_COPY_TO_GLOBAL,          /**< copy value to global lex env */
+  VM_OC_COPY_FROM_ARG,           /**< copy value from arg lex env */
   VM_OC_CLONE_CONTEXT,           /**< clone lexical environment with let/const declarations */
+  VM_OC_COPY_DATA_PROPERTIES,    /**< copy data properties of an object */
   VM_OC_SET_COMPUTED_PROPERTY,   /**< set computed property */
 
-  VM_OC_FOR_OF_CREATE_CONTEXT,   /**< for of create context */
-  VM_OC_FOR_OF_GET_NEXT,         /**< get next */
-  VM_OC_FOR_OF_HAS_NEXT,         /**< has next */
+  VM_OC_FOR_OF_INIT,             /**< for-of init context */
+  VM_OC_FOR_OF_GET_NEXT,         /**< for-of get next */
+  VM_OC_FOR_OF_HAS_NEXT,         /**< for-of has next */
+  VM_OC_FOR_AWAIT_OF_INIT,       /**< for-await-of init context */
+  VM_OC_FOR_AWAIT_OF_HAS_NEXT,   /**< for-await-of has next */
 
-  VM_OC_CLASS_HERITAGE,          /**< create a super class context */
-  VM_OC_CLASS_INHERITANCE,       /**< inherit properties from the 'super' class */
-  VM_OC_PUSH_CLASS_CONSTRUCTOR_AND_PROTOTYPE,  /**< push class constructor */
-  VM_OC_SET_CLASS_CONSTRUCTOR,   /**< set class constructor to the given function literal */
-  VM_OC_PUSH_IMPL_CONSTRUCTOR,   /**< create implicit class constructor */
-  VM_OC_CLASS_EXPR_CONTEXT_END,  /**< class expression heritage context end */
-  VM_OC_CLASS_EVAL,              /**< eval inside a class */
+  VM_OC_LOCAL_EVAL,              /**< eval in local context */
   VM_OC_SUPER_CALL,              /**< call the 'super' constructor */
-  VM_OC_SUPER_PROP_REFERENCE,    /**< resolve super property reference */
-  VM_OC_PUSH_SUPER,              /**< push resolvable super reference */
-  VM_OC_PUSH_CONSTRUCTOR_SUPER,  /**< push 'super' inside a class constructor */
-  VM_OC_PUSH_CONSTRUCTOR_THIS,   /**< push 'this' inside a class constructor */
-  VM_OC_CONSTRUCTOR_RET,         /**< explicit return from a class constructor */
+  VM_OC_PUSH_CLASS_ENVIRONMENT,  /**< push class environment */
+  VM_OC_PUSH_IMPLICIT_CTOR,      /**< create implicit class constructor */
+  VM_OC_INIT_CLASS,              /**< initialize class */
+  VM_OC_FINALIZE_CLASS,          /**< finalize class */
+  VM_OC_PUSH_SUPER_CONSTRUCTOR,  /**< getSuperConstructor operation */
+  VM_OC_RESOLVE_LEXICAL_THIS,    /**< resolve this_binding from from the lexical environment */
+  VM_OC_SUPER_REFERENCE,         /**< push super reference */
+  VM_OC_SET_HOME_OBJECT,         /**< set the [[HomeObject]] environment in an object literal */
+  VM_OC_OBJECT_LITERAL_HOME_ENV, /**< create/destroy [[HomeObject]] environment of an object literal */
+  VM_OC_SET_FUNCTION_NAME,       /**< set function name property */
+
   VM_OC_PUSH_SPREAD_ELEMENT,     /**< push spread element */
   VM_OC_GET_ITERATOR,            /**< GetIterator abstract operation */
   VM_OC_ITERATOR_STEP,           /**< IteratorStep abstract operation */
@@ -257,8 +273,19 @@ typedef enum
   VM_OC_SPREAD_ARGUMENTS,        /**< perform function call/construct with spreaded arguments */
   VM_OC_CREATE_GENERATOR,        /**< create a generator object */
   VM_OC_YIELD,                   /**< yield operation */
+  VM_OC_ASYNC_YIELD,             /**< async yield operation */
+  VM_OC_ASYNC_YIELD_ITERATOR,    /**< async yield iterator operation */
+  VM_OC_AWAIT,                   /**< await operation */
+  VM_OC_GENERATOR_AWAIT,         /**< generator await operation */
   VM_OC_EXT_RETURN,              /**< return which also clears the stack */
-#endif /* ENABLED (JERRY_ES2015) */
+  VM_OC_ASYNC_EXIT,              /**< return from async function */
+  VM_OC_STRING_CONCAT,           /**< string concatenation */
+  VM_OC_GET_TEMPLATE_OBJECT,     /**< GetTemplateObject operation */
+  VM_OC_PUSH_NEW_TARGET,         /**< push new.target onto the stack */
+  VM_OC_REQUIRE_OBJECT_COERCIBLE,/**< RequireObjectCoercible opretaion */
+  VM_OC_ASSIGN_SUPER,            /**< assign super reference */
+  VM_OC_SET__PROTO__,            /**< set prototpe when __proto__: form is used */
+#endif /* ENABLED (JERRY_ESNEXT) */
   VM_OC_NONE,                    /**< a special opcode for unsupported byte codes */
 } vm_oc_types;
 
@@ -267,39 +294,49 @@ typedef enum
  */
 typedef enum
 {
+#if !ENABLED (JERRY_ESNEXT)
+  VM_OC_EXP = VM_OC_NONE,                     /**< exponentiation */
+#endif /* !ENABLED (JERRY_ESNEXT) */
 #if !ENABLED (JERRY_DEBUGGER)
   VM_OC_BREAKPOINT_ENABLED = VM_OC_NONE,      /**< enabled breakpoint for debugger is unused */
   VM_OC_BREAKPOINT_DISABLED = VM_OC_NONE,     /**< disabled breakpoint for debugger is unused */
 #endif /* !ENABLED (JERRY_DEBUGGER) */
-#if !ENABLED (JERRY_LINE_INFO) && !ENABLED (JERRY_ES2015_MODULE_SYSTEM)
-  VM_OC_RESOURCE_NAME = VM_OC_NONE,           /**< resource name of the current function is unused */
-#endif /* !ENABLED (JERRY_LINE_INFO) && !ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
 #if !ENABLED (JERRY_LINE_INFO)
   VM_OC_LINE = VM_OC_NONE,                    /**< line number of the next statement is unused */
 #endif /* !ENABLED (JERRY_LINE_INFO) */
-#if !ENABLED (JERRY_ES2015)
-  VM_OC_INIT_LOCALS = VM_OC_NONE,             /**< call vm_init_loop() */
+#if !ENABLED (JERRY_ESNEXT)
+  VM_OC_EXT_VAR_EVAL = VM_OC_NONE,            /**< variable and function evaluation for
+                                               *   functions with separate argument context */
+  VM_OC_CHECK_VAR = VM_OC_NONE,               /**< check redeclared vars in the global scope */
+  VM_OC_CHECK_LET = VM_OC_NONE,               /**< check redeclared lets in the global scope */
   VM_OC_ASSIGN_LET_CONST = VM_OC_NONE,        /**< assign values to let/const declarations */
+  VM_OC_INIT_BINDING = VM_OC_NONE,            /**< create and intialize a binding */
+  VM_OC_THROW_CONST_ERROR = VM_OC_NONE,       /**< throw invalid assignment to const variable error */
+  VM_OC_COPY_TO_GLOBAL = VM_OC_NONE,          /**< copy value to global lex env */
+  VM_OC_COPY_FROM_ARG = VM_OC_NONE,           /**< copy value from arg lex env */
   VM_OC_CLONE_CONTEXT = VM_OC_NONE,           /**< clone lexical environment with let/const declarations */
+  VM_OC_COPY_DATA_PROPERTIES = VM_OC_NONE,    /**< copy data properties of an object */
   VM_OC_SET_COMPUTED_PROPERTY = VM_OC_NONE,   /**< set computed property is unused */
 
-  VM_OC_FOR_OF_CREATE_CONTEXT = VM_OC_NONE,   /**< for of create context */
-  VM_OC_FOR_OF_GET_NEXT = VM_OC_NONE,         /**< get next */
-  VM_OC_FOR_OF_HAS_NEXT = VM_OC_NONE,         /**< has next */
+  VM_OC_FOR_OF_INIT = VM_OC_NONE,             /**< for-of init context */
+  VM_OC_FOR_OF_GET_NEXT = VM_OC_NONE,         /**< for-of get next */
+  VM_OC_FOR_OF_HAS_NEXT = VM_OC_NONE,         /**< for-of has next */
+  VM_OC_FOR_AWAIT_OF_INIT = VM_OC_NONE,       /**< for-await-of init context */
+  VM_OC_FOR_AWAIT_OF_HAS_NEXT = VM_OC_NONE,   /**< for-await-of has next */
 
-  VM_OC_CLASS_HERITAGE = VM_OC_NONE,          /**< create a super class context */
-  VM_OC_CLASS_INHERITANCE = VM_OC_NONE,       /**< inherit properties from the 'super' class */
-  VM_OC_PUSH_CLASS_CONSTRUCTOR_AND_PROTOTYPE = VM_OC_NONE,  /**< push class constructor */
-  VM_OC_SET_CLASS_CONSTRUCTOR = VM_OC_NONE,   /**< set class constructor to the given function literal */
-  VM_OC_PUSH_IMPL_CONSTRUCTOR = VM_OC_NONE,   /**< create implicit class constructor */
-  VM_OC_CLASS_EXPR_CONTEXT_END = VM_OC_NONE,  /**< class expression heritage context end */
-  VM_OC_CLASS_EVAL = VM_OC_NONE,              /**< eval inside a class */
+  VM_OC_LOCAL_EVAL = VM_OC_NONE,              /**< eval in local context */
   VM_OC_SUPER_CALL = VM_OC_NONE,              /**< call the 'super' constructor */
-  VM_OC_SUPER_PROP_REFERENCE = VM_OC_NONE,    /**< resolve super property reference */
-  VM_OC_PUSH_SUPER = VM_OC_NONE,              /**< push resolvable super reference */
-  VM_OC_PUSH_CONSTRUCTOR_SUPER = VM_OC_NONE,  /**< push 'super' inside a class constructor */
-  VM_OC_PUSH_CONSTRUCTOR_THIS = VM_OC_NONE,   /**< push 'this' inside a class constructor */
-  VM_OC_CONSTRUCTOR_RET = VM_OC_NONE,         /**< explicit return from a class constructor */
+  VM_OC_PUSH_CLASS_ENVIRONMENT = VM_OC_NONE,  /**< push class environment */
+  VM_OC_PUSH_IMPLICIT_CTOR = VM_OC_NONE,      /**< create implicit class constructor */
+  VM_OC_INIT_CLASS = VM_OC_NONE,              /**< initialize class */
+  VM_OC_FINALIZE_CLASS = VM_OC_NONE,          /**< finalize class */
+  VM_OC_PUSH_SUPER_CONSTRUCTOR = VM_OC_NONE,  /**< getSuperConstructor operation */
+  VM_OC_RESOLVE_LEXICAL_THIS = VM_OC_NONE,    /**< resolve this_binding from from the lexical environment */
+  VM_OC_SUPER_REFERENCE = VM_OC_NONE,         /**< push super reference */
+  VM_OC_SET_HOME_OBJECT = VM_OC_NONE,         /**< set the [[HomeObject]] internal property in an object literal */
+  VM_OC_OBJECT_LITERAL_HOME_ENV = VM_OC_NONE, /**< create/destroy [[HomeObject]] environment of an object literal */
+  VM_OC_SET_FUNCTION_NAME = VM_OC_NONE,       /**< set function name property */
+
   VM_OC_PUSH_SPREAD_ELEMENT = VM_OC_NONE,     /**< push spread element */
   VM_OC_GET_ITERATOR = VM_OC_NONE,            /**< GetIterator abstract operation */
   VM_OC_ITERATOR_STEP = VM_OC_NONE,           /**< IteratorStep abstract operation */
@@ -310,8 +347,19 @@ typedef enum
   VM_OC_SPREAD_ARGUMENTS = VM_OC_NONE,        /**< perform function call/construct with spreaded arguments */
   VM_OC_CREATE_GENERATOR = VM_OC_NONE,        /**< create a generator object */
   VM_OC_YIELD = VM_OC_NONE,                   /**< yield operation */
+  VM_OC_ASYNC_YIELD = VM_OC_NONE,             /**< async yield operation */
+  VM_OC_ASYNC_YIELD_ITERATOR = VM_OC_NONE,    /**< async yield iterator operation */
+  VM_OC_AWAIT = VM_OC_NONE,                   /**< await operation */
+  VM_OC_GENERATOR_AWAIT = VM_OC_NONE,         /**< generator await operation */
   VM_OC_EXT_RETURN = VM_OC_NONE,              /**< return which also clears the stack */
-#endif /* !ENABLED (JERRY_ES2015) */
+  VM_OC_ASYNC_EXIT = VM_OC_NONE,              /**< return from async function */
+  VM_OC_STRING_CONCAT = VM_OC_NONE,           /**< string concatenation */
+  VM_OC_GET_TEMPLATE_OBJECT = VM_OC_NONE,     /**< GetTemplateObject operation */
+  VM_OC_PUSH_NEW_TARGET = VM_OC_NONE,         /**< push new.target onto the stack */
+  VM_OC_REQUIRE_OBJECT_COERCIBLE = VM_OC_NONE,/**< RequireObjectCoercible opretaion */
+  VM_OC_ASSIGN_SUPER = VM_OC_NONE,            /**< assign super reference */
+  VM_OC_SET__PROTO__ = VM_OC_NONE,            /**< set prototpe when __proto__: form is used */
+#endif /* !ENABLED (JERRY_ESNEXT) */
 
   VM_OC_UNUSED = VM_OC_NONE                   /**< placeholder if the list is empty */
 } vm_oc_unused_types;
@@ -401,9 +449,9 @@ typedef enum
 ecma_value_t vm_run_global (const ecma_compiled_code_t *bytecode_p);
 ecma_value_t vm_run_eval (ecma_compiled_code_t *bytecode_data_p, uint32_t parse_opts);
 
-#if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
+#if ENABLED (JERRY_MODULE_SYSTEM)
 ecma_value_t vm_run_module (const ecma_compiled_code_t *bytecode_p, ecma_object_t *lex_env_p);
-#endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 
 ecma_value_t vm_run (const ecma_compiled_code_t *bytecode_header_p, ecma_value_t this_binding_value,
                      ecma_object_t *lex_env_p, const ecma_value_t *arg_list_p, ecma_length_t arg_list_len);

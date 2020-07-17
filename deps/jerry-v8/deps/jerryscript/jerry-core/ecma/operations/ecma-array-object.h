@@ -25,7 +25,6 @@
  * @{
  */
 
-
 /**
  * Maximum number of new array holes in a fast mode access array.
  * If the number of new holes exceeds this limit, the array is converted back
@@ -74,6 +73,9 @@ ecma_op_object_is_fast_array (ecma_object_t *object_p);
 bool
 ecma_op_array_is_fast_array (ecma_extended_object_t *array_p);
 
+uint32_t
+ecma_fast_array_get_hole_count (ecma_object_t *obj_p);
+
 ecma_value_t *
 ecma_fast_array_extend (ecma_object_t *object_p, uint32_t new_lengt);
 
@@ -97,11 +99,15 @@ ecma_value_t
 ecma_op_create_array_object (const ecma_value_t *arguments_list_p, ecma_length_t arguments_list_len,
                              bool is_treat_single_arg_as_length);
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 ecma_value_t
-ecma_op_create_array_object_by_constructor (const ecma_value_t *arguments_list_p, ecma_length_t arguments_list_len,
-                                            bool is_treat_single_arg_as_length, ecma_object_t *object_p);
-#endif /* ENABLED (JERRY_ES2015) */
+ecma_op_array_species_create (ecma_object_t *original_array_p,
+                              ecma_length_t length);
+
+ecma_value_t
+ecma_op_create_array_iterator (ecma_object_t *obj_p,
+                               ecma_array_iterator_type_t type);
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 ecma_value_t
 ecma_op_array_object_set_length (ecma_object_t *object_p, ecma_value_t new_value, uint32_t flags);
@@ -113,7 +119,8 @@ ecma_op_array_object_define_own_property (ecma_object_t *object_p, ecma_string_t
 uint32_t ecma_array_get_length (ecma_object_t *array_p);
 
 void
-ecma_op_array_list_lazy_property_names (ecma_object_t *obj_p, bool separate_enumerable,
+ecma_op_array_list_lazy_property_names (ecma_object_t *obj_p,
+                                        uint32_t opts,
                                         ecma_collection_t *main_collection_p,
                                         ecma_collection_t *non_enum_collection_p);
 

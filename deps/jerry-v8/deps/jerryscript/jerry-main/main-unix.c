@@ -53,6 +53,12 @@ static const uint32_t *
 read_file (const char *file_name,
            size_t *out_size_p)
 {
+  if (file_name == NULL)
+  {
+    jerry_port_log (JERRY_LOG_LEVEL_ERROR, "Error: failed to open file, missing filename\n");
+    return NULL;
+  }
+
   FILE *file;
   if (!strcmp ("-", file_name))
   {
@@ -274,7 +280,6 @@ register_js_function (const char *name_p, /**< name of the function */
   jerry_release_value (result_val);
 } /* register_js_function */
 
-
 /**
  * Runs the source code received by jerry_debugger_wait_for_client_source.
  *
@@ -304,7 +309,6 @@ wait_for_source_callback (const jerry_char_t *resource_name_p, /**< resource nam
   return ret_val;
 } /* wait_for_source_callback */
 
-
 /**
  * Command line option IDs
  */
@@ -325,7 +329,8 @@ typedef enum
   OPT_EXEC_SNAP,
   OPT_EXEC_SNAP_FUNC,
   OPT_LOG_LEVEL,
-  OPT_NO_PROMPT
+  OPT_NO_PROMPT,
+  OPT_CALL_ON_EXIT
 } main_opt_id_t;
 
 /**
@@ -365,6 +370,8 @@ static const cli_opt_t main_opts[] =
                .help = "set log level (0-3)"),
   CLI_OPT_DEF (.id = OPT_NO_PROMPT, .longopt = "no-prompt",
                .help = "don't print prompt in REPL mode"),
+  CLI_OPT_DEF (.id = OPT_CALL_ON_EXIT, .longopt = "call-on-exit", .meta = "STRING",
+               .help = "invoke the specified function when the process is just about to exit"),
   CLI_OPT_DEF (.id = CLI_OPT_DEFAULT, .meta = "FILE",
                .help = "input JS file(s) (If file is -, read standard input.)")
 };
@@ -466,7 +473,12 @@ int
 main (int argc,
       char **argv)
 {
-  srand ((unsigned) jerry_port_get_current_time ());
+  union
+  {
+    double d;
+    unsigned u;
+  } now = { .d = jerry_port_get_current_time () };
+  srand (now.u);
   JERRY_VLA (const char *, file_names, argc);
   int files_counter = 0;
 
@@ -487,6 +499,8 @@ main (int argc,
   bool is_repl_mode = false;
   bool is_wait_mode = false;
   bool no_prompt = false;
+
+  const char *exit_cb = NULL;
 
   cli_state_t cli_state = cli_init (main_opts, argc - 1, argv + 1);
   for (int id = cli_consume_option (&cli_state); id != CLI_OPT_END; id = cli_consume_option (&cli_state))
@@ -528,6 +542,11 @@ main (int argc,
           jerry_port_default_set_log_level (JERRY_LOG_LEVEL_DEBUG);
           flags |= JERRY_INIT_SHOW_OPCODES;
         }
+        break;
+      }
+      case OPT_CALL_ON_EXIT:
+      {
+        exit_cb = cli_consume_string (&cli_state);
         break;
       }
       case OPT_SHOW_RE_OP:
@@ -881,33 +900,44 @@ main (int argc,
         }
 
         /* Evaluate the line */
-        jerry_value_t ret_val_eval = jerry_eval (buffer, len, JERRY_PARSE_NO_OPTS);
+        jerry_value_t ret_val = jerry_parse (NULL,
+                                             0,
+                                             buffer,
+                                             len,
+                                             JERRY_PARSE_NO_OPTS);
 
-        if (!jerry_value_is_error (ret_val_eval))
+        if (!jerry_value_is_error (ret_val))
+        {
+          jerry_value_t func_val = ret_val;
+          ret_val = jerry_run (func_val);
+          jerry_release_value (func_val);
+        }
+
+        if (!jerry_value_is_error (ret_val))
         {
           /* Print return value */
-          const jerry_value_t args[] = { ret_val_eval };
+          const jerry_value_t args[] = { ret_val };
           jerry_value_t ret_val_print = jerryx_handler_print (jerry_create_undefined (),
                                                               jerry_create_undefined (),
                                                               args,
                                                               1);
           jerry_release_value (ret_val_print);
-          jerry_release_value (ret_val_eval);
-          ret_val_eval = jerry_run_all_enqueued_jobs ();
+          jerry_release_value (ret_val);
+          ret_val = jerry_run_all_enqueued_jobs ();
 
-          if (jerry_value_is_error (ret_val_eval))
+          if (jerry_value_is_error (ret_val))
           {
-            ret_val_eval = jerry_get_value_from_error (ret_val_eval, true);
-            print_unhandled_exception (ret_val_eval);
+            ret_val = jerry_get_value_from_error (ret_val, true);
+            print_unhandled_exception (ret_val);
           }
         }
         else
         {
-          ret_val_eval = jerry_get_value_from_error (ret_val_eval, true);
-          print_unhandled_exception (ret_val_eval);
+          ret_val = jerry_get_value_from_error (ret_val, true);
+          print_unhandled_exception (ret_val);
         }
 
-        jerry_release_value (ret_val_eval);
+        jerry_release_value (ret_val);
       }
     }
   }
@@ -934,6 +964,32 @@ main (int argc,
   }
 
   jerry_release_value (ret_value);
+
+  if (exit_cb != NULL)
+  {
+    jerry_value_t global = jerry_get_global_object ();
+    jerry_value_t fn_str = jerry_create_string ((jerry_char_t *) exit_cb);
+    jerry_value_t callback_fn = jerry_get_property (global, fn_str);
+
+    jerry_release_value (global);
+    jerry_release_value (fn_str);
+
+    if (jerry_value_is_function (callback_fn))
+    {
+      jerry_value_t ret_val = jerry_call_function (callback_fn, jerry_create_undefined (), NULL, 0);
+
+      if (jerry_value_is_error (ret_val))
+      {
+        ret_val = jerry_get_value_from_error (ret_val, true);
+        print_unhandled_exception (ret_val);
+        ret_code = JERRY_STANDALONE_EXIT_CODE_FAIL;
+      }
+
+      jerry_release_value (ret_val);
+    }
+
+    jerry_release_value (callback_fn);
+  }
 
   jerry_cleanup ();
 #if defined (JERRY_EXTERNAL_CONTEXT) && (JERRY_EXTERNAL_CONTEXT == 1)

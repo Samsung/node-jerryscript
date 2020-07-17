@@ -19,14 +19,14 @@
 
 #include "ecma-builtin-helpers-macro-defines.inc.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
+#if ENABLED (JERRY_BUILTIN_TYPEDARRAY)
 
 /* Number properties:
  *  (property name, number value, writable, enumerable, configurable) */
 
 NUMBER_VALUE (LIT_MAGIC_STRING_LENGTH,
               1,
-              ECMA_PROPERTY_FIXED)
+              ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 /* Object properties:
  *  (property name, object pointer getter) */
@@ -35,12 +35,21 @@ OBJECT_VALUE (LIT_MAGIC_STRING_PROTOTYPE,
               ECMA_BUILTIN_ID_ARRAYBUFFER_PROTOTYPE,
               ECMA_PROPERTY_FIXED)
 
+STRING_VALUE (LIT_MAGIC_STRING_NAME,
+              LIT_MAGIC_STRING_ARRAY_BUFFER_UL,
+              ECMA_PROPERTY_FLAG_CONFIGURABLE)
+
 /* Routine properties:
  *  (property name, C routine name, arguments number or NON_FIXED, value of the routine's length property) */
 
 /* ES2015 24.1.3.1 */
 ROUTINE (LIT_MAGIC_STRING_IS_VIEW_UL, ecma_builtin_arraybuffer_object_is_view, 1, 1)
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
+/* ES2015 24.1.3.3 */
+ACCESSOR_READ_ONLY (LIT_GLOBAL_SYMBOL_SPECIES,
+                    ecma_builtin_arraybuffer_species_get,
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
+
+#endif /* ENABLED (JERRY_BUILTIN_TYPEDARRAY) */
 
 #include "ecma-builtin-helpers-macro-undefs.inc.h"

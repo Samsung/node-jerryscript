@@ -39,7 +39,7 @@ extern "C"
 /**
  * Minor version of JerryScript API.
  */
-#define JERRY_API_MINOR_VERSION 1
+#define JERRY_API_MINOR_VERSION 4
 
 /**
  * Patch version of JerryScript API.
@@ -99,6 +99,11 @@ typedef enum
   JERRY_FEATURE_LOGGING, /**< logging */
   JERRY_FEATURE_SYMBOL, /**< symbol support */
   JERRY_FEATURE_DATAVIEW, /**< DataView support */
+  JERRY_FEATURE_PROXY, /**< Proxy support */
+  JERRY_FEATURE_MAP, /**< Map support */
+  JERRY_FEATURE_SET, /**< Set support */
+  JERRY_FEATURE_WEAKMAP, /**< WeakMap support */
+  JERRY_FEATURE_WEAKSET, /**< WeakSet support */
   JERRY_FEATURE__COUNT /**< number of features. NOTE: must be at the end of the list */
 } jerry_feature_t;
 
@@ -379,6 +384,7 @@ bool jerry_value_is_number (const jerry_value_t value);
 bool jerry_value_is_null (const jerry_value_t value);
 bool jerry_value_is_object (const jerry_value_t value);
 bool jerry_value_is_promise (const jerry_value_t value);
+bool jerry_value_is_proxy (const jerry_value_t value);
 bool jerry_value_is_string (const jerry_value_t value);
 bool jerry_value_is_symbol (const jerry_value_t value);
 bool jerry_value_is_undefined (const jerry_value_t value);
@@ -493,6 +499,7 @@ jerry_value_t jerry_create_number_nan (void);
 jerry_value_t jerry_create_null (void);
 jerry_value_t jerry_create_object (void);
 jerry_value_t jerry_create_promise (void);
+jerry_value_t jerry_create_proxy (const jerry_value_t target, const jerry_value_t handler);
 jerry_value_t jerry_create_regexp (const jerry_char_t *pattern, uint16_t flags);
 jerry_value_t jerry_create_regexp_sz (const jerry_char_t *pattern, jerry_size_t pattern_size, uint16_t flags);
 jerry_value_t jerry_create_string_from_utf8 (const jerry_char_t *str_p);
@@ -606,6 +613,7 @@ jerry_context_t *jerry_create_context (uint32_t heap_size, jerry_context_alloc_t
 void jerry_set_vm_exec_stop_callback (jerry_vm_exec_stop_callback_t stop_cb, void *user_p, uint32_t frequency);
 jerry_value_t jerry_get_backtrace (uint32_t max_depth);
 jerry_value_t jerry_get_resource_name (const jerry_value_t value);
+jerry_value_t jerry_get_new_target (void);
 
 /**
  * Array buffer components.
@@ -665,6 +673,17 @@ typedef enum
   JERRY_TYPEDARRAY_FLOAT64,
 } jerry_typedarray_type_t;
 
+/**
+ * Container types.
+ */
+typedef enum
+{
+  JERRY_CONTAINER_TYPE_INVALID = 0, /**< Invalid container */
+  JERRY_CONTAINER_TYPE_MAP, /**< Map type */
+  JERRY_CONTAINER_TYPE_SET, /**< Set type */
+  JERRY_CONTAINER_TYPE_WEAKMAP, /**< WeakMap type */
+  JERRY_CONTAINER_TYPE_WEAKSET, /**< WeakSet type */
+} jerry_container_type_t;
 
 bool jerry_value_is_typedarray (jerry_value_t value);
 jerry_value_t jerry_create_typedarray (jerry_typedarray_type_t type_name, jerry_length_t length);
@@ -681,6 +700,10 @@ jerry_value_t jerry_get_typedarray_buffer (jerry_value_t value,
                                            jerry_length_t *byte_length);
 jerry_value_t jerry_json_parse (const jerry_char_t *string_p, jerry_size_t string_size);
 jerry_value_t jerry_json_stringify (const jerry_value_t object_to_stringify);
+jerry_value_t jerry_create_container (jerry_container_type_t container_type,
+                                      const jerry_value_t *arguments_list_p,
+                                      jerry_length_t arguments_list_len);
+jerry_container_type_t jerry_get_container_type (const jerry_value_t value);
 
 /**
  * @}

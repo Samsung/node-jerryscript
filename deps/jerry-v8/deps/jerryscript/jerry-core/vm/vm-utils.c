@@ -16,6 +16,7 @@
 #include "ecma-array-object.h"
 #include "ecma-helpers.h"
 #include "jcontext.h"
+#include "lit-char-helpers.h"
 #include "vm.h"
 
 /**
@@ -75,31 +76,27 @@ vm_get_backtrace (uint32_t max_depth) /**< maximum backtrace depth, 0 = unlimite
 
   while (context_p != NULL)
   {
-    if (context_p->resource_name == ECMA_VALUE_UNDEFINED)
-    {
-      context_p = context_p->prev_context_p;
-      continue;
-    }
-
-    ecma_string_t *str_p = ecma_get_string_from_value (context_p->resource_name);
+    ecma_value_t resource_name = ecma_get_resource_name (context_p->bytecode_header_p);
+    ecma_string_t *str_p = ecma_get_string_from_value (resource_name);
+    ecma_stringbuilder_t builder = ecma_stringbuilder_create ();
 
     if (ecma_string_is_empty (str_p))
     {
-      const lit_utf8_byte_t unknown_str[] = "<unknown>:";
-      str_p = ecma_new_ecma_string_from_utf8 (unknown_str, sizeof (unknown_str) - 1);
+      ecma_stringbuilder_append_raw (&builder, (const lit_utf8_byte_t *)"<unknown>:", 10);
     }
     else
     {
-      ecma_ref_ecma_string (str_p);
-      str_p = ecma_append_magic_string_to_string (str_p, LIT_MAGIC_STRING_COLON_CHAR);
+      ecma_stringbuilder_append (&builder, str_p);
+      ecma_stringbuilder_append_byte (&builder, LIT_CHAR_COLON);
     }
 
     ecma_string_t *line_str_p = ecma_new_ecma_string_from_uint32 (context_p->current_line);
-    str_p = ecma_concat_ecma_strings (str_p, line_str_p);
+    ecma_stringbuilder_append (&builder, line_str_p);
     ecma_deref_ecma_string (line_str_p);
 
-    ecma_fast_array_set_property (array_p, index, ecma_make_string_value (str_p));
-    ecma_deref_ecma_string (str_p);
+    ecma_string_t *builder_str_p = ecma_stringbuilder_finalize (&builder);
+    ecma_fast_array_set_property (array_p, index, ecma_make_string_value (builder_str_p));
+    ecma_deref_ecma_string (builder_str_p);
 
     context_p = context_p->prev_context_p;
     index++;

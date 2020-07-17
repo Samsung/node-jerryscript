@@ -19,7 +19,7 @@
 
 #include "ecma-builtin-helpers-macro-defines.inc.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW)
+#if ENABLED (JERRY_BUILTIN_DATAVIEW)
 
 /* Number properties:
  *  (property name, number value, writable, enumerable, configurable) */
@@ -27,7 +27,7 @@
 /* ECMA-262 v6, 23.1.2 */
 NUMBER_VALUE (LIT_MAGIC_STRING_LENGTH,
               3,
-              ECMA_PROPERTY_FIXED)
+              ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 /* ECMA-262 v6, 23.1 */
 STRING_VALUE (LIT_MAGIC_STRING_NAME,
@@ -42,6 +42,6 @@ OBJECT_VALUE (LIT_MAGIC_STRING_PROTOTYPE,
               ECMA_BUILTIN_ID_DATAVIEW_PROTOTYPE,
               ECMA_PROPERTY_FIXED)
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW */
+#endif /* ENABLED (JERRY_BUILTIN_DATAVIEW */
 
 #include "ecma-builtin-helpers-macro-undefs.inc.h"

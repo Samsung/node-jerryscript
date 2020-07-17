@@ -82,11 +82,26 @@ parser_malloc_local (parser_context_t *context_p, /**< context */
 /**
  * Free memory allocated by parser_malloc_local.
  */
-void parser_free_local (void *ptr, /**< pointer to free */
-                        size_t size) /**< size of the memory */
+void
+parser_free_local (void *ptr, /**< pointer to free */
+                   size_t size) /**< size of the memory */
 {
   jmem_heap_free_block (ptr, size);
 } /* parser_free_local */
+
+/**
+ * Free the dynamically allocated buffer stored in the context
+ */
+inline void JERRY_ATTR_ALWAYS_INLINE
+parser_free_allocated_buffer (parser_context_t *context_p) /**< context */
+{
+  if (context_p->u.allocated_buffer_p != NULL)
+  {
+    parser_free_local (context_p->u.allocated_buffer_p,
+                       context_p->allocated_buffer_size);
+    context_p->u.allocated_buffer_p = NULL;
+  }
+} /* parser_free_allocated_buffer */
 
 /**********************************************************************/
 /* Parser data management functions                                   */
@@ -420,6 +435,22 @@ parser_stack_pop_uint8 (parser_context_t *context_p) /**< context */
 
   context_p->stack_top_uint8 = page_p->bytes[context_p->stack.last_position - 1];
 } /* parser_stack_pop_uint8 */
+
+/**
+ * Change last byte of the stack.
+ */
+void
+parser_stack_change_last_uint8 (parser_context_t *context_p, /**< context */
+                                uint8_t new_value) /**< new value */
+{
+  parser_mem_page_t *page_p = context_p->stack.first_p;
+
+  JERRY_ASSERT (page_p != NULL
+                && context_p->stack_top_uint8 == page_p->bytes[context_p->stack.last_position - 1]);
+
+  page_p->bytes[context_p->stack.last_position - 1] = new_value;
+  context_p->stack_top_uint8 = new_value;
+} /* parser_stack_change_last_uint8 */
 
 /**
  * Pushes an uint16_t value onto the stack.

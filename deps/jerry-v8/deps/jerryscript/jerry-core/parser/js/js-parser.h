@@ -44,10 +44,14 @@ typedef enum
   PARSER_ERR_INVALID_CHARACTER,                       /**< unexpected character */
   PARSER_ERR_INVALID_OCTAL_DIGIT,                     /**< invalid octal digit */
   PARSER_ERR_INVALID_HEX_DIGIT,                       /**< invalid hexadecimal digit */
+#if ENABLED (JERRY_ESNEXT)
+  PARSER_ERR_INVALID_BIN_DIGIT,                       /**< invalid binary digit */
+#endif /* ENABLED (JERRY_ESNEXT) */
   PARSER_ERR_INVALID_ESCAPE_SEQUENCE,                 /**< invalid escape sequence */
   PARSER_ERR_INVALID_UNICODE_ESCAPE_SEQUENCE,         /**< invalid unicode escape sequence */
   PARSER_ERR_INVALID_IDENTIFIER_START,                /**< character cannot be start of an identifier */
   PARSER_ERR_INVALID_IDENTIFIER_PART,                 /**< character cannot be part of an identifier */
+  PARSER_ERR_INVALID_KEYWORD,                         /**< escape sequences are not allowed in keywords */
 
   PARSER_ERR_INVALID_NUMBER,                          /**< invalid number literal */
   PARSER_ERR_MISSING_EXPONENT,                        /**< missing exponent */
@@ -73,9 +77,18 @@ typedef enum
   PARSER_ERR_STRICT_IDENT_NOT_ALLOWED,                /**< identifier name is reserved in strict mode */
   PARSER_ERR_EVAL_NOT_ALLOWED,                        /**< eval is not allowed here in strict mode */
   PARSER_ERR_ARGUMENTS_NOT_ALLOWED,                   /**< arguments is not allowed here in strict mode */
-#if ENABLED (JERRY_ES2015)
-  PARSER_ERR_YIELD_NOT_ALLOWED,                       /**< yield keyword is not allowed */
-#endif /* ENABLED (JERRY_ES2015) */
+#if ENABLED (JERRY_ESNEXT)
+  PARSER_ERR_USE_STRICT_NOT_ALLOWED,                  /**< use strict directive is not allowed */
+  PARSER_ERR_YIELD_NOT_ALLOWED,                       /**< yield expression is not allowed */
+  PARSER_ERR_AWAIT_NOT_ALLOWED,                       /**< await expression is not allowed */
+  PARSER_ERR_FOR_IN_OF_DECLARATION,                   /**< variable declaration in for-in or for-of loop */
+  PARSER_ERR_FOR_AWAIT_NO_ASYNC,                      /**< for-await-of is only allowed inside async functions */
+  PARSER_ERR_FOR_AWAIT_NO_OF,                         /**< only 'of' form is allowed for for-await loops */
+  PARSER_ERR_DUPLICATED_PROTO,                        /**< duplicated __proto__ fields are not allowed */
+  PARSER_ERR_INVALID_LHS_ASSIGNMENT,                  /**< invalid LeftHandSide in assignment */
+  PARSER_ERR_INVALID_LHS_POSTFIX_OP,                  /**< invalid LeftHandSide expression in postfix operation */
+  PARSER_ERR_INVALID_LHS_FOR_LOOP,                    /**< invalid LeftHandSide in for-loop */
+#endif /* ENABLED (JERRY_ESNEXT) */
   PARSER_ERR_DELETE_IDENT_NOT_ALLOWED,                /**< identifier delete is not allowed in strict mode */
   PARSER_ERR_EVAL_CANNOT_ASSIGNED,                    /**< eval cannot be assigned in strict mode */
   PARSER_ERR_ARGUMENTS_CANNOT_ASSIGNED,               /**< arguments cannot be assigned in strict mode */
@@ -117,15 +130,18 @@ typedef enum
   PARSER_ERR_INVALID_RIGHT_SQUARE,                    /**< right square must terminate a block */
   PARSER_ERR_DUPLICATED_LABEL,                        /**< duplicated label */
   PARSER_ERR_OBJECT_PROPERTY_REDEFINED,               /**< property of object literal redefined */
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   PARSER_ERR_VARIABLE_REDECLARED,                     /**< a variable redeclared */
-  PARSER_ERR_LEXICAL_SINGLE_STATEMENT,                /**< lexical variable in single statement context */
+  PARSER_ERR_LEXICAL_SINGLE_STATEMENT,                /**< lexical declaration in single statement context */
+  PARSER_ERR_LABELLED_FUNC_NOT_IN_BLOCK,              /**< labelled functions are only allowed inside blocks */
+  PARSER_ERR_LEXICAL_LET_BINDING,                     /**< let binding cannot be declared in let/const */
   PARSER_ERR_MISSING_ASSIGN_AFTER_CONST,              /**< an assignment is required after a const declaration */
 
   PARSER_ERR_MULTIPLE_CLASS_CONSTRUCTORS,             /**< multiple class constructor */
   PARSER_ERR_CLASS_CONSTRUCTOR_AS_ACCESSOR,           /**< class constructor cannot be an accessor */
+  PARSER_ERR_CLASS_CONSTRUCTOR_AS_GENERATOR,          /**< class constructor cannot be a generator */
   PARSER_ERR_CLASS_STATIC_PROTOTYPE,                  /**< static method name 'prototype' is not allowed */
-  PARSER_ERR_UNEXPECTED_SUPER_REFERENCE,              /**< unexpected super keyword */
+  PARSER_ERR_UNEXPECTED_SUPER_KEYWORD,                /**< unexpected super keyword */
 
   PARSER_ERR_RIGHT_BRACE_EXPECTED,                    /**< right brace expected */
   PARSER_ERR_OF_EXPECTED,                             /**< of keyword expected */
@@ -137,8 +153,11 @@ typedef enum
   PARSER_ERR_DUPLICATED_ARGUMENT_NAMES,               /**< duplicated argument names */
   PARSER_ERR_INVALID_DESTRUCTURING_PATTERN,           /**< invalid destructuring pattern */
   PARSER_ERR_ILLEGAL_PROPERTY_IN_DECLARATION,         /**< illegal property in declaration context */
-#endif /* ENABLED (JERRY_ES2015) */
-#if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
+  PARSER_ERR_INVALID_EXPONENTIATION,                  /**< left operand of ** operator cannot be unary expression */
+  PARSER_ERR_NEW_TARGET_EXPECTED,                     /**< expected new.target expression */
+  PARSER_ERR_NEW_TARGET_NOT_ALLOWED,                  /**< new.target is not allowed in the given context */
+#endif /* ENABLED (JERRY_ESNEXT) */
+#if ENABLED (JERRY_MODULE_SYSTEM)
   PARSER_ERR_FILE_NOT_FOUND,                          /**< file not found*/
   PARSER_ERR_FROM_EXPECTED,                           /**< from expected */
   PARSER_ERR_FROM_COMMA_EXPECTED,                     /**< from or comma expected */
@@ -150,7 +169,7 @@ typedef enum
   PARSER_ERR_RIGHT_BRACE_COMMA_EXPECTED,              /**< right brace or comma expected */
   PARSER_ERR_DUPLICATED_EXPORT_IDENTIFIER,            /**< duplicated export identifier name */
   PARSER_ERR_DUPLICATED_IMPORT_BINDING,               /**< duplicated import binding name */
-#endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 
   PARSER_ERR_NON_STRICT_ARG_DEFINITION                /**< non-strict argument definition */
 } parser_error_t;
@@ -171,9 +190,13 @@ typedef struct
 } parser_error_location_t;
 
 /* Note: source must be a valid UTF-8 string */
-ecma_value_t parser_parse_script (const uint8_t *arg_list_p, size_t arg_list_size,
-                                  const uint8_t *source_p, size_t source_size,
-                                  uint32_t parse_opts, ecma_compiled_code_t **bytecode_data_p);
+ecma_compiled_code_t *
+parser_parse_script (const uint8_t *arg_list_p,
+                     size_t arg_list_size,
+                     const uint8_t *source_p,
+                     size_t source_size,
+                     ecma_value_t resource_name,
+                     uint32_t parse_opts);
 
 #if ENABLED (JERRY_ERROR_MESSAGES)
 const char *parser_error_to_string (parser_error_t);

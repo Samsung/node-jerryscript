@@ -49,7 +49,7 @@
  * @{
  */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 /**
  * Helper function to retrieve the flags associated with a RegExp object
  *
@@ -62,18 +62,14 @@ ecma_builtin_regexp_prototype_flags_helper (ecma_value_t this, /**< this value *
 {
   if (!ecma_object_is_regexp_object (this))
   {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Incompatible type"));
+    return ecma_raise_type_error (ECMA_ERR_MSG ("'this' is not a RegExp object"));
   }
 
   ecma_extended_object_t *re_obj_p = (ecma_extended_object_t *) ecma_get_object_from_value (this);
-  re_compiled_code_t *bc_p = ECMA_GET_INTERNAL_VALUE_ANY_POINTER (re_compiled_code_t,
-                                                                  re_obj_p->u.class_prop.u.value);
+  re_compiled_code_t *bc_p = ECMA_GET_INTERNAL_VALUE_POINTER (re_compiled_code_t,
+                                                              re_obj_p->u.class_prop.u.value);
 
-  if (bc_p != NULL)
-  {
-    *flags_p = bc_p->header.status_flags;
-  }
-
+  *flags_p = bc_p->header.status_flags;
   return ECMA_VALUE_EMPTY;
 } /* ecma_builtin_regexp_prototype_flags_helper */
 
@@ -138,6 +134,75 @@ ecma_builtin_regexp_prototype_get_flags (ecma_value_t this_arg) /**< this argume
 } /* ecma_builtin_regexp_prototype_get_flags */
 
 /**
+ * The EscapeRegExpPattern method.
+ *
+ * See also:
+ *          ECMA-262 v6, 21.2.3.2.4
+ *
+ * @return ecma_value_t
+ */
+static ecma_value_t
+ecma_op_escape_regexp_pattern (ecma_string_t *pattern_str_p) /**< RegExp pattern */
+{
+  ecma_stringbuilder_t builder = ecma_stringbuilder_create ();
+
+  ECMA_STRING_TO_UTF8_STRING (pattern_str_p, pattern_start_p, pattern_start_size);
+
+  const lit_utf8_byte_t *pattern_str_curr_p = pattern_start_p;
+  const lit_utf8_byte_t *pattern_str_end_p = pattern_start_p + pattern_start_size;
+
+  while (pattern_str_curr_p < pattern_str_end_p)
+  {
+    ecma_char_t c = lit_cesu8_read_next (&pattern_str_curr_p);
+
+    switch (c)
+    {
+      case LIT_CHAR_SLASH:
+      {
+        ecma_stringbuilder_append_raw (&builder, (const lit_utf8_byte_t *) "\\/", 2);
+        break;
+      }
+      case LIT_CHAR_LF:
+      {
+        ecma_stringbuilder_append_raw (&builder, (const lit_utf8_byte_t *) "\\n", 2);
+        break;
+      }
+      case LIT_CHAR_CR:
+      {
+        ecma_stringbuilder_append_raw (&builder, (const lit_utf8_byte_t *) "\\r", 2);
+        break;
+      }
+      case LIT_CHAR_LS:
+      {
+        ecma_stringbuilder_append_raw (&builder, (const lit_utf8_byte_t *) "\\u2028", 6);
+        break;
+      }
+      case LIT_CHAR_PS:
+      {
+        ecma_stringbuilder_append_raw (&builder, (const lit_utf8_byte_t *) "\\u2029", 6);
+        break;
+      }
+      case LIT_CHAR_BACKSLASH:
+      {
+        JERRY_ASSERT (pattern_str_curr_p < pattern_str_end_p);
+        ecma_stringbuilder_append_char (&builder, LIT_CHAR_BACKSLASH);
+        ecma_stringbuilder_append_char (&builder, lit_cesu8_read_next (&pattern_str_curr_p));
+        break;
+      }
+      default:
+      {
+        ecma_stringbuilder_append_char (&builder, c);
+        break;
+      }
+    }
+  }
+
+  ECMA_FINALIZE_UTF8_STRING (pattern_start_p, pattern_start_size);
+
+  return ecma_make_string_value (ecma_stringbuilder_finalize (&builder));
+} /* ecma_op_escape_regexp_pattern */
+
+/**
  * The RegExp.prototype object's 'source' accessor property
  *
  * See also:
@@ -153,20 +218,14 @@ ecma_builtin_regexp_prototype_get_source (ecma_value_t this_arg) /**< this argum
 {
   if (!ecma_object_is_regexp_object (this_arg))
   {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Incompatible type"));
+    return ecma_raise_type_error (ECMA_ERR_MSG ("'this' is not a RegExp object"));
   }
 
   ecma_extended_object_t *re_obj_p = (ecma_extended_object_t *) ecma_get_object_from_value (this_arg);
-  re_compiled_code_t *bc_p = ECMA_GET_INTERNAL_VALUE_ANY_POINTER (re_compiled_code_t,
-                                                                  re_obj_p->u.class_prop.u.value);
+  re_compiled_code_t *bc_p = ECMA_GET_INTERNAL_VALUE_POINTER (re_compiled_code_t,
+                                                              re_obj_p->u.class_prop.u.value);
 
-  if (bc_p != NULL)
-  {
-    ecma_ref_ecma_string (ecma_get_string_from_value (bc_p->source));
-    return bc_p->source;
-  }
-
-  return ecma_make_string_value (ecma_get_magic_string (LIT_MAGIC_STRING_EMPTY_NON_CAPTURE_GROUP));
+  return ecma_op_escape_regexp_pattern (ecma_get_string_from_value (bc_p->source));
 } /* ecma_builtin_regexp_prototype_get_source */
 
 /**
@@ -293,7 +352,7 @@ ecma_builtin_regexp_prototype_get_unicode (ecma_value_t this_arg) /**< this argu
 
   return ecma_make_boolean_value (flags & RE_FLAG_UNICODE);
 } /* ecma_builtin_regexp_prototype_get_unicode */
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 #if ENABLED (JERRY_BUILTIN_ANNEXB)
 
@@ -314,95 +373,53 @@ ecma_builtin_regexp_prototype_compile (ecma_value_t this_arg, /**< this argument
                                        ecma_value_t flags_arg) /**< flags */
 {
   if (!ecma_object_is_regexp_object (this_arg)
-      /* The builtin RegExp.prototype object does not have [[RegExpMatcher]] internal slot */
-      || ecma_get_object_from_value (this_arg) == ecma_builtin_get (ECMA_BUILTIN_ID_REGEXP_PROTOTYPE))
+#if !ENABLED (JERRY_ESNEXT)
+      || ecma_get_object_from_value (this_arg) == ecma_builtin_get (ECMA_BUILTIN_ID_REGEXP_PROTOTYPE)
+#endif /* !ENABLED (JERRY_ESNEXT) */
+      )
   {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Incompatible type"));
+    return ecma_raise_type_error (ECMA_ERR_MSG ("'this' is not a RegExp object"));
   }
 
-  uint16_t flags = 0;
+  ecma_object_t *this_obj_p = ecma_get_object_from_value (this_arg);
+  ecma_extended_object_t *regexp_obj_p = (ecma_extended_object_t *) this_obj_p;
+  re_compiled_code_t *old_bc_p = ECMA_GET_INTERNAL_VALUE_POINTER (re_compiled_code_t,
+                                                                  regexp_obj_p->u.class_prop.u.value);
 
-  if (ecma_object_is_regexp_object (pattern_arg)
-      && ecma_get_object_from_value (pattern_arg) != ecma_builtin_get (ECMA_BUILTIN_ID_REGEXP_PROTOTYPE))
+  ecma_value_t status = ecma_builtin_helper_def_prop (this_obj_p,
+                                                      ecma_get_magic_string (LIT_MAGIC_STRING_LASTINDEX_UL),
+                                                      ecma_make_uint32_value (0),
+                                                      ECMA_PROPERTY_FLAG_WRITABLE | ECMA_PROP_IS_THROW);
+
+  JERRY_ASSERT (ecma_is_value_true (status));
+
+  if (ecma_object_is_regexp_object (pattern_arg))
   {
     if (!ecma_is_value_undefined (flags_arg))
     {
       return ecma_raise_type_error (ECMA_ERR_MSG ("Invalid argument"));
     }
 
-    /* Compile from existing RegExp object. */
-    ecma_extended_object_t *target_p = (ecma_extended_object_t *) ecma_get_object_from_value (pattern_arg);
-    re_compiled_code_t *target_bc_p = ECMA_GET_INTERNAL_VALUE_ANY_POINTER (re_compiled_code_t,
-                                                                           target_p->u.class_prop.u.value);
+    ecma_extended_object_t *pattern_obj_p = (ecma_extended_object_t *) ecma_get_object_from_value (pattern_arg);
+    re_compiled_code_t *bc_p = ECMA_GET_INTERNAL_VALUE_POINTER (re_compiled_code_t,
+                                                                pattern_obj_p->u.class_prop.u.value);
 
-    ecma_object_t *this_object_p = ecma_get_object_from_value (this_arg);
-    ecma_extended_object_t *current_p = (ecma_extended_object_t *) this_object_p;
-
-    re_compiled_code_t *current_bc_p = ECMA_GET_INTERNAL_VALUE_ANY_POINTER (re_compiled_code_t,
-                                                                            current_p->u.class_prop.u.value);
-
-    JERRY_ASSERT (current_bc_p != NULL);
-    ecma_bytecode_deref ((ecma_compiled_code_t *) current_bc_p);
-
-    JERRY_ASSERT (target_bc_p != NULL);
-    ecma_bytecode_ref ((ecma_compiled_code_t *) target_bc_p);
-    ECMA_SET_INTERNAL_VALUE_POINTER (current_p->u.class_prop.u.value, target_bc_p);
-    ecma_regexp_initialize_props (this_object_p,
-                                  ecma_get_string_from_value (target_bc_p->source),
-                                  target_bc_p->header.status_flags);
-    return ecma_copy_value (this_arg);
+    ecma_ref_object (this_obj_p);
+    /* ecma_op_create_regexp_from_bytecode will never throw an error while re-initalizing the regexp object, so we
+     * can deref the old bytecode without leaving a dangling pointer. */
+    ecma_bytecode_deref ((ecma_compiled_code_t *) old_bc_p);
+    return ecma_op_create_regexp_from_bytecode (this_obj_p, bc_p);
   }
 
-  ecma_string_t *pattern_string_p = ecma_regexp_read_pattern_str_helper (pattern_arg);
+  ecma_value_t ret_value = ecma_op_create_regexp_from_pattern (this_obj_p, pattern_arg, flags_arg);
 
-  /* Get source string. */
-  if (pattern_string_p == NULL)
+  if (!ECMA_IS_VALUE_ERROR (ret_value))
   {
-    return ECMA_VALUE_ERROR;
+    ecma_ref_object (this_obj_p);
+    ecma_bytecode_deref ((ecma_compiled_code_t *) old_bc_p);
   }
 
-  /* Parse flags. */
-  if (!ecma_is_value_undefined (flags_arg))
-  {
-    ecma_string_t *flags_str_p = ecma_op_to_string (flags_arg);
-    if (JERRY_UNLIKELY (flags_str_p == NULL))
-    {
-      ecma_deref_ecma_string (pattern_string_p);
-      return ECMA_VALUE_ERROR;
-    }
-
-    ecma_value_t parsed_flags_val = ecma_regexp_parse_flags (flags_str_p, &flags);
-    ecma_deref_ecma_string (flags_str_p);
-
-    if (ECMA_IS_VALUE_ERROR (parsed_flags_val))
-    {
-      ecma_deref_ecma_string (pattern_string_p);
-      return parsed_flags_val;
-    }
-  }
-
-  /* Try to compile bytecode from new source. */
-  const re_compiled_code_t *new_bc_p = NULL;
-  ecma_value_t bc_val = re_compile_bytecode (&new_bc_p, pattern_string_p, flags);
-  if (ECMA_IS_VALUE_ERROR (bc_val))
-  {
-    ecma_deref_ecma_string (pattern_string_p);
-    return bc_val;
-  }
-
-  ecma_object_t *this_obj_p = ecma_get_object_from_value (this_arg);
-  ecma_value_t *bc_prop_p = &(((ecma_extended_object_t *) this_obj_p)->u.class_prop.u.value);
-
-  re_compiled_code_t *old_bc_p = ECMA_GET_INTERNAL_VALUE_ANY_POINTER (re_compiled_code_t, *bc_prop_p);
-
-  JERRY_ASSERT (old_bc_p != NULL);
-  ecma_bytecode_deref ((ecma_compiled_code_t *) old_bc_p);
-
-  ECMA_SET_INTERNAL_VALUE_POINTER (*bc_prop_p, new_bc_p);
-  ecma_regexp_initialize_props (this_obj_p, pattern_string_p, flags);
-  ecma_deref_ecma_string (pattern_string_p);
-
-  return ecma_copy_value (this_arg);
+  return ret_value;
 } /* ecma_builtin_regexp_prototype_compile */
 
 #endif /* ENABLED (JERRY_BUILTIN_ANNEXB) */
@@ -440,7 +457,7 @@ ecma_builtin_regexp_prototype_exec (ecma_value_t this_arg, /**< this argument */
     return ECMA_VALUE_ERROR;
   }
 
-  ecma_value_t ret_value = ecma_regexp_exec_helper (obj_this, ecma_make_string_value (input_str_p), false);
+  ecma_value_t ret_value = ecma_regexp_exec_helper (ecma_get_object_from_value (obj_this), input_str_p);
 
   ecma_free_value (obj_this);
   ecma_deref_ecma_string (input_str_p);
@@ -453,6 +470,7 @@ ecma_builtin_regexp_prototype_exec (ecma_value_t this_arg, /**< this argument */
  *
  * See also:
  *          ECMA-262 v5, 15.10.6.3
+ *          ECMA-262 v6, 21.2.5.13
  *
  * @return true  - if match is not null
  *         false - otherwise
@@ -463,12 +481,35 @@ static ecma_value_t
 ecma_builtin_regexp_prototype_test (ecma_value_t this_arg, /**< this argument */
                                     ecma_value_t arg) /**< routine's argument */
 {
+#if ENABLED (JERRY_ESNEXT)
+  if (!ecma_is_value_object (this_arg))
+  {
+    return ecma_raise_type_error (ECMA_ERR_MSG ("'this' value is not an object"));
+  }
+
+  ecma_string_t *arg_str_p = ecma_op_to_string (arg);
+
+  if (JERRY_UNLIKELY (arg_str_p == NULL))
+  {
+    return ECMA_VALUE_ERROR;
+  }
+
+  ecma_value_t result = ecma_op_regexp_exec (this_arg, arg_str_p);
+
+  ecma_deref_ecma_string (arg_str_p);
+
+  if (ECMA_IS_VALUE_ERROR (result))
+  {
+    return result;
+  }
+#else /* !ENABLED (JERRY_ESNEXT) */
   ecma_value_t result = ecma_builtin_regexp_prototype_exec (this_arg, arg);
 
   if (ECMA_IS_VALUE_ERROR (result))
   {
     return result;
   }
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   ecma_value_t ret_value = ecma_make_boolean_value (!ecma_is_value_null (result));
   ecma_free_value (result);
@@ -488,7 +529,7 @@ ecma_builtin_regexp_prototype_test (ecma_value_t this_arg, /**< this argument */
 static ecma_value_t
 ecma_builtin_regexp_prototype_to_string (ecma_value_t this_arg) /**< this argument */
 {
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   if (!ecma_is_value_object (this_arg))
   {
     return ecma_raise_type_error (ECMA_ERR_MSG ("'this' value is not an object."));
@@ -536,7 +577,7 @@ ecma_builtin_regexp_prototype_to_string (ecma_value_t this_arg) /**< this argume
   ecma_deref_ecma_string (flags_p);
 
   return ecma_make_string_value (ecma_stringbuilder_finalize (&builder));
-#else /* !ENABLED (JERRY_ES2015) */
+#else /* !ENABLED (JERRY_ESNEXT) */
   if (!ecma_object_is_regexp_object (this_arg))
   {
     return ecma_raise_type_error (ECMA_ERR_MSG ("'this' value is not a RegExp object."));
@@ -545,22 +586,11 @@ ecma_builtin_regexp_prototype_to_string (ecma_value_t this_arg) /**< this argume
   ecma_object_t *obj_p = ecma_get_object_from_value (this_arg);
   ecma_extended_object_t *re_obj_p = (ecma_extended_object_t *) obj_p;
 
-  re_compiled_code_t *bc_p = ECMA_GET_INTERNAL_VALUE_ANY_POINTER (re_compiled_code_t,
-                                                                  re_obj_p->u.class_prop.u.value);
+  re_compiled_code_t *bc_p = ECMA_GET_INTERNAL_VALUE_POINTER (re_compiled_code_t,
+                                                              re_obj_p->u.class_prop.u.value);
 
-  ecma_string_t *source_p;
-  uint16_t flags;
-
-  if (bc_p != NULL)
-  {
-    source_p = ecma_get_string_from_value (bc_p->source);
-    flags = bc_p->header.status_flags;
-  }
-  else
-  {
-    source_p = ecma_get_magic_string (LIT_MAGIC_STRING_EMPTY_NON_CAPTURE_GROUP);
-    flags = RE_FLAG_EMPTY;
-  }
+  ecma_string_t *source_p = ecma_get_string_from_value (bc_p->source);
+  uint16_t flags = bc_p->header.status_flags;
 
   ecma_stringbuilder_t result = ecma_stringbuilder_create ();
   ecma_stringbuilder_append_byte (&result, LIT_CHAR_SLASH);
@@ -583,10 +613,10 @@ ecma_builtin_regexp_prototype_to_string (ecma_value_t this_arg) /**< this argume
   }
 
   return ecma_make_string_value (ecma_stringbuilder_finalize (&result));
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 } /* ecma_builtin_regexp_prototype_to_string */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 /**
  * Helper function to determine if method is the builtin exec method
  *
@@ -618,6 +648,39 @@ ecma_builtin_regexp_prototype_symbol_replace (ecma_value_t this_arg, /**< this a
 } /* ecma_builtin_regexp_prototype_symbol_replace */
 
 /**
+ * The RegExp.prototype object's '@@search' routine
+ *
+ * See also:
+ *          ECMA-262 v6.0, 21.2.5.9
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value.
+ */
+static ecma_value_t
+ecma_builtin_regexp_prototype_symbol_search (ecma_value_t this_arg, /**< this argument */
+                                             ecma_value_t string_arg) /**< string argument */
+{
+  return ecma_regexp_search_helper (this_arg, string_arg);
+} /* ecma_builtin_regexp_prototype_symbol_search */
+
+/**
+ * The RegExp.prototype object's '@@split' routine
+ *
+ * See also:
+ *          ECMA-262 v6.0, 21.2.5.11
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value.
+ */
+static ecma_value_t
+ecma_builtin_regexp_prototype_symbol_split (ecma_value_t this_arg, /**< this argument */
+                                            ecma_value_t string_arg, /**< source string */
+                                            ecma_value_t limit_arg) /**< limit */
+{
+  return ecma_regexp_split_helper (this_arg, string_arg, limit_arg);
+} /* ecma_builtin_regexp_prototype_symbol_split */
+
+/**
  * The RegExp.prototype object's '@@match' routine
  *
  * See also:
@@ -630,166 +693,9 @@ static ecma_value_t
 ecma_builtin_regexp_prototype_symbol_match (ecma_value_t this_arg, /**< this argument */
                                             ecma_value_t string_arg) /**< source string */
 {
-  if (!ecma_is_value_object (this_arg))
-  {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("TypeError"));
-  }
-
-  ecma_string_t *str_p = ecma_op_to_string (string_arg);
-
-  if (JERRY_UNLIKELY (str_p == NULL))
-  {
-    return ECMA_VALUE_ERROR;
-  }
-
-  ecma_object_t *obj_p = ecma_get_object_from_value (this_arg);
-
-  ecma_value_t global_value = ecma_op_object_get_by_magic_id (obj_p, LIT_MAGIC_STRING_GLOBAL);
-
-  if (ECMA_IS_VALUE_ERROR (global_value))
-  {
-    ecma_deref_ecma_string (str_p);
-    return global_value;
-  }
-
-  bool global = ecma_op_to_boolean (global_value);
-
-  ecma_free_value (global_value);
-
-  if (!global)
-  {
-    ecma_value_t result = ecma_op_regexp_exec (this_arg, str_p);
-    ecma_deref_ecma_string (str_p);
-    return result;
-  }
-
-  ecma_value_t full_unicode_value = ecma_op_object_get_by_magic_id (obj_p, LIT_MAGIC_STRING_UNICODE);
-
-  if (ECMA_IS_VALUE_ERROR (full_unicode_value))
-  {
-    ecma_deref_ecma_string (str_p);
-    return full_unicode_value;
-  }
-
-  bool full_unicode = ecma_op_to_boolean (full_unicode_value);
-
-  ecma_free_value (full_unicode_value);
-
-  ecma_value_t set_status = ecma_op_object_put (obj_p,
-                                                ecma_get_magic_string (LIT_MAGIC_STRING_LASTINDEX_UL),
-                                                ecma_make_uint32_value (0),
-                                                true);
-
-  if (ECMA_IS_VALUE_ERROR (set_status))
-  {
-    ecma_deref_ecma_string (str_p);
-    return set_status;
-  }
-
-  ecma_value_t ret_value = ECMA_VALUE_ERROR;
-  ecma_value_t result_array = ecma_op_create_array_object (0, 0, false);
-  ecma_object_t *result_array_p = ecma_get_object_from_value (result_array);
-  uint32_t n = 0;
-
-  while (true)
-  {
-    ecma_value_t result_value = ecma_op_regexp_exec (this_arg, str_p);
-
-    if (ECMA_IS_VALUE_ERROR (result_value))
-    {
-      goto result_cleanup;
-    }
-
-    if (ecma_is_value_null (result_value))
-    {
-      if (n == 0)
-      {
-        ret_value = ECMA_VALUE_NULL;
-        goto result_cleanup;
-      }
-
-      ecma_deref_ecma_string (str_p);
-      return result_array;
-    }
-
-    ecma_object_t *result_value_p = ecma_get_object_from_value (result_value);
-    ecma_value_t match_str_value = ecma_op_object_get_by_uint32_index (result_value_p, 0);
-
-    ecma_deref_object (result_value_p);
-
-    if (ECMA_IS_VALUE_ERROR (match_str_value))
-    {
-      goto result_cleanup;
-    }
-
-    ecma_string_t *match_str_p = ecma_op_to_string (match_str_value);
-
-    if (JERRY_UNLIKELY (match_str_p == NULL))
-    {
-      ecma_free_value (match_str_value);
-      goto result_cleanup;
-    }
-
-    ecma_value_t new_prop = ecma_builtin_helper_def_prop_by_index (result_array_p,
-                                                                   n,
-                                                                   match_str_value,
-                                                                   ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE);
-
-    JERRY_ASSERT (!ECMA_IS_VALUE_ERROR (new_prop));
-
-    ecma_value_t match_result = ECMA_VALUE_ERROR;
-    if (ecma_string_is_empty (match_str_p))
-    {
-      ecma_value_t this_index = ecma_op_object_get_by_magic_id (obj_p, LIT_MAGIC_STRING_LASTINDEX_UL);
-
-      if (ECMA_IS_VALUE_ERROR (this_index))
-      {
-        goto match_cleanup;
-      }
-
-      uint32_t index;
-      ecma_value_t length_value = ecma_op_to_length (this_index, &index);
-
-      ecma_free_value (this_index);
-
-      if (ECMA_IS_VALUE_ERROR (length_value))
-      {
-        goto match_cleanup;
-      }
-
-      uint32_t next_index = ecma_op_advance_string_index (str_p, index, full_unicode);
-
-      ecma_value_t next_set_status = ecma_op_object_put (obj_p,
-                                                         ecma_get_magic_string (LIT_MAGIC_STRING_LASTINDEX_UL),
-                                                         ecma_make_uint32_value (next_index),
-                                                         true);
-
-      if (ECMA_IS_VALUE_ERROR (next_set_status))
-      {
-        goto match_cleanup;
-      }
-    }
-
-    match_result = ECMA_VALUE_EMPTY;
-
-match_cleanup:
-    ecma_deref_ecma_string (match_str_p);
-    ecma_free_value (match_str_value);
-
-    if (ECMA_IS_VALUE_ERROR (match_result))
-    {
-      goto result_cleanup;
-    }
-
-    n++;
-  }
-
-result_cleanup:
-  ecma_deref_ecma_string (str_p);
-  ecma_deref_object (result_array_p);
-  return ret_value;
+  return ecma_regexp_match_helper (this_arg, string_arg);
 } /* ecma_builtin_regexp_prototype_symbol_match */
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * @}
