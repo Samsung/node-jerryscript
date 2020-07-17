@@ -769,7 +769,7 @@ uint32_t Value::Uint32Value() const {
 
 Maybe<bool> Value::BooleanValue(Local<Context> context) const {
     V8_CALL_TRACE();
-    bool result = reinterpret_cast<const JerryValue*>(this)->ToBoolean();
+    bool result = reinterpret_cast<const JerryValue*>(this)->BooleanValue();
     return Just(result);
 }
 
@@ -844,6 +844,30 @@ Local<Object> Value::ToObject(Isolate* isolate) const {
     RETURN_HANDLE(Object, isolate, result);
 }
 
+MaybeLocal<Boolean> Value::ToBoolean(Local<Context> context) const {
+    V8_CALL_TRACE();
+    JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToBoolean();
+    RETURN_HANDLE(Boolean, context->GetIsolate(), result);
+}
+
+Local<Boolean> Value::ToBoolean(Isolate* isolate) const {
+    V8_CALL_TRACE();
+    JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToBoolean();
+    RETURN_HANDLE(Boolean, isolate, result);
+}
+
+MaybeLocal<Number> Value::ToNumber(Local<Context> context) const {
+    V8_CALL_TRACE();
+    JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToNumber();
+    RETURN_HANDLE(Number, context->GetIsolate(), result);
+}
+
+Local<Number> Value::ToNumber(Isolate* isolate) const {
+    V8_CALL_TRACE();
+    JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToNumber();
+    RETURN_HANDLE(Number, isolate, result);
+}
+
 MaybeLocal<Integer> Value::ToInteger(Local<Context> context) const {
     V8_CALL_TRACE();
     JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToInteger();
@@ -903,6 +927,15 @@ bool Value::IsFunction() const {
 bool Value::IsSymbol() const {
     V8_CALL_TRACE();
     return reinterpret_cast<const JerryValue*> (this)->IsSymbol();
+}
+
+bool Value::IsName() const {
+    V8_CALL_TRACE();
+    if (reinterpret_cast<const JerryValue*>(this)->IsSymbol() 
+        || reinterpret_cast<const JerryValue*>(this)->IsString()) {
+        return true;
+    }
+    return false;
 }
 
 bool Value::IsTypedArray() const {

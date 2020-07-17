@@ -172,14 +172,14 @@ int main(int argc, char* argv[]) {
   setvbuf(stderr, nullptr, _IONBF, 0);
 
   if (check_aul_argv(argc, argv)) {
-    aul_launch_init(aul_handler, NULL);
+    aul_launch_init(aul_handler, nullptr);
     aul_launch_argv_handler(argc, argv);
 
     if (uv_chdir(app_get_resource_path()) != 0) {
       return -errno;
     }
 
-    char* args[] = {"", ENTRY_JS_FILENAME, NULL};
+    char* args[] = {"", ENTRY_JS_FILENAME, nullptr};
     return node::Start(2, args);
   }
 

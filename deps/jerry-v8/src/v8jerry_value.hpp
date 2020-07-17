@@ -153,9 +153,17 @@ public:
         return new JerryValue(jerry_value_to_number(m_value));
     }
 
-    bool ToBoolean(void) const {
+    JerryValue* ToNumber() const {
+        return new JerryValue(jerry_value_to_number(m_value));
+    }
+
+    bool BooleanValue() const {
         // TODO: error handling?
         return jerry_value_to_boolean(m_value);
+    }
+
+    JerryValue* ToBoolean() const {
+        return new JerryValue(jerry_value_to_boolean(m_value));
     }
 
     JerryValue* ToObject(void) const {
