@@ -14,8 +14,14 @@
  */
 
 #include "ecma-alloc.h"
+#include "ecma-exceptions.h"
+#include "ecma-function-object.h"
 #include "ecma-gc.h"
 #include "ecma-helpers.h"
+#include "ecma-iterator-object.h"
+#include "ecma-objects.h"
+#include "ecma-promise-object.h"
+#include "jcontext.h"
 #include "vm-defines.h"
 #include "vm-stack.h"
 
@@ -27,9 +33,13 @@
  */
 
 JERRY_STATIC_ASSERT (PARSER_WITH_CONTEXT_STACK_ALLOCATION == PARSER_BLOCK_CONTEXT_STACK_ALLOCATION,
-                     parser_with_context_stack_allocation_must_be_equal_to_parser_block_context_stack_allocation);
-JERRY_STATIC_ASSERT (PARSER_WITH_CONTEXT_STACK_ALLOCATION == PARSER_SUPER_CLASS_CONTEXT_STACK_ALLOCATION,
-                     parser_with_context_stack_allocation_must_be_equal_to_parser_super_class_context_stack_allocation);
+                     with_context_stack_allocation_must_be_equal_to_block_context_stack_allocation);
+
+JERRY_STATIC_ASSERT (PARSER_WITH_CONTEXT_STACK_ALLOCATION == PARSER_TRY_CONTEXT_STACK_ALLOCATION,
+                     with_context_stack_allocation_must_be_equal_to_block_context_stack_allocation);
+
+JERRY_STATIC_ASSERT (PARSER_FOR_OF_CONTEXT_STACK_ALLOCATION == PARSER_FOR_AWAIT_OF_CONTEXT_STACK_ALLOCATION,
+                     for_of_context_stack_allocation_must_be_equal_to_for_await_of_context_stack_allocation);
 
 /**
  * Abort (finalize) the current stack context, and remove it.
@@ -59,33 +69,35 @@ vm_stack_context_abort (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
       /* FALLTHRU */
     }
     case VM_CONTEXT_FINALLY_JUMP:
-    case VM_CONTEXT_TRY:
-    case VM_CONTEXT_CATCH:
     {
-      VM_MINUS_EQUAL_U16 (frame_ctx_p->context_depth, PARSER_TRY_CONTEXT_STACK_ALLOCATION);
-      vm_stack_top_p -= PARSER_TRY_CONTEXT_STACK_ALLOCATION;
+      VM_MINUS_EQUAL_U16 (frame_ctx_p->context_depth, PARSER_FINALLY_CONTEXT_STACK_ALLOCATION);
+      vm_stack_top_p -= PARSER_FINALLY_CONTEXT_STACK_ALLOCATION;
       break;
     }
-#if ENABLED (JERRY_ES2015)
+    case VM_CONTEXT_TRY:
+    case VM_CONTEXT_CATCH:
+#if ENABLED (JERRY_ESNEXT)
     case VM_CONTEXT_BLOCK:
-    case VM_CONTEXT_SUPER_CLASS:
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
     case VM_CONTEXT_WITH:
     {
       VM_MINUS_EQUAL_U16 (frame_ctx_p->context_depth, PARSER_WITH_CONTEXT_STACK_ALLOCATION);
       vm_stack_top_p -= PARSER_WITH_CONTEXT_STACK_ALLOCATION;
       break;
     }
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
     case VM_CONTEXT_FOR_OF:
+    case VM_CONTEXT_FOR_AWAIT_OF:
     {
       ecma_free_value (vm_stack_top_p[-2]);
       ecma_free_value (vm_stack_top_p[-3]);
+      ecma_free_value (vm_stack_top_p[-4]);
+
       VM_MINUS_EQUAL_U16 (frame_ctx_p->context_depth, PARSER_FOR_OF_CONTEXT_STACK_ALLOCATION);
       vm_stack_top_p -= PARSER_FOR_OF_CONTEXT_STACK_ALLOCATION;
       break;
     }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
     default:
     {
       JERRY_ASSERT (VM_GET_CONTEXT_TYPE (vm_stack_top_p[-1]) == VM_CONTEXT_FOR_IN);
@@ -145,20 +157,29 @@ vm_decode_branch_offset (const uint8_t *branch_offset_p, /**< start offset of by
   return branch_offset;
 } /* vm_decode_branch_offset */
 
+#if ENABLED (JERRY_ESNEXT)
+
+/**
+ * Byte code which resumes an executable object with throw
+ */
+static const uint8_t vm_stack_resume_executable_object_with_context_end[1] =
+{
+  CBC_CONTEXT_END
+};
+
+#endif /* ENABLED (JERRY_ESNEXT) */
+
 /**
  * Find a finally up to the end position.
  *
- * @return true - if 'finally' found,
- *         false - otherwise
+ * @return value specified in vm_stack_found_type
  */
-bool
+vm_stack_found_type
 vm_stack_find_finally (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
-                       ecma_value_t **vm_stack_top_ref_p, /**< current stack top */
+                       ecma_value_t *stack_top_p, /**< current stack top */
                        vm_stack_context_type_t finally_type, /**< searching this finally */
                        uint32_t search_limit) /**< search up-to this byte code */
 {
-  ecma_value_t *vm_stack_top_p = *vm_stack_top_ref_p;
-
   JERRY_ASSERT (finally_type <= VM_CONTEXT_FINALLY_RETURN);
 
   if (finally_type != VM_CONTEXT_FINALLY_JUMP)
@@ -169,15 +190,15 @@ vm_stack_find_finally (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
   while (frame_ctx_p->context_depth > 0)
   {
     vm_stack_context_type_t context_type;
-    uint32_t context_end = VM_GET_CONTEXT_END (vm_stack_top_p[-1]);
+    uint32_t context_end = VM_GET_CONTEXT_END (stack_top_p[-1]);
 
     if (search_limit < context_end)
     {
-      *vm_stack_top_ref_p = vm_stack_top_p;
-      return false;
+      frame_ctx_p->stack_top_p = stack_top_p;
+      return VM_CONTEXT_FOUND_EXPECTED;
     }
 
-    context_type = VM_GET_CONTEXT_TYPE (vm_stack_top_p[-1]);
+    context_type = VM_GET_CONTEXT_TYPE (stack_top_p[-1]);
     if (context_type == VM_CONTEXT_TRY || context_type == VM_CONTEXT_CATCH)
     {
       const uint8_t *byte_code_p;
@@ -186,19 +207,19 @@ vm_stack_find_finally (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
 
       if (search_limit == context_end)
       {
-        *vm_stack_top_ref_p = vm_stack_top_p;
-        return false;
+        frame_ctx_p->stack_top_p = stack_top_p;
+        return VM_CONTEXT_FOUND_EXPECTED;
       }
 
-#if ENABLED (JERRY_ES2015)
-      if (vm_stack_top_p[-1] & VM_CONTEXT_HAS_LEX_ENV)
+#if ENABLED (JERRY_ESNEXT)
+      if (stack_top_p[-1] & VM_CONTEXT_HAS_LEX_ENV)
       {
         ecma_object_t *lex_env_p = frame_ctx_p->lex_env_p;
         JERRY_ASSERT (lex_env_p->u2.outer_reference_cp != JMEM_CP_NULL);
         frame_ctx_p->lex_env_p = ECMA_GET_NON_NULL_POINTER (ecma_object_t, lex_env_p->u2.outer_reference_cp);
         ecma_deref_object (lex_env_p);
       }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
       byte_code_p = frame_ctx_p->byte_code_start_p + context_end;
 
@@ -217,13 +238,12 @@ vm_stack_find_finally (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
           {
             branch_offset += (uint32_t) (byte_code_p - frame_ctx_p->byte_code_start_p);
 
-            vm_stack_top_p[-1] = VM_CREATE_CONTEXT (VM_CONTEXT_CATCH, branch_offset);
+            stack_top_p[-1] = VM_CREATE_CONTEXT (VM_CONTEXT_CATCH, branch_offset);
 
             byte_code_p += 2 + branch_offset_length;
             frame_ctx_p->byte_code_p = byte_code_p;
-
-            *vm_stack_top_ref_p = vm_stack_top_p;
-            return true;
+            frame_ctx_p->stack_top_p = stack_top_p;
+            return VM_CONTEXT_FOUND_FINALLY;
           }
 
           byte_code_p += branch_offset;
@@ -231,32 +251,50 @@ vm_stack_find_finally (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
           if (*byte_code_p == CBC_CONTEXT_END)
           {
             VM_MINUS_EQUAL_U16 (frame_ctx_p->context_depth, PARSER_TRY_CONTEXT_STACK_ALLOCATION);
-            vm_stack_top_p -= PARSER_TRY_CONTEXT_STACK_ALLOCATION;
+            stack_top_p -= PARSER_TRY_CONTEXT_STACK_ALLOCATION;
             continue;
           }
         }
       }
       else
       {
-#if !ENABLED (JERRY_ES2015)
-        if (vm_stack_top_p[-1] & VM_CONTEXT_HAS_LEX_ENV)
+        JERRY_ASSERT (context_type == VM_CONTEXT_CATCH);
+
+#if !ENABLED (JERRY_ESNEXT)
+        if (stack_top_p[-1] & VM_CONTEXT_HAS_LEX_ENV)
         {
           ecma_object_t *lex_env_p = frame_ctx_p->lex_env_p;
           JERRY_ASSERT (lex_env_p->u2.outer_reference_cp != JMEM_CP_NULL);
           frame_ctx_p->lex_env_p = ECMA_GET_NON_NULL_POINTER (ecma_object_t, lex_env_p->u2.outer_reference_cp);
           ecma_deref_object (lex_env_p);
         }
-#endif /* !ENABLED (JERRY_ES2015) */
+#endif /* !ENABLED (JERRY_ESNEXT) */
 
         if (byte_code_p[0] == CBC_CONTEXT_END)
         {
           VM_MINUS_EQUAL_U16 (frame_ctx_p->context_depth, PARSER_TRY_CONTEXT_STACK_ALLOCATION);
-          vm_stack_top_p -= PARSER_TRY_CONTEXT_STACK_ALLOCATION;
+          stack_top_p -= PARSER_TRY_CONTEXT_STACK_ALLOCATION;
           continue;
         }
       }
 
       JERRY_ASSERT (byte_code_p[0] == CBC_EXT_OPCODE);
+
+      VM_PLUS_EQUAL_U16 (frame_ctx_p->context_depth, PARSER_FINALLY_CONTEXT_EXTRA_STACK_ALLOCATION);
+      stack_top_p += PARSER_FINALLY_CONTEXT_EXTRA_STACK_ALLOCATION;
+
+#if ENABLED (JERRY_ESNEXT)
+      if (JERRY_UNLIKELY (byte_code_p[1] == CBC_EXT_ASYNC_EXIT))
+      {
+        branch_offset = (uint32_t) (byte_code_p - frame_ctx_p->byte_code_start_p);
+        stack_top_p[-1] = VM_CREATE_CONTEXT ((uint32_t) finally_type, branch_offset);
+
+        frame_ctx_p->byte_code_p = byte_code_p;
+        frame_ctx_p->stack_top_p = stack_top_p;
+        return VM_CONTEXT_FOUND_FINALLY;
+      }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
       JERRY_ASSERT (byte_code_p[1] >= CBC_EXT_FINALLY
                     && byte_code_p[1] <= CBC_EXT_FINALLY_3);
 
@@ -266,26 +304,117 @@ vm_stack_find_finally (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
 
       branch_offset += (uint32_t) (byte_code_p - frame_ctx_p->byte_code_start_p);
 
-      vm_stack_top_p[-1] = VM_CREATE_CONTEXT ((uint32_t) finally_type, branch_offset);
+      stack_top_p[-1] = VM_CREATE_CONTEXT ((uint32_t) finally_type, branch_offset);
 
       byte_code_p += 2 + branch_offset_length;
       frame_ctx_p->byte_code_p = byte_code_p;
-
-      *vm_stack_top_ref_p = vm_stack_top_p;
-      return true;
+      frame_ctx_p->stack_top_p = stack_top_p;
+      return VM_CONTEXT_FOUND_FINALLY;
     }
+#if ENABLED (JERRY_ESNEXT)
+    else if (stack_top_p[-1] & VM_CONTEXT_CLOSE_ITERATOR)
+    {
+      JERRY_ASSERT (context_type == VM_CONTEXT_FOR_OF || context_type == VM_CONTEXT_FOR_AWAIT_OF);
+      JERRY_ASSERT (finally_type == VM_CONTEXT_FINALLY_THROW || !jcontext_has_pending_exception ());
 
-    vm_stack_top_p = vm_stack_context_abort (frame_ctx_p, vm_stack_top_p);
+      ecma_value_t exception = ECMA_VALUE_UNDEFINED;
+      if (finally_type == VM_CONTEXT_FINALLY_THROW)
+      {
+        exception = jcontext_take_exception ();
+      }
+
+      ecma_value_t iterator = stack_top_p[-3];
+      ecma_value_t result = ecma_op_get_method_by_magic_id (iterator, LIT_MAGIC_STRING_RETURN);
+
+      if (!ECMA_IS_VALUE_ERROR (result) && !ecma_is_value_undefined (result))
+      {
+        if (!ecma_is_value_object (result) || !ecma_op_is_callable (result))
+        {
+          ecma_free_value (result);
+          result = ecma_raise_type_error (ECMA_ERR_MSG ("Iterator return() is not callable"));
+        }
+        else
+        {
+          ecma_object_t *return_obj_p = ecma_get_object_from_value (result);
+          result = ecma_op_function_call (return_obj_p, iterator, NULL, 0);
+          ecma_deref_object (return_obj_p);
+
+          if (context_type == VM_CONTEXT_FOR_AWAIT_OF && !ECMA_IS_VALUE_ERROR (result))
+          {
+            ecma_extended_object_t *async_generator_object_p = VM_GET_EXECUTABLE_OBJECT (frame_ctx_p);
+
+            result = ecma_promise_async_await (async_generator_object_p, result);
+
+            if (!ECMA_IS_VALUE_ERROR (result))
+            {
+              uint16_t extra_flags = (ECMA_EXECUTABLE_OBJECT_DO_AWAIT_OR_YIELD
+                                      | (ECMA_AWAIT_FOR_CLOSE << ECMA_AWAIT_STATE_SHIFT));
+              async_generator_object_p->u.class_prop.extra_info |= extra_flags;
+
+              stack_top_p = vm_stack_context_abort (frame_ctx_p, stack_top_p);
+
+              VM_PLUS_EQUAL_U16 (frame_ctx_p->context_depth, PARSER_FINALLY_CONTEXT_STACK_ALLOCATION);
+              stack_top_p += PARSER_FINALLY_CONTEXT_STACK_ALLOCATION;
+
+              stack_top_p[-1] = VM_CREATE_CONTEXT ((uint32_t) finally_type, context_end);
+              if (finally_type == VM_CONTEXT_FINALLY_THROW)
+              {
+                stack_top_p[-2] = exception;
+              }
+
+              frame_ctx_p->call_operation = VM_EXEC_RETURN;
+              frame_ctx_p->byte_code_p = vm_stack_resume_executable_object_with_context_end;
+              frame_ctx_p->stack_top_p = stack_top_p;
+              return VM_CONTEXT_FOUND_AWAIT;
+            }
+          }
+
+          if (!ECMA_IS_VALUE_ERROR (result))
+          {
+            bool is_object = ecma_is_value_object (result);
+
+            ecma_free_value (result);
+            result = ECMA_VALUE_UNDEFINED;
+
+            if (!is_object)
+            {
+              result = ecma_raise_type_error (ECMA_ERR_MSG ("Iterator return() result is not object"));
+            }
+          }
+        }
+      }
+
+      JERRY_ASSERT (ECMA_IS_VALUE_ERROR (result) || result == ECMA_VALUE_UNDEFINED);
+
+      if (ECMA_IS_VALUE_ERROR (result))
+      {
+        if (finally_type != VM_CONTEXT_FINALLY_THROW)
+        {
+          frame_ctx_p->stack_top_p = vm_stack_context_abort (frame_ctx_p, stack_top_p);
+          return VM_CONTEXT_FOUND_ERROR;
+        }
+
+        ecma_free_value (jcontext_take_exception ());
+        jcontext_raise_exception (exception);
+      }
+      else if (finally_type == VM_CONTEXT_FINALLY_THROW)
+      {
+        jcontext_raise_exception (exception);
+      }
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+    stack_top_p = vm_stack_context_abort (frame_ctx_p, stack_top_p);
   }
 
-  *vm_stack_top_ref_p = vm_stack_top_p;
-  return false;
+  frame_ctx_p->stack_top_p = stack_top_p;
+  return VM_CONTEXT_FOUND_EXPECTED;
 } /* vm_stack_find_finally */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 
 /**
- * Get the offsets of ecma values from the specified item of a context.
+ * Get the offsets of ecma values corresponding to the passed context.
  *
  * @return array of offsets, last item represents the size of the context item
  */
@@ -297,33 +426,32 @@ vm_get_context_value_offsets (ecma_value_t *context_item_p) /**< any item of a c
     case VM_CONTEXT_FINALLY_THROW:
     case VM_CONTEXT_FINALLY_RETURN:
     {
-      return (2 << (VM_CONTEXT_OFFSET_SHIFT)) | PARSER_TRY_CONTEXT_STACK_ALLOCATION;
+      return (PARSER_FINALLY_CONTEXT_STACK_ALLOCATION << VM_CONTEXT_OFFSET_SHIFT) | 2;
     }
     case VM_CONTEXT_FINALLY_JUMP:
+    {
+      return PARSER_FINALLY_CONTEXT_STACK_ALLOCATION;
+    }
     case VM_CONTEXT_TRY:
     case VM_CONTEXT_CATCH:
-    {
-      return PARSER_TRY_CONTEXT_STACK_ALLOCATION;
-    }
-#if ENABLED (JERRY_ES2015)
     case VM_CONTEXT_BLOCK:
-    case VM_CONTEXT_SUPER_CLASS:
-#endif /* ENABLED (JERRY_ES2015) */
     case VM_CONTEXT_WITH:
     {
       return PARSER_WITH_CONTEXT_STACK_ALLOCATION;
     }
-#if ENABLED (JERRY_ES2015)
-    case VM_CONTEXT_FOR_OF:
+    case VM_CONTEXT_FOR_IN:
     {
-      return ((3 << (VM_CONTEXT_OFFSET_SHIFT * 2))
-              | (2 << (VM_CONTEXT_OFFSET_SHIFT))
-              | PARSER_FOR_OF_CONTEXT_STACK_ALLOCATION);
+      return (PARSER_FOR_IN_CONTEXT_STACK_ALLOCATION << VM_CONTEXT_OFFSET_SHIFT) | 4;
     }
-#endif /* ENABLED (JERRY_ES2015) */
     default:
     {
-      return (4 << (VM_CONTEXT_OFFSET_SHIFT)) | PARSER_FOR_IN_CONTEXT_STACK_ALLOCATION;
+      JERRY_ASSERT (VM_GET_CONTEXT_TYPE (context_item_p[-1]) == VM_CONTEXT_FOR_OF
+                    || VM_GET_CONTEXT_TYPE (context_item_p[-1]) == VM_CONTEXT_FOR_AWAIT_OF);
+
+      return ((PARSER_FOR_OF_CONTEXT_STACK_ALLOCATION << (VM_CONTEXT_OFFSET_SHIFT * 3))
+              | (4 << (VM_CONTEXT_OFFSET_SHIFT * 2))
+              | (3 << VM_CONTEXT_OFFSET_SHIFT)
+              | 2);
     }
   }
 } /* vm_get_context_value_offsets */
@@ -383,7 +511,7 @@ vm_ref_lex_env_chain (ecma_object_t *lex_env_p, /**< top of lexical environment 
   while (context_top_p > context_end_p);
 } /* vm_ref_lex_env_chain */
 
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * @}

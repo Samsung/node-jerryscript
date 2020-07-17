@@ -22,6 +22,7 @@
 #include "ecma-helpers.h"
 #include "ecma-objects.h"
 #include "ecma-objects-general.h"
+#include "ecma-proxy-object.h"
 #include "ecma-try-catch-macro.h"
 
 /** \addtogroup ecma ECMA
@@ -202,7 +203,7 @@ static const lit_magic_string_id_t to_primitive_non_string_hint_method_names[2] 
   LIT_MAGIC_STRING_TO_STRING_UL, /**< toString operation */
 };
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 /**
  * Hints for the ecma general object's toPrimitve operation
  */
@@ -212,7 +213,7 @@ static const lit_magic_string_id_t hints[3] =
   LIT_MAGIC_STRING_NUMBER, /**< "number" hint */
   LIT_MAGIC_STRING_STRING, /**< "string" hint */
 };
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * [[DefaultValue]] ecma general object's operation
@@ -231,11 +232,11 @@ ecma_op_general_object_default_value (ecma_object_t *obj_p, /**< the object */
   JERRY_ASSERT (obj_p != NULL
                 && !ecma_is_lexical_environment (obj_p));
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   ecma_value_t obj_value = ecma_make_object_value (obj_p);
 
   ecma_value_t exotic_to_prim = ecma_op_get_method_by_symbol_id (obj_value,
-                                                                 LIT_MAGIC_STRING_TO_PRIMITIVE);
+                                                                 LIT_GLOBAL_SYMBOL_TO_PRIMITIVE);
 
   if (ECMA_IS_VALUE_ERROR (exotic_to_prim))
   {
@@ -271,7 +272,7 @@ ecma_op_general_object_default_value (ecma_object_t *obj_p, /**< the object */
   {
     hint = ECMA_PREFERRED_TYPE_NUMBER;
   }
-#else /* !ENABLED (JERRY_ES2015) */
+#else /* !ENABLED (JERRY_ESNEXT) */
   if (hint == ECMA_PREFERRED_TYPE_NO)
   {
     if (ecma_object_class_is (obj_p, LIT_MAGIC_STRING_DATE_UL))
@@ -283,7 +284,7 @@ ecma_op_general_object_default_value (ecma_object_t *obj_p, /**< the object */
       hint = ECMA_PREFERRED_TYPE_NUMBER;
     }
   }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   return ecma_op_general_object_ordinary_value (obj_p, hint);
 } /* ecma_op_general_object_default_value */
@@ -362,6 +363,13 @@ ecma_op_general_object_define_own_property (ecma_object_t *object_p, /**< the ob
                                             const ecma_property_descriptor_t *property_desc_p) /**< property
                                                                                                 *   descriptor */
 {
+#if ENABLED (JERRY_BUILTIN_PROXY)
+  if (ECMA_OBJECT_IS_PROXY (object_p))
+  {
+    return ecma_proxy_object_define_own_property (object_p, property_name_p, property_desc_p);
+  }
+#endif /* ENABLED (JERRY_BUILTIN_PROXY) */
+
   JERRY_ASSERT (object_p != NULL
                 && !ecma_is_lexical_environment (object_p));
   JERRY_ASSERT (!ecma_op_object_is_fast_array (object_p));
@@ -403,7 +411,7 @@ ecma_op_general_object_define_own_property (ecma_object_t *object_p, /**< the ob
   if (current_prop == ECMA_PROPERTY_TYPE_NOT_FOUND || current_prop == ECMA_PROPERTY_TYPE_NOT_FOUND_AND_STOP)
   {
     /* 3. */
-    if (!ecma_get_object_extensible (object_p))
+    if (!ecma_op_ordinary_object_is_extensible (object_p))
     {
       /* 2. */
       return ecma_reject (property_desc_p->flags & ECMA_PROP_IS_THROW);
@@ -417,7 +425,6 @@ ecma_op_general_object_define_own_property (ecma_object_t *object_p, /**< the ob
       /* a. */
       JERRY_ASSERT (property_desc_type == ECMA_PROPERTY_TYPE_GENERIC
                     || property_desc_type == ECMA_PROPERTY_TYPE_NAMEDDATA);
-
 
       ecma_property_value_t *new_prop_value_p = ecma_create_named_data_property (object_p,
                                                                                  property_name_p,
@@ -628,6 +635,152 @@ ecma_op_general_object_define_own_property (ecma_object_t *object_p, /**< the ob
 } /* ecma_op_general_object_define_own_property */
 
 #undef ECMA_PROPERTY_TYPE_GENERIC
+
+#if ENABLED (JERRY_ESNEXT)
+/**
+ * The IsCompatiblePropertyDescriptor method for Proxy object internal methods
+ *
+ * See also:
+ *          ECMAScript v6, 9.1.6.2
+ *
+ * @return bool
+ */
+bool
+ecma_op_is_compatible_property_descriptor (const ecma_property_descriptor_t *desc_p, /**< target descriptor */
+                                           const ecma_property_descriptor_t *current_p, /**< current descriptor */
+                                           bool is_extensible) /**< true - if target object is extensible
+                                                                    false - otherwise */
+{
+  JERRY_ASSERT (desc_p != NULL);
+
+  /* 2. */
+  if (current_p == NULL)
+  {
+    return is_extensible;
+  }
+
+  /* 3. */
+  if (desc_p->flags == 0)
+  {
+    return true;
+  }
+
+  /* 4. */
+  if ((current_p->flags & desc_p->flags) == desc_p->flags)
+  {
+    if ((current_p->flags & ECMA_PROP_IS_VALUE_DEFINED)
+         && ecma_op_same_value (current_p->value, desc_p->value))
+    {
+      return true;
+    }
+
+    if ((current_p->flags & (ECMA_PROP_IS_GET_DEFINED | ECMA_PROP_IS_SET_DEFINED)
+         && current_p->get_p == desc_p->get_p
+         && current_p->set_p == desc_p->set_p))
+    {
+      return true;
+    }
+  }
+
+  /* 5. */
+  if (!(current_p->flags & ECMA_PROP_IS_CONFIGURABLE))
+  {
+    if (desc_p->flags & ECMA_PROP_IS_CONFIGURABLE)
+    {
+      return false;
+    }
+    if ((desc_p->flags & ECMA_PROP_IS_ENUMERABLE_DEFINED)
+        && ((current_p->flags & ECMA_PROP_IS_ENUMERABLE) != (desc_p->flags & ECMA_PROP_IS_ENUMERABLE)))
+    {
+      return false;
+    }
+  }
+
+  const uint32_t accessor_desc_flags = (ECMA_PROP_IS_SET_DEFINED | ECMA_PROP_IS_GET_DEFINED);
+  const uint32_t data_desc_flags = (ECMA_PROP_IS_VALUE_DEFINED | ECMA_PROP_IS_WRITABLE_DEFINED);
+
+  bool desc_is_accessor = (desc_p->flags & accessor_desc_flags) != 0;
+  bool desc_is_data = (desc_p->flags & data_desc_flags) != 0;
+  bool current_is_data = (current_p->flags & data_desc_flags) != 0;
+
+  /* 6. */
+  if (!desc_is_accessor && !desc_is_data)
+  {
+    return true;
+  }
+
+  /* 7. */
+  if (current_is_data != desc_is_data)
+  {
+    return (current_p->flags & ECMA_PROP_IS_CONFIGURABLE) != 0;
+  }
+
+  /* 8. */
+  if (current_is_data)
+  {
+    if (!(current_p->flags & ECMA_PROP_IS_CONFIGURABLE))
+    {
+      if (!(current_p->flags & ECMA_PROP_IS_WRITABLE)
+           && (desc_p->flags & ECMA_PROP_IS_WRITABLE))
+      {
+        return false;
+      }
+
+      if (!(current_p->flags & ECMA_PROP_IS_WRITABLE)
+           && (desc_p->flags & ECMA_PROP_IS_VALUE_DEFINED)
+           && !ecma_op_same_value (desc_p->value, current_p->value))
+      {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  JERRY_ASSERT ((current_p->flags & (ECMA_PROP_IS_GET_DEFINED | ECMA_PROP_IS_SET_DEFINED)) != 0);
+  JERRY_ASSERT ((desc_p->flags & (ECMA_PROP_IS_GET_DEFINED | ECMA_PROP_IS_SET_DEFINED)) != 0);
+
+  /* 9. */
+  if (!(current_p->flags & ECMA_PROP_IS_CONFIGURABLE))
+  {
+    if ((desc_p->flags & ECMA_PROP_IS_SET_DEFINED)
+         && desc_p->set_p != current_p->set_p)
+    {
+      return false;
+    }
+
+    if ((desc_p->flags & ECMA_PROP_IS_GET_DEFINED)
+         && desc_p->get_p != current_p->get_p)
+    {
+      return false;
+    }
+  }
+
+  return true;
+} /* ecma_op_is_compatible_property_descriptor */
+
+/**
+ * CompletePropertyDescriptor method for proxy internal method
+ *
+ * See also:
+ *          ECMA-262 v6, 6.2.4.5
+ */
+void
+ecma_op_to_complete_property_descriptor (ecma_property_descriptor_t *desc_p) /**< target descriptor */
+{
+  /* 4. */
+  if (!(desc_p->flags & (ECMA_PROP_IS_GET_DEFINED | ECMA_PROP_IS_SET_DEFINED)))
+  {
+    /* a. */
+    desc_p->flags |= ECMA_PROP_IS_VALUE_DEFINED;
+  }
+  /* 5. */
+  else
+  {
+    desc_p->flags |= (ECMA_PROP_IS_GET_DEFINED | ECMA_PROP_IS_SET_DEFINED);
+  }
+} /* ecma_op_to_complete_property_descriptor */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * @}

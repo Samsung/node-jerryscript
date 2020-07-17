@@ -32,17 +32,28 @@ OBJECT_VALUE (LIT_MAGIC_STRING_PROTOTYPE,
 /* Number properties:
  *  (property name, object pointer getter) */
 
-/* ECMA-262 v5, 15.4.3 */
 NUMBER_VALUE (LIT_MAGIC_STRING_LENGTH,
               1,
-              ECMA_PROPERTY_FIXED)
+              ECMA_PROPERTY_FLAG_DEFAULT_LENGTH)
+
+#if ENABLED (JERRY_ESNEXT)
+STRING_VALUE (LIT_MAGIC_STRING_NAME,
+              LIT_MAGIC_STRING_ARRAY_UL,
+              ECMA_PROPERTY_FLAG_CONFIGURABLE)
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /* Routine properties:
  *  (property name, C routine name, arguments number or NON_FIXED, value of the routine's length property) */
 ROUTINE (LIT_MAGIC_STRING_IS_ARRAY_UL, ecma_builtin_array_object_is_array, 1, 1)
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 ROUTINE (LIT_MAGIC_STRING_FROM, ecma_builtin_array_object_from, NON_FIXED, 1)
-#endif /* ENABLED (JERRY_ES2015) */
+ROUTINE (LIT_MAGIC_STRING_OF, ecma_builtin_array_object_of, NON_FIXED, 0)
+
+/* ECMA-262 v6, 22.1.2.5 */
+ACCESSOR_READ_ONLY (LIT_GLOBAL_SYMBOL_SPECIES,
+                    ecma_builtin_array_species_get,
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 #endif /* !(ENABLED (JERRY_BUILTIN_ARRAY)) */
 

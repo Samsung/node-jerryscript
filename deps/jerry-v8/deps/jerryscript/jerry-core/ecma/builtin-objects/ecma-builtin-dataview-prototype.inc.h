@@ -19,7 +19,7 @@
 
 #include "ecma-builtin-helpers-macro-defines.inc.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW)
+#if ENABLED (JERRY_BUILTIN_DATAVIEW)
 
 /* Object properties:
  *  (property name, object pointer getter) */
@@ -29,12 +29,10 @@ OBJECT_VALUE (LIT_MAGIC_STRING_CONSTRUCTOR,
               ECMA_BUILTIN_ID_DATAVIEW,
               ECMA_PROPERTY_CONFIGURABLE_WRITABLE)
 
-#if ENABLED (JERRY_ES2015)
 /* ECMA-262 v6, 23.2.4.21 */
 STRING_VALUE (LIT_GLOBAL_SYMBOL_TO_STRING_TAG,
               LIT_MAGIC_STRING_DATAVIEW_UL,
               ECMA_PROPERTY_FLAG_CONFIGURABLE)
-#endif /* ENABLED (JERRY_ES2015) */
 
 /* Routine properties:
  *  (property name, C routine name, arguments number or NON_FIXED, value of the routine's length property) */
@@ -62,18 +60,18 @@ ROUTINE (LIT_MAGIC_STRING_SET_UINT32_UL, ECMA_DATAVIEW_PROTOTYPE_SET_UINT32, 2, 
 /* ECMA-262 v6, 24.2.4.1 */
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_BUFFER,
                     ECMA_DATAVIEW_PROTOTYPE_BUFFER_GETTER,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 /* ECMA-262 v6, 24.2.4.2 */
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_BYTE_LENGTH_UL,
                     ECMA_DATAVIEW_PROTOTYPE_BYTE_LENGTH_GETTER,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 /* ECMA-262 v6, 24.2.4.3 */
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_BYTE_OFFSET_UL,
                     ECMA_DATAVIEW_PROTOTYPE_BYTE_OFFSET_GETTER,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW */
+#endif /* ENABLED (JERRY_BUILTIN_DATAVIEW */
 
 #include "ecma-builtin-helpers-macro-undefs.inc.h"

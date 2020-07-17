@@ -19,14 +19,14 @@
 
 #include "ecma-builtin-helpers-macro-defines.inc.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_PROMISE)
+#if ENABLED (JERRY_BUILTIN_PROMISE)
 
 /* Number properties:
  *  (property name, number value, writable, enumerable, configurable) */
 
 NUMBER_VALUE (LIT_MAGIC_STRING_LENGTH,
               1,
-              ECMA_PROPERTY_FIXED)
+              ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 /* Object properties:
  *  (property name, object pointer getter) */
@@ -35,6 +35,10 @@ OBJECT_VALUE (LIT_MAGIC_STRING_PROTOTYPE,
               ECMA_BUILTIN_ID_PROMISE_PROTOTYPE,
               ECMA_PROPERTY_FIXED)
 
+STRING_VALUE (LIT_MAGIC_STRING_NAME,
+              LIT_MAGIC_STRING_PROMISE_UL,
+              ECMA_PROPERTY_FLAG_CONFIGURABLE)
+
 /* Routine properties:
  *  (property name, C routine name, arguments number or NON_FIXED, value of the routine's length property) */
 ROUTINE (LIT_MAGIC_STRING_REJECT, ecma_builtin_promise_reject, 1, 1)
@@ -42,6 +46,11 @@ ROUTINE (LIT_MAGIC_STRING_RESOLVE, ecma_builtin_promise_resolve, 1, 1)
 ROUTINE (LIT_MAGIC_STRING_RACE, ecma_builtin_promise_race, 1, 1)
 ROUTINE (LIT_MAGIC_STRING_ALL, ecma_builtin_promise_all, 1, 1)
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_PROMISE) */
+/* ES2015 25.4.4.6 */
+ACCESSOR_READ_ONLY (LIT_GLOBAL_SYMBOL_SPECIES,
+                    ecma_builtin_promise_species_get,
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
+
+#endif /* ENABLED (JERRY_BUILTIN_PROMISE) */
 
 #include "ecma-builtin-helpers-macro-undefs.inc.h"

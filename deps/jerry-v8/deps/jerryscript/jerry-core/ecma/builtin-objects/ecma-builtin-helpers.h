@@ -34,8 +34,8 @@
 typedef enum
 {
   /** These routines must be in this order */
-  ECMA_STRING_INDEX_OF, /**< String.indexOf: ECMA-262 v5, 15.5.4.7 */
   ECMA_STRING_LAST_INDEX_OF, /**< String.lastIndexOf: ECMA-262 v5, 15.5.4.8 */
+  ECMA_STRING_INDEX_OF, /**< String.indexOf: ECMA-262 v5, 15.5.4.7 */
   ECMA_STRING_STARTS_WITH, /**< String.startsWith: ECMA-262 v6, 21.1.3.18 */
   ECMA_STRING_INCLUDES, /**< String.includes: ECMA-262 v6, 21.1.3.7 */
   ECMA_STRING_ENDS_WITH /**< String.includes: ECMA-262 v6, 21.1.3.6 */
@@ -50,7 +50,7 @@ ecma_builtin_helper_object_get_properties (ecma_object_t *obj_p, uint32_t opts);
 ecma_value_t
 ecma_builtin_helper_array_concat_value (ecma_object_t *obj_p, uint32_t *length_p, ecma_value_t value);
 uint32_t
-ecma_builtin_helper_array_index_normalize (ecma_number_t index, uint32_t length, bool last_index_of);
+ecma_builtin_helper_array_index_normalize (ecma_value_t arg, uint32_t length, uint32_t *number_p);
 uint32_t
 ecma_builtin_helper_string_index_normalize (ecma_number_t index, uint32_t length, bool nan_to_zero);
 ecma_value_t
@@ -60,7 +60,7 @@ bool
 ecma_builtin_helper_string_find_index (ecma_string_t *original_str_p, ecma_string_t *search_str_p, bool first_index,
                                        ecma_length_t start_pos, ecma_length_t *ret_index_p);
 ecma_value_t
-ecma_builtin_helper_def_prop (ecma_object_t *obj_p, ecma_string_t *index_p, ecma_value_t value, uint32_t opts);
+ecma_builtin_helper_def_prop (ecma_object_t *obj_p, ecma_string_t *name_p, ecma_value_t value, uint32_t opts);
 
 ecma_value_t
 ecma_builtin_helper_def_prop_by_index (ecma_object_t *obj_p, uint32_t index, ecma_value_t value, uint32_t opts);
@@ -96,10 +96,10 @@ typedef struct
 void
 ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p);
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 bool
 ecma_builtin_is_regexp_exec (ecma_extended_object_t *obj_p);
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 #if ENABLED (JERRY_BUILTIN_DATE)
 
@@ -214,7 +214,7 @@ typedef struct
 
 ecma_value_t ecma_builtin_json_parse_buffer (const lit_utf8_byte_t * str_start_p,
                                              lit_utf8_size_t string_size);
-ecma_value_t ecma_builtin_json_string_from_object (const ecma_value_t arg1);
+ecma_value_t ecma_builtin_json_stringify_no_opts (const ecma_value_t value);
 bool ecma_json_has_object_in_stack (ecma_json_occurence_stack_item_t *stack_p, ecma_object_t *object_p);
 bool ecma_has_string_value_in_collection (ecma_collection_t *collection_p, ecma_string_t *string_p);
 
@@ -234,9 +234,9 @@ ecma_builtin_helper_error_dispatch_call (ecma_standard_error_t error_type, const
 /**
  * Comparison callback function header for sorting helper routines.
  */
-typedef ecma_value_t (*ecma_builtin_helper_sort_compare_fn_t)(ecma_value_t lhs, /**< left value */
-                                                              ecma_value_t rhs, /**< right value */
-                                                              ecma_value_t compare_func); /**< compare function */
+typedef ecma_value_t (*ecma_builtin_helper_sort_compare_fn_t) (ecma_value_t lhs, /**< left value */
+                                                               ecma_value_t rhs, /**< right value */
+                                                               ecma_value_t compare_func); /**< compare function */
 
 ecma_value_t ecma_builtin_helper_array_heap_sort_helper (ecma_value_t *array_p,
                                                          uint32_t right,

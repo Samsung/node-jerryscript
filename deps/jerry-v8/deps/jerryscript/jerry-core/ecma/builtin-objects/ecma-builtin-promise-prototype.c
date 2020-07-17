@@ -16,7 +16,7 @@
 #include "ecma-globals.h"
 #include "ecma-promise-object.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_PROMISE)
+#if ENABLED (JERRY_BUILTIN_PROMISE)
 
 #define ECMA_BUILTINS_INTERNAL
 #include "ecma-builtins-internal.h"
@@ -65,9 +65,8 @@ static ecma_value_t
 ecma_builtin_promise_prototype_catch (ecma_value_t this_arg, /**< this argument */
                                       ecma_value_t on_rejected) /**< on_rejected function */
 {
-  return ecma_promise_then (this_arg,
-                            ECMA_VALUE_UNDEFINED,
-                            on_rejected);
+  ecma_value_t args[] = {ECMA_VALUE_UNDEFINED, on_rejected};
+  return ecma_op_invoke_by_magic_id (this_arg, LIT_MAGIC_STRING_THEN, args, 2);
 } /* ecma_builtin_promise_prototype_catch */
 
 /**
@@ -76,4 +75,4 @@ ecma_builtin_promise_prototype_catch (ecma_value_t this_arg, /**< this argument 
  * @}
  */
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_PROMISE) */
+#endif /* ENABLED (JERRY_BUILTIN_PROMISE) */

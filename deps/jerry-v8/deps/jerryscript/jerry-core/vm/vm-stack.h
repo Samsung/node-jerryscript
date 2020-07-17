@@ -28,13 +28,13 @@
 /**
  * Create context on the vm stack.
  */
-#define VM_CREATE_CONTEXT(type, end_offset) ((ecma_value_t) ((type) | ((end_offset) << 6)))
+#define VM_CREATE_CONTEXT(type, end_offset) ((ecma_value_t) ((type) | ((end_offset) << 7)))
 
 /**
  * Create context on the vm stack with environment.
  */
 #define VM_CREATE_CONTEXT_WITH_ENV(type, end_offset) \
-  ((ecma_value_t) ((type) | ((end_offset) << 6) | VM_CONTEXT_HAS_LEX_ENV))
+  (VM_CREATE_CONTEXT ((type),(end_offset)) | VM_CONTEXT_HAS_LEX_ENV)
 
 /**
  * Get type of a vm context.
@@ -44,12 +44,17 @@
 /**
  * Get the end position of a vm context.
  */
-#define VM_GET_CONTEXT_END(value) ((value) >> 6)
+#define VM_GET_CONTEXT_END(value) ((value) >> 7)
 
 /**
  * This flag is set if the context has a lexical environment.
  */
 #define VM_CONTEXT_HAS_LEX_ENV 0x20
+
+/**
+ * This flag is set if the iterator close operation should be invoked during a for-of context break.
+ */
+#define VM_CONTEXT_CLOSE_ITERATOR 0x40
 
 /**
  * Context types for the vm stack.
@@ -62,16 +67,29 @@ typedef enum
   VM_CONTEXT_FINALLY_RETURN,                  /**< finally context with a return */
   VM_CONTEXT_TRY,                             /**< try context */
   VM_CONTEXT_CATCH,                           /**< catch context */
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   VM_CONTEXT_BLOCK,                           /**< block context */
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
   VM_CONTEXT_WITH,                            /**< with context */
   VM_CONTEXT_FOR_IN,                          /**< for-in context */
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   VM_CONTEXT_FOR_OF,                          /**< for-of context */
-  VM_CONTEXT_SUPER_CLASS,                     /**< super class context */
-#endif /* ENABLED (JERRY_ES2015) */
+  VM_CONTEXT_FOR_AWAIT_OF,                    /**< for-await-of context */
+#endif /* ENABLED (JERRY_ESNEXT) */
 } vm_stack_context_type_t;
+
+/**
+ * Return types for vm_stack_find_finally.
+ */
+typedef enum
+{
+  VM_CONTEXT_FOUND_FINALLY,                   /**< found finally */
+#if ENABLED (JERRY_ESNEXT)
+  VM_CONTEXT_FOUND_ERROR,                     /**< found an error */
+  VM_CONTEXT_FOUND_AWAIT,                     /**< found an await operation */
+#endif /* ENABLED (JERRY_ESNEXT) */
+  VM_CONTEXT_FOUND_EXPECTED,                  /**< found the type specified in finally_type */
+} vm_stack_found_type;
 
 /**
  * Checks whether the context type is a finally type.
@@ -90,13 +108,13 @@ typedef enum
 #define VM_CONTEXT_HAS_NEXT_OFFSET(offsets) ((offsets) >= (1 << VM_CONTEXT_OFFSET_SHIFT))
 
 /**
- * Gets the next offset from the offset array.
+ * Get the next offset from the offset array.
  */
 #define VM_CONTEXT_GET_NEXT_OFFSET(offsets) (-((int32_t) ((offsets) & ((1 << VM_CONTEXT_OFFSET_SHIFT) - 1))))
 
 ecma_value_t *vm_stack_context_abort (vm_frame_ctx_t *frame_ctx_p, ecma_value_t *vm_stack_top_p);
-bool vm_stack_find_finally (vm_frame_ctx_t *frame_ctx_p, ecma_value_t **vm_stack_top_ref_p,
-                            vm_stack_context_type_t finally_type, uint32_t search_limit);
+vm_stack_found_type vm_stack_find_finally (vm_frame_ctx_t *frame_ctx_p, ecma_value_t *stack_top_p,
+                                           vm_stack_context_type_t finally_type, uint32_t search_limit);
 uint32_t vm_get_context_value_offsets (ecma_value_t *context_item_p);
 void vm_ref_lex_env_chain (ecma_object_t *lex_env_p, uint16_t context_depth,
                            ecma_value_t *context_end_p, bool do_ref);

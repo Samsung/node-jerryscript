@@ -23,9 +23,9 @@
 #include "ecma-helpers.h"
 #include "ecma-objects.h"
 #include "ecma-string-object.h"
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 #include "ecma-symbol-object.h"
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 #include "ecma-try-catch-macro.h"
 #include "jrt.h"
 
@@ -110,7 +110,161 @@ ecma_builtin_string_object_from_char_code (ecma_value_t this_arg, /**< 'this' ar
   return ret_value;
 } /* ecma_builtin_string_object_from_char_code */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
+
+/**
+ * The String object's 'raw' routine
+ *
+ * See also:
+ *          ECMA-262 v6, 21.1.2.4
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value.
+ */
+static ecma_value_t
+ecma_builtin_string_object_raw (ecma_value_t this_arg, /**< 'this' argument */
+                                const ecma_value_t args[], /**< arguments list */
+                                ecma_length_t args_number) /**< number of arguments */
+{
+  JERRY_UNUSED (this_arg);
+
+  /* 1 - 2. */
+  const ecma_value_t *substitutions;
+  ecma_length_t number_of_substitutions;
+
+  if (args_number > 1)
+  {
+    substitutions = args + 1;
+    number_of_substitutions = args_number - 1;
+  }
+  else
+  {
+    substitutions = NULL;
+    number_of_substitutions = 0;
+  }
+
+  /* 3. */
+  ecma_value_t template = args_number > 0 ? args[0] : ECMA_VALUE_UNDEFINED;
+
+  ecma_value_t cooked = ecma_op_to_object (template);
+
+  /* 4. */
+  if (ECMA_IS_VALUE_ERROR (cooked))
+  {
+    return cooked;
+  }
+
+  ecma_object_t *cooked_obj_p = ecma_get_object_from_value (cooked);
+
+  /* 5. */
+  ecma_value_t raw = ecma_op_object_get_by_magic_id (cooked_obj_p, LIT_MAGIC_STRING_RAW);
+
+  ecma_deref_object (cooked_obj_p);
+
+  if (ECMA_IS_VALUE_ERROR (raw))
+  {
+    return raw;
+  }
+
+  ecma_value_t raw_obj = ecma_op_to_object (raw);
+
+  /* 6. */
+  if (ECMA_IS_VALUE_ERROR (raw_obj))
+  {
+    ecma_free_value (raw);
+    return raw_obj;
+  }
+
+  ecma_object_t *raw_obj_p = ecma_get_object_from_value (raw_obj);
+
+  ecma_value_t ret_value = ECMA_VALUE_ERROR;
+
+  /* 7 - 8. */
+  uint32_t literal_segments;
+  if (ECMA_IS_VALUE_ERROR (ecma_op_object_get_length (raw_obj_p, &literal_segments)))
+  {
+    goto cleanup;
+  }
+
+  /* 9. */
+  if (literal_segments == 0)
+  {
+    ret_value = ecma_make_magic_string_value (LIT_MAGIC_STRING__EMPTY);
+    goto cleanup;
+  }
+
+  /* 10. */
+  ecma_stringbuilder_t builder = ecma_stringbuilder_create ();
+
+  /* 11. */
+  uint32_t next_index = 0;
+
+  /* 12. */
+  while (true)
+  {
+    /* 12.a,b */
+    ecma_value_t next_seg = ecma_op_object_get_by_uint32_index (raw_obj_p, next_index);
+
+    if (ECMA_IS_VALUE_ERROR (next_seg))
+    {
+      goto builder_cleanup;
+    }
+
+    ecma_string_t *next_seg_srt_p = ecma_op_to_string (next_seg);
+
+    /* 12.c */
+    if (JERRY_UNLIKELY (next_seg_srt_p == NULL))
+    {
+      ecma_free_value (next_seg);
+      goto builder_cleanup;
+    }
+
+    /* 12.d */
+    ecma_stringbuilder_append (&builder, next_seg_srt_p);
+
+    ecma_deref_ecma_string (next_seg_srt_p);
+    ecma_free_value (next_seg);
+
+    /* 12.e */
+    if (next_index + 1 == literal_segments)
+    {
+      ret_value = ecma_make_string_value (ecma_stringbuilder_finalize (&builder));
+      goto cleanup;
+    }
+
+    /* 12.f-g */
+    if (next_index >= number_of_substitutions)
+    {
+      next_index++;
+      continue;
+    }
+
+    /* 12.h */
+    ecma_string_t *next_sub_p = ecma_op_to_string (substitutions[next_index]);
+
+    /* 12.i */
+    if (JERRY_UNLIKELY (next_sub_p == NULL))
+    {
+      goto builder_cleanup;
+    }
+
+    /* 12.j */
+    ecma_stringbuilder_append (&builder, next_sub_p);
+    ecma_deref_ecma_string (next_sub_p);
+
+    /* 12.k */
+    next_index++;
+  }
+
+builder_cleanup:
+  ecma_stringbuilder_destroy (&builder);
+
+cleanup:
+  ecma_deref_object (raw_obj_p);
+  ecma_free_value (raw);
+
+  return ret_value;
+} /* ecma_builtin_string_object_raw */
 
 /**
  * The String object's 'fromCodePoint' routine
@@ -179,7 +333,7 @@ ecma_builtin_string_object_from_code_point (ecma_value_t this_arg, /**< 'this' a
   return ecma_make_string_value (ret_str_p);
 } /* ecma_builtin_string_object_from_code_point */
 
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Handle calling [[Call]] of built-in String object
@@ -202,13 +356,13 @@ ecma_builtin_string_dispatch_call (const ecma_value_t *arguments_list_p, /**< ar
   {
     ret_value = ecma_make_magic_string_value (LIT_MAGIC_STRING__EMPTY);
   }
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   /* 2.a */
   else if (ecma_is_value_symbol (arguments_list_p[0]))
   {
     ret_value = ecma_get_symbol_descriptive_string (arguments_list_p[0]);
   }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
   /* 2.b */
   else
   {

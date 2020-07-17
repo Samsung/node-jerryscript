@@ -19,6 +19,7 @@
 #include "ecma-builtin-helpers.h"
 #include "ecma-exceptions.h"
 #include "ecma-function-object.h"
+#include "ecma-gc.h"
 #include "ecma-globals.h"
 #include "ecma-helpers.h"
 #include "ecma-objects.h"
@@ -100,9 +101,9 @@ enum
   ECMA_DATE_PROTOTYPE_SET_TIME, /* ECMA-262 v5, 15.9.5.27 */
   ECMA_DATE_PROTOTYPE_TO_JSON, /* ECMA-262 v5, 15.9.5.44 */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   ECMA_DATE_PROTOTYPE_TO_PRIMITIVE, /*  ECMA-262 v6 20.3.4.45 */
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 };
 
 #define BUILTIN_INC_HEADER_NAME "ecma-builtin-date-prototype.inc.h"
@@ -131,60 +132,52 @@ enum
 static ecma_value_t
 ecma_builtin_date_prototype_to_json (ecma_value_t this_arg) /**< this argument */
 {
-  ecma_value_t ret_value = ECMA_VALUE_EMPTY;
-
   /* 1. */
-  ECMA_TRY_CATCH (obj,
-                  ecma_op_to_object (this_arg),
-                  ret_value);
+  ecma_value_t obj = ecma_op_to_object (this_arg);
+
+  if (ECMA_IS_VALUE_ERROR (obj))
+  {
+    return obj;
+  }
 
   /* 2. */
-  ECMA_TRY_CATCH (tv,
-                  ecma_op_to_primitive (obj, ECMA_PREFERRED_TYPE_NUMBER),
-                  ret_value);
+  ecma_value_t tv = ecma_op_to_primitive (obj, ECMA_PREFERRED_TYPE_NUMBER);
+
+  if (ECMA_IS_VALUE_ERROR (tv))
+  {
+    ecma_free_value (obj);
+    return tv;
+  }
 
   /* 3. */
   if (ecma_is_value_number (tv))
   {
     ecma_number_t num_value = ecma_get_number_from_value (tv);
 
+    ecma_free_value (tv);
+
     if (ecma_number_is_nan (num_value) || ecma_number_is_infinity (num_value))
     {
-      ret_value = ECMA_VALUE_NULL;
+      ecma_free_value (obj);
+      return ECMA_VALUE_NULL;
     }
   }
-
-  if (ecma_is_value_empty (ret_value))
+  else
   {
-    ecma_object_t *value_obj_p = ecma_get_object_from_value (obj);
-
-    /* 4. */
-    ECMA_TRY_CATCH (to_iso,
-                    ecma_op_object_get_by_magic_id (value_obj_p, LIT_MAGIC_STRING_TO_ISO_STRING_UL),
-                    ret_value);
-
-    /* 5. */
-    if (!ecma_op_is_callable (to_iso))
-    {
-      ret_value = ecma_raise_type_error (ECMA_ERR_MSG ("'toISOString' is missing or not a function."));
-    }
-    /* 6. */
-    else
-    {
-      ecma_object_t *to_iso_obj_p = ecma_get_object_from_value (to_iso);
-      ret_value = ecma_op_function_call (to_iso_obj_p, this_arg, NULL, 0);
-    }
-
-    ECMA_FINALIZE (to_iso);
+    ecma_free_value (tv);
   }
 
-  ECMA_FINALIZE (tv);
-  ECMA_FINALIZE (obj);
+  ecma_object_t *value_obj_p = ecma_get_object_from_value (obj);
+
+  /* 4. */
+  ecma_value_t ret_value = ecma_op_invoke_by_magic_id (obj, LIT_MAGIC_STRING_TO_ISO_STRING_UL, NULL, 0);
+
+  ecma_deref_object (value_obj_p);
 
   return ret_value;
 } /* ecma_builtin_date_prototype_to_json */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 /**
  * The Date.prototype object's toPrimitive routine
  *
@@ -202,7 +195,7 @@ ecma_builtin_date_prototype_to_primitive (ecma_value_t this_arg, /**< this argum
   {
     ecma_string_t *hint_str_p = ecma_get_string_from_value (hint_arg);
 
-    ecma_preferred_type_hint_t hint = ECMA_PREFERRED_TYPE_NUMBER;
+    ecma_preferred_type_hint_t hint = ECMA_PREFERRED_TYPE_NO;
 
     if (hint_str_p == ecma_get_magic_string (LIT_MAGIC_STRING_STRING)
         || hint_str_p == ecma_get_magic_string (LIT_MAGIC_STRING_DEFAULT))
@@ -222,7 +215,7 @@ ecma_builtin_date_prototype_to_primitive (ecma_value_t this_arg, /**< this argum
 
   return ecma_raise_type_error (ECMA_ERR_MSG ("Invalid argument type in toPrimitive."));
 } /* ecma_builtin_date_prototype_to_primitive */
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Dispatch get date functions
@@ -237,7 +230,7 @@ ecma_builtin_date_prototype_dispatch_get (uint16_t builtin_routine_id, /**< buil
 {
   if (ecma_number_is_nan (date_num))
   {
-    return ecma_make_magic_string_value (LIT_MAGIC_STRING_NAN);
+    return ecma_make_nan_value ();
   }
 
   switch (builtin_routine_id)
@@ -605,23 +598,21 @@ ecma_builtin_date_prototype_dispatch_routine (uint16_t builtin_routine_id, /**< 
     return ecma_builtin_date_prototype_to_json (this_arg);
   }
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   if (JERRY_UNLIKELY (builtin_routine_id == ECMA_DATE_PROTOTYPE_TO_PRIMITIVE))
   {
     ecma_value_t argument = arguments_number > 0 ? arguments_list[0] : ECMA_VALUE_UNDEFINED;
     return ecma_builtin_date_prototype_to_primitive (this_arg, argument);
   }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   if (!ecma_is_value_object (this_arg)
       || !ecma_object_class_is (ecma_get_object_from_value (this_arg), LIT_MAGIC_STRING_DATE_UL))
   {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Date object expected"));
+    return ecma_raise_type_error (ECMA_ERR_MSG ("'this' is not a Date object"));
   }
 
-  ecma_object_t *object_p = ecma_get_object_from_value (this_arg);
-
-  ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) object_p;
+  ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) ecma_get_object_from_value (this_arg);
   ecma_number_t *prim_value_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_number_t,
                                                                  ext_object_p->u.class_prop.u.value);
 

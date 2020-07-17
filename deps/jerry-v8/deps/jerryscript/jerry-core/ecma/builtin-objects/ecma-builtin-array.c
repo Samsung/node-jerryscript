@@ -25,6 +25,7 @@
 #include "ecma-iterator-object.h"
 #include "ecma-objects.h"
 #include "ecma-array-object.h"
+#include "jcontext.h"
 #include "jrt.h"
 
 #if ENABLED (JERRY_BUILTIN_ARRAY)
@@ -61,10 +62,10 @@ ecma_builtin_array_object_is_array (ecma_value_t this_arg, /**< 'this' argument 
 {
   JERRY_UNUSED (this_arg);
 
-  return ecma_make_boolean_value (ecma_is_value_array (arg));
+  return ecma_is_value_array (arg);
 } /* ecma_builtin_array_object_is_array */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 /**
  * The Array object's 'from' routine
  *
@@ -108,7 +109,7 @@ ecma_builtin_array_object_from (ecma_value_t this_arg, /**< 'this' argument */
   }
 
   /* 4. */
-  ecma_value_t using_iterator = ecma_op_get_method_by_symbol_id (items, LIT_MAGIC_STRING_ITERATOR);
+  ecma_value_t using_iterator = ecma_op_get_method_by_symbol_id (items, LIT_GLOBAL_SYMBOL_ITERATOR);
 
   /* 5. */
   if (ECMA_IS_VALUE_ERROR (using_iterator))
@@ -128,7 +129,7 @@ ecma_builtin_array_object_from (ecma_value_t this_arg, /**< 'this' argument */
     {
       ecma_object_t *constructor_obj_p = ecma_get_object_from_value (constructor);
 
-      array = ecma_op_function_construct (constructor_obj_p, ECMA_VALUE_UNDEFINED, NULL, 0);
+      array = ecma_op_function_construct (constructor_obj_p, constructor_obj_p, NULL, 0);
 
       if (ecma_is_value_undefined (array) || ecma_is_value_null (array))
       {
@@ -152,7 +153,8 @@ ecma_builtin_array_object_from (ecma_value_t this_arg, /**< 'this' argument */
     ecma_object_t *array_obj_p = ecma_get_object_from_value (array);
 
     /* 6.d */
-    ecma_value_t iterator = ecma_op_get_iterator (items, using_iterator);
+    ecma_value_t next_method;
+    ecma_value_t iterator = ecma_op_get_iterator (items, using_iterator, &next_method);
     ecma_free_value (using_iterator);
 
     /* 6.e */
@@ -169,7 +171,7 @@ ecma_builtin_array_object_from (ecma_value_t this_arg, /**< 'this' argument */
     while (true)
     {
       /* 6.g.ii */
-      ecma_value_t next = ecma_op_iterator_step (iterator);
+      ecma_value_t next = ecma_op_iterator_step (iterator, next_method);
 
       /* 6.g.iii */
       if (ECMA_IS_VALUE_ERROR (next))
@@ -195,6 +197,7 @@ ecma_builtin_array_object_from (ecma_value_t this_arg, /**< 'this' argument */
         }
 
         ecma_free_value (iterator);
+        ecma_free_value (next_method);
         /* 6.g.iv.3 */
         return array;
       }
@@ -253,6 +256,7 @@ ecma_builtin_array_object_from (ecma_value_t this_arg, /**< 'this' argument */
 
 iterator_cleanup:
     ecma_free_value (iterator);
+    ecma_free_value (next_method);
     ecma_free_value (array);
 
     return ret_value;
@@ -289,7 +293,7 @@ iterator_cleanup:
   {
     ecma_object_t *constructor_obj_p = ecma_get_object_from_value (constructor);
 
-    array = ecma_op_function_construct (constructor_obj_p, ECMA_VALUE_UNDEFINED, &len_value, 1);
+    array = ecma_op_function_construct (constructor_obj_p, constructor_obj_p, &len_value, 1);
 
     if (ecma_is_value_undefined (array) || ecma_is_value_null (array))
     {
@@ -321,14 +325,12 @@ iterator_cleanup:
   while (k < len)
   {
     /* 16.b */
-    ecma_string_t *pk = ecma_new_ecma_string_from_uint32 (k);
-    ecma_value_t k_value = ecma_op_object_get (array_like_obj_p, pk);
-    ecma_deref_ecma_string (pk);
+    ecma_value_t k_value = ecma_op_object_get_by_uint32_index (array_like_obj_p, k);
 
     /* 16.c */
     if (ECMA_IS_VALUE_ERROR (k_value))
     {
-      goto cleanup;
+      goto construct_cleanup;
     }
 
     ecma_value_t mapped_value;
@@ -344,7 +346,7 @@ iterator_cleanup:
       /* 16.d.ii */
       if (ECMA_IS_VALUE_ERROR (mapped_value))
       {
-        goto cleanup;
+        goto construct_cleanup;
       }
     }
     else
@@ -362,7 +364,7 @@ iterator_cleanup:
     /* 16.g */
     if (ECMA_IS_VALUE_ERROR (set_status))
     {
-      goto cleanup;
+      goto construct_cleanup;
     }
 
     /* 16.h */
@@ -380,17 +382,101 @@ iterator_cleanup:
   /* 18. */
   if (ECMA_IS_VALUE_ERROR (set_status))
   {
-    goto cleanup;
+    goto construct_cleanup;
   }
 
   /* 19. */
-  ret_value = ecma_make_object_value (array_obj_p);
+  ecma_deref_object (array_like_obj_p);
+  return ecma_make_object_value (array_obj_p);
 
+construct_cleanup:
+  ecma_deref_object (array_obj_p);
 cleanup:
   ecma_deref_object (array_like_obj_p);
   return ret_value;
 } /* ecma_builtin_array_object_from */
-#endif /* ENABLED (JERRY_ES2015) */
+
+/**
+ * The Array object's 'of' routine
+ *
+ * See also:
+ *          ECMA-262 v6, 22.1.2.3
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value.
+ */
+static ecma_value_t
+ecma_builtin_array_object_of (ecma_value_t this_arg, /**< 'this' argument */
+                              const ecma_value_t *arguments_list_p, /**< arguments list */
+                              ecma_length_t arguments_list_len) /**< number of arguments */
+{
+  if (!ecma_is_constructor (this_arg))
+  {
+    return ecma_op_create_array_object (arguments_list_p, arguments_list_len, false);
+  }
+
+  ecma_value_t len = ecma_make_uint32_value (arguments_list_len);
+
+  ecma_value_t ret_val = ecma_op_function_construct (ecma_get_object_from_value (this_arg),
+                                                     ecma_get_object_from_value (this_arg),
+                                                     &len,
+                                                     1);
+
+  if (ECMA_IS_VALUE_ERROR (ret_val))
+  {
+    ecma_free_value (len);
+    return ret_val;
+  }
+
+  uint32_t k = 0;
+  ecma_object_t *obj_p = ecma_get_object_from_value (ret_val);
+  const uint32_t prop_status_flags = ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE | ECMA_IS_THROW;
+
+  while (k < arguments_list_len)
+  {
+    ecma_value_t define_status = ecma_builtin_helper_def_prop_by_index (obj_p,
+                                                                        k,
+                                                                        arguments_list_p[k],
+                                                                        prop_status_flags);
+
+    if (ECMA_IS_VALUE_ERROR (define_status))
+    {
+      ecma_free_value (len);
+      ecma_deref_object (obj_p);
+      return define_status;
+    }
+
+    k++;
+  }
+
+  ret_val = ecma_op_object_put (obj_p,
+                                ecma_get_magic_string (LIT_MAGIC_STRING_LENGTH),
+                                len,
+                                true);
+
+  ecma_free_value (len);
+
+  if (ECMA_IS_VALUE_ERROR (ret_val))
+  {
+    ecma_deref_object (obj_p);
+    return ret_val;
+  }
+
+  return ecma_make_object_value (obj_p);
+} /* ecma_builtin_array_object_of */
+
+/**
+ * 22.1.2.5 get Array [ @@species ] accessor
+ *
+ * @return ecma_value
+ *         returned value must be freed with ecma_free_value
+ */
+ecma_value_t
+ecma_builtin_array_species_get (ecma_value_t this_value) /**< This Value */
+{
+  return ecma_copy_value (this_value);
+} /* ecma_builtin_array_species_get */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Handle calling [[Call]] of built-in Array object
@@ -403,7 +489,7 @@ ecma_builtin_array_dispatch_call (const ecma_value_t *arguments_list_p, /**< arg
 {
   JERRY_ASSERT (arguments_list_len == 0 || arguments_list_p != NULL);
 
-  return ecma_builtin_array_dispatch_construct (arguments_list_p, arguments_list_len);
+  return ecma_op_create_array_object (arguments_list_p, arguments_list_len, true);
 } /* ecma_builtin_array_dispatch_call */
 
 /**
@@ -417,7 +503,30 @@ ecma_builtin_array_dispatch_construct (const ecma_value_t *arguments_list_p, /**
 {
   JERRY_ASSERT (arguments_list_len == 0 || arguments_list_p != NULL);
 
+#if !ENABLED (JERRY_ESNEXT)
   return ecma_op_create_array_object (arguments_list_p, arguments_list_len, true);
+#else /* ENABLED (JERRY_ESNEXT) */
+  ecma_object_t *proto_p = ecma_op_get_prototype_from_constructor (JERRY_CONTEXT (current_new_target),
+                                                                   ECMA_BUILTIN_ID_ARRAY_PROTOTYPE);
+
+  if (proto_p == NULL)
+  {
+    return ECMA_VALUE_ERROR;
+  }
+
+  ecma_value_t result = ecma_op_create_array_object (arguments_list_p, arguments_list_len, true);
+
+  if (ECMA_IS_VALUE_ERROR (result))
+  {
+    ecma_deref_object (proto_p);
+    return ECMA_VALUE_ERROR;
+  }
+
+  ecma_object_t *object_p = ecma_get_object_from_value (result);
+  ECMA_SET_NON_NULL_POINTER (object_p->u2.prototype_cp, proto_p);
+  ecma_deref_object (proto_p);
+  return result;
+#endif /* ENABLED (JERRY_ESNEXT) */
 } /* ecma_builtin_array_dispatch_construct */
 
 /**

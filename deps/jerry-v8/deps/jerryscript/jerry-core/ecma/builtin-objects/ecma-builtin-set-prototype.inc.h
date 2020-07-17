@@ -19,7 +19,7 @@
 
 #include "ecma-builtin-helpers-macro-defines.inc.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SET)
+#if ENABLED (JERRY_BUILTIN_SET)
 
 /* Object properties:
  *  (property name, object pointer getter) */
@@ -29,31 +29,30 @@ OBJECT_VALUE (LIT_MAGIC_STRING_CONSTRUCTOR,
               ECMA_BUILTIN_ID_SET,
               ECMA_PROPERTY_CONFIGURABLE_WRITABLE)
 
-#if ENABLED (JERRY_ES2015)
 /* ECMA-262 v6, 23.1.3.13 */
 STRING_VALUE (LIT_GLOBAL_SYMBOL_TO_STRING_TAG,
               LIT_MAGIC_STRING_SET_UL,
               ECMA_PROPERTY_FLAG_CONFIGURABLE)
-#endif /* ENABLED (JERRY_ES2015) */
 
 /* Routine properties:
  *  (property name, C routine name, arguments number or NON_FIXED, value of the routine's length property) */
-ROUTINE (LIT_MAGIC_STRING_ADD, ecma_builtin_set_prototype_object_add, 1, 1)
-ROUTINE (LIT_MAGIC_STRING_CLEAR, ecma_builtin_set_prototype_object_clear, 0, 0)
-ROUTINE (LIT_MAGIC_STRING_DELETE, ecma_builtin_set_prototype_object_delete, 1, 1)
-ROUTINE (LIT_MAGIC_STRING_FOR_EACH_UL, ecma_builtin_set_prototype_object_foreach, 2, 1)
-ROUTINE (LIT_MAGIC_STRING_HAS, ecma_builtin_set_prototype_object_has, 1, 1)
-#if ENABLED (JERRY_ES2015)
-ROUTINE (LIT_MAGIC_STRING_ENTRIES, ecma_builtin_set_prototype_object_entries, 0, 0)
-ROUTINE (LIT_MAGIC_STRING_VALUES, ecma_builtin_set_prototype_object_values, 0, 0)
-ROUTINE (LIT_MAGIC_STRING_KEYS, ecma_builtin_set_prototype_object_keys, 0, 0)
-ROUTINE (LIT_GLOBAL_SYMBOL_ITERATOR, ecma_builtin_set_prototype_object_values, 0, 0)
-#endif /* ENABLED (JERRY_ES2015) */
+ROUTINE (LIT_MAGIC_STRING_CLEAR, ECMA_CONTAINER_ROUTINE_CLEAR, 0, 0)
+ROUTINE (LIT_MAGIC_STRING_ADD, ECMA_CONTAINER_ROUTINE_ADD, 1, 1)
+ROUTINE (LIT_MAGIC_STRING_DELETE, ECMA_CONTAINER_ROUTINE_DELETE, 1, 1)
+ROUTINE (LIT_MAGIC_STRING_FOR_EACH_UL, ECMA_CONTAINER_ROUTINE_FOREACH, 2, 1)
+ROUTINE (LIT_MAGIC_STRING_HAS, ECMA_CONTAINER_ROUTINE_HAS, 1, 1)
+ROUTINE (LIT_MAGIC_STRING_ENTRIES, ECMA_CONTAINER_ROUTINE_ENTRIES, 0, 0)
+INTRINSIC_PROPERTY (LIT_MAGIC_STRING_VALUES, LIT_INTERNAL_MAGIC_STRING_SET_PROTOTYPE_KEYS,
+                    ECMA_PROPERTY_CONFIGURABLE_WRITABLE)
+INTRINSIC_PROPERTY (LIT_GLOBAL_SYMBOL_ITERATOR, LIT_INTERNAL_MAGIC_STRING_SET_PROTOTYPE_KEYS,
+                    ECMA_PROPERTY_CONFIGURABLE_WRITABLE)
+INTRINSIC_PROPERTY (LIT_MAGIC_STRING_KEYS, LIT_INTERNAL_MAGIC_STRING_SET_PROTOTYPE_KEYS,
+                    ECMA_PROPERTY_CONFIGURABLE_WRITABLE)
 
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_SIZE,
-                    ecma_builtin_set_prototype_object_size_getter,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_CONTAINER_ROUTINE_SIZE_GETTER,
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SET) */
+#endif /* ENABLED (JERRY_BUILTIN_SET) */
 
 #include "ecma-builtin-helpers-macro-undefs.inc.h"

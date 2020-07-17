@@ -26,38 +26,40 @@ OBJECT_VALUE (LIT_MAGIC_STRING_CONSTRUCTOR,
               ECMA_BUILTIN_ID_REGEXP,
               ECMA_PROPERTY_CONFIGURABLE_WRITABLE)
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_FLAGS,
                     ecma_builtin_regexp_prototype_get_flags,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_SOURCE,
                     ecma_builtin_regexp_prototype_get_source,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_GLOBAL,
                     ecma_builtin_regexp_prototype_get_global,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_IGNORECASE_UL,
                     ecma_builtin_regexp_prototype_get_ignorecase,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_MULTILINE,
                     ecma_builtin_regexp_prototype_get_multiline,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_UNICODE,
                     ecma_builtin_regexp_prototype_get_unicode,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_STICKY,
                     ecma_builtin_regexp_prototype_get_sticky,
-                    ECMA_PROPERTY_FIXED)
+                    ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 ROUTINE (LIT_GLOBAL_SYMBOL_REPLACE, ecma_builtin_regexp_prototype_symbol_replace, 2, 2)
+ROUTINE (LIT_GLOBAL_SYMBOL_SEARCH, ecma_builtin_regexp_prototype_symbol_search, 1, 1)
+ROUTINE (LIT_GLOBAL_SYMBOL_SPLIT, ecma_builtin_regexp_prototype_symbol_split, 2, 2)
 ROUTINE (LIT_GLOBAL_SYMBOL_MATCH, ecma_builtin_regexp_prototype_symbol_match, 1, 1)
-#else /* !ENABLED (JERRY_ES2015) */
+#else /* !ENABLED (JERRY_ESNEXT) */
 /* ECMA-262 v5, 15.10.7.1 */
 STRING_VALUE (LIT_MAGIC_STRING_SOURCE,
               LIT_MAGIC_STRING_EMPTY_NON_CAPTURE_GROUP,
@@ -77,12 +79,12 @@ SIMPLE_VALUE (LIT_MAGIC_STRING_IGNORECASE_UL,
 SIMPLE_VALUE (LIT_MAGIC_STRING_MULTILINE,
               ECMA_VALUE_FALSE,
               ECMA_PROPERTY_FIXED)
-#endif /* ENABLED (JERRY_ES2015) */
 
 /* ECMA-262 v5, 15.10.7.5 */
 NUMBER_VALUE (LIT_MAGIC_STRING_LASTINDEX_UL,
               0,
               ECMA_PROPERTY_FLAG_WRITABLE)
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 #if ENABLED (JERRY_BUILTIN_ANNEXB)
 ROUTINE (LIT_MAGIC_STRING_COMPILE, ecma_builtin_regexp_prototype_compile, 2, 1)

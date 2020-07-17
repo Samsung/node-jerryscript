@@ -49,9 +49,6 @@ typedef struct vm_frame_ctx_t
   struct vm_frame_ctx_t *prev_context_p;              /**< previous context */
   ecma_value_t this_binding;                          /**< this binding */
   ecma_value_t block_result;                          /**< block result */
-#if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM)
-  ecma_value_t resource_name;                         /**< current resource name (usually a file name) */
-#endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
 #if ENABLED (JERRY_LINE_INFO)
   uint32_t current_line;                              /**< currently executed line */
 #endif /* ENABLED (JERRY_LINE_INFO) */
@@ -70,6 +67,12 @@ typedef struct vm_frame_ctx_t
  * Read or write a specific register.
  */
 #define VM_GET_REGISTER(frame_ctx_p, i) (((ecma_value_t *) ((frame_ctx_p) + 1))[i])
+
+/**
+ * Get the executable object.
+ */
+#define VM_GET_EXECUTABLE_OBJECT(frame_ctx_p) \
+  ((ecma_extended_object_t *) ((uintptr_t) (frame_ctx_p) - (uintptr_t) offsetof (vm_executable_object_t, frame_ctx)))
 
 /**
  * Generator frame context.

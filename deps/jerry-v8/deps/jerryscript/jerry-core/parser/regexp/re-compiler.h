@@ -20,7 +20,6 @@
 
 #include "ecma-globals.h"
 #include "re-bytecode.h"
-#include "re-parser.h"
 
 /** \addtogroup parser Parser
  * @{
@@ -32,24 +31,10 @@
  * @{
  */
 
-/**
- * Context of RegExp compiler
- */
-typedef struct
-{
-  uint16_t flags;                    /**< RegExp flags */
-  uint32_t captures_count;           /**< number of capture groups */
-  uint32_t non_captures_count;       /**< number of non-capture groups */
-  uint32_t highest_backref;          /**< highest backreference */
-  re_bytecode_ctx_t *bytecode_ctx_p; /**< pointer of RegExp bytecode context */
-  re_token_t current_token;          /**< current token */
-  re_parser_ctx_t *parser_ctx_p;     /**< pointer of RegExp parser context */
-} re_compiler_ctx_t;
+re_compiled_code_t *
+re_compile_bytecode (ecma_string_t *pattern_str_p, uint16_t flags);
 
-ecma_value_t
-re_compile_bytecode (const re_compiled_code_t **out_bytecode_p, ecma_string_t *pattern_str_p, uint16_t flags);
-
-void re_cache_gc_run (void);
+void re_cache_gc (void);
 
 /**
  * @}

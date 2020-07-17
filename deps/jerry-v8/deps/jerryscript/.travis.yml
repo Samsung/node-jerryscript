@@ -1,8 +1,8 @@
 language: c
 
-# Default environment: Ubuntu Trusty 14.04.
+# Default environment: Ubuntu Bionic 18.04.
 os: linux
-dist: trusty
+dist: bionic
 
 # Default job task: run tests as defined in the $OPT environment variable.
 # Jobs can redefine the 'script' stage in the matrix below.
@@ -11,81 +11,20 @@ script: tools/run-tests.py $OPTS
 # All the job definitions in the matrix.
 matrix:
   include:
-    - name: "Checks"
-      install: pip install --user pylint==1.6.5
-      script:
-        - tools/run-tests.py --check-signed-off=travis --check-doxygen --check-vera --check-license --check-magic-strings --check-pylint
-        - travis_wait 40 tools/run-tests.py --check-cppcheck
-      addons:
-        apt:
-          packages: [doxygen, cppcheck, vera++]
-
-    - name: "Linux/x86-64 Build, Correctness & Debugger Tests"
-      env:
-        - OPTS="--quiet --jerry-tests --jerry-test-suite --jerry-debugger"
-
-    - name: "Linux/x86 (cpointer-32bit) Build & Correctness Tests"
-      env:
-        - OPTS="--quiet --jerry-tests --jerry-test-suite --buildoptions=--compile-flag=-m32,--cpointer-32bit=on"
-      addons:
-        apt:
-          packages: [gcc-multilib]
-
     - name: "Linux/ARM Build & Correctness Tests"
       env:
-        - OPTS="--quiet --jerry-tests --jerry-test-suite --toolchain=cmake/toolchain_linux_armv7l.cmake --buildoptions=--linker-flag=-static"
+        - OPTS="--quiet --jerry-tests --toolchain=cmake/toolchain_linux_armv7l.cmake --buildoptions=--linker-flag=-static"
         - RUNTIME=qemu-arm-static
         - TIMEOUT=300
       addons:
         apt:
           packages: [gcc-arm-linux-gnueabihf, libc6-dev-armhf-cross, qemu-user-static]
 
-    - name: "OSX/x86-64 Build, Correctness & Unit Tests"
+    - name: "Linux/AArch64 Native Build & Correctness Tests"
+      arch: arm64
       env:
-        - OPTS="--quiet --jerry-tests --jerry-test-suite --unittests"
-      os: osx
-      addons:
-        homebrew:
-          packages: [cmake, cppcheck, vera++]
-
-    - name: "Build Tests"
-      env:
-        - OPTS="--buildoption-test"
-      addons:
-        apt:
-          packages: [gcc-multilib]
-
-    - name: "Conformance Tests"
-      env:
-        - OPTS="--test262"
-
-    - name: "Unit Tests"
-      env:
-        - OPTS="--unittests"
-
-    - name: "ASAN Tests"
-      env:
-        # Skipping maximum stack usage related tests due to 'detect_stack_use_after_return=1' ASAN option.
-        # For more detailed description: https://github.com/google/sanitizers/wiki/AddressSanitizerUseAfterReturn#compatibility
-        - OPTS="--quiet --jerry-tests --jerry-test-suite --skip-list=parser-oom.js,parser-oom2.js,stack-limit.js,regression-test-issue-2190.js,regression-test-issue-2258-2963.js,regression-test-issue-2448.js,regression-test-issue-2905.js --buildoptions=--stack-limit=0,--compile-flag=-fsanitize=address,--compile-flag=-m32,--compile-flag=-fno-omit-frame-pointer,--compile-flag=-fno-common,--compile-flag=-O2,--debug,--system-allocator=on,--linker-flag=-fuse-ld=gold"
-        - ASAN_OPTIONS=detect_stack_use_after_return=1:check_initialization_order=true:strict_init_order=true
-        - TIMEOUT=600
-      compiler: gcc-5
-      addons:
-        apt:
-          sources: ubuntu-toolchain-r-test
-          packages: [gcc-5, gcc-5-multilib]
-
-    - name: "UBSAN Tests"
-      env:
-        - OPTS="--quiet --jerry-tests --jerry-test-suite --skip-list=parser-oom.js,parser-oom2.js --buildoptions=--compile-flag=-fsanitize=undefined,--compile-flag=-m32,--compile-flag=-fno-omit-frame-pointer,--compile-flag=-fno-common,--debug,--system-allocator=on,--linker-flag=-fuse-ld=gold"
-        - UBSAN_OPTIONS=print_stacktrace=1
-        - TIMEOUT=600
-      compiler: gcc-5
-      addons:
-        apt:
-          sources: ubuntu-toolchain-r-test
-          packages: [gcc-5, gcc-5-multilib]
+        - OPTS="--quiet --jerry-tests --buildoptions=--linker-flag=-static"
+        - TIMEOUT=300
 
     - name: "Coverity Scan & SonarQube"
       env:
@@ -120,11 +59,13 @@ matrix:
       script: make -f ./targets/mbedos5/Makefile.travis script
 
     - name: "Zephyr/Arduino 101 Build Test"
+      language: python # NOTE: only way to ensure python>=2.7.10 on Trusty image
+      python: 3.6
       install: make -f ./targets/zephyr/Makefile.travis install-noapt
       script: make -f ./targets/zephyr/Makefile.travis script
       addons:
         apt:
-          packages: [gperf, dfu-util, device-tree-compiler, python3-ply, python3-pip]
+          packages: [gperf, dfu-util, device-tree-compiler]
 
     - name: "NuttX/STM32F4 Build Test"
       install: make -f targets/nuttx-stm32f4/Makefile.travis install-noapt

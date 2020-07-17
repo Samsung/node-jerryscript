@@ -25,11 +25,19 @@
 #define STRING_VALUE(name, magic_string_id, prop_attributes)
 #endif /* !STRING_VALUE */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 #ifndef SYMBOL_VALUE
-#define SYMBOL_VALUE(name, desc_string_id)
+#define SYMBOL_VALUE(symbol, desc_magic_string_id)
 #endif /* !SYMBOL_VALUE */
-#endif /* ENABLED (JERRY_ES2015) */
+
+#ifndef INTRINSIC_PROPERTY
+#define INTRINSIC_PROPERTY(name, magic_string_id, prop_attributes)
+#endif /* !INTRINSIC_PROPERTY */
+
+#ifndef ACCESSOR_BUILTIN_FUNCTION_OBJECT
+#define ACCESSOR_BUILTIN_FUNCTION_OBJECT(name, getter_builtin_id, setter_builtin_id, prop_attributes)
+#endif /* !ACCESSOR_BUILTIN_FUNCTION_OBJECT */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 #ifndef OBJECT_VALUE
 #define OBJECT_VALUE(name, obj_builtin_id, prop_attributes)

@@ -35,6 +35,9 @@ typedef enum
   NUMBER_ARITHMETIC_MULTIPLICATION, /**< multiplication */
   NUMBER_ARITHMETIC_DIVISION, /**< division */
   NUMBER_ARITHMETIC_REMAINDER, /**< remainder calculation */
+#if ENABLED (JERRY_ESNEXT)
+  NUMBER_ARITHMETIC_EXPONENTIATION, /**< exponentiation */
+#endif /* ENABLED (JERRY_ESNEXT) */
 } number_arithmetic_op;
 
 /**
@@ -51,15 +54,28 @@ typedef enum
   NUMBER_BITWISE_NOT, /**< bitwise NOT calculation */
 } number_bitwise_logic_op;
 
+#if ENABLED (JERRY_ESNEXT)
+
+/**
+ * Types for opfunc_create_executable_object.
+ */
+typedef enum
+{
+  VM_CREATE_EXECUTABLE_OBJECT_GENERATOR, /**< create a generator function */
+  VM_CREATE_EXECUTABLE_OBJECT_ASYNC, /**< create an async function */
+} vm_create_executable_object_type_t;
+
+#endif /* ENABLED (JERRY_ESNEXT) */
+
 /**
  * The stack contains spread object during the upcoming APPEND_ARRAY operation
  */
 #define OPFUNC_HAS_SPREAD_ELEMENT (1 << 8)
 
-void
+ecma_value_t
 vm_var_decl (ecma_object_t *lex_env_p, ecma_string_t *var_name_str_p, bool is_configurable_bindings);
 
-void
+ecma_value_t
 vm_set_var (ecma_object_t *lex_env_p, ecma_string_t *var_name_str_p, bool is_strict, ecma_value_t lit_value);
 
 ecma_value_t
@@ -90,6 +106,9 @@ ecma_value_t
 opfunc_typeof (ecma_value_t left_value);
 
 void
+opfunc_set_data_property (ecma_object_t *object_p, ecma_string_t *prop_name_p, ecma_value_t value);
+
+void
 opfunc_set_accessor (bool is_getter, ecma_value_t object, ecma_string_t *accessor_name_p, ecma_value_t accessor);
 
 ecma_value_t
@@ -101,21 +120,55 @@ vm_op_delete_var (ecma_value_t name_literal, ecma_object_t *lex_env_p);
 ecma_collection_t *
 opfunc_for_in (ecma_value_t left_value, ecma_value_t *result_obj_p);
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 ecma_collection_t *
 opfunc_spread_arguments (ecma_value_t *stack_top_p, uint8_t argument_list_len);
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 ecma_value_t
 opfunc_append_array (ecma_value_t *stack_top_p, uint16_t values_length);
 
-#if ENABLED (JERRY_ES2015)
-ecma_value_t
-opfunc_create_executable_object (vm_frame_ctx_t *frame_ctx_p);
+#if ENABLED (JERRY_ESNEXT)
+vm_executable_object_t *
+opfunc_create_executable_object (vm_frame_ctx_t *frame_ctx_p, vm_create_executable_object_type_t type);
+
+extern const uint8_t opfunc_resume_executable_object_with_throw[];
+extern const uint8_t opfunc_resume_executable_object_with_return[];
 
 ecma_value_t
 opfunc_resume_executable_object (vm_executable_object_t *executable_object_p, ecma_value_t value);
-#endif /* ENABLED (JERRY_ES2015) */
+
+void
+opfunc_async_generator_yield (ecma_extended_object_t *async_generator_object_p, ecma_value_t value);
+
+ecma_value_t
+opfunc_async_create_and_await (vm_frame_ctx_t *frame_ctx_p, ecma_value_t value, uint16_t extra_flags);
+
+ecma_value_t
+opfunc_create_implicit_class_constructor (uint8_t opcode);
+
+void
+opfunc_set_home_object (ecma_object_t *func_p, ecma_object_t *parent_env_p);
+
+void
+opfunc_push_class_environment (vm_frame_ctx_t *frame_ctx_p,  ecma_value_t **vm_stack_top, ecma_value_t class_name);
+
+ecma_value_t
+opfunc_init_class (vm_frame_ctx_t *frame_context_p, ecma_value_t *stack_top_p);
+
+void
+opfunc_pop_lexical_environment (vm_frame_ctx_t *frame_ctx_p);
+
+void
+opfunc_finalize_class (vm_frame_ctx_t *frame_ctx_p, ecma_value_t **vm_stack_top_p, ecma_value_t class_name);
+
+ecma_value_t
+opfunc_form_super_reference (ecma_value_t **vm_stack_top_p, vm_frame_ctx_t *frame_ctx_p, ecma_value_t prop_name,
+                             uint8_t opcode);
+
+ecma_value_t
+opfunc_assign_super_reference (ecma_value_t **vm_stack_top_p, vm_frame_ctx_t *frame_ctx_p, uint32_t opcode_data);
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * @}

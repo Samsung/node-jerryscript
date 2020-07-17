@@ -7,16 +7,16 @@ This folder contains files to run JerryScript on
 
 #### 1. Setup the build environment for STM32F4-Discovery board
 
-Clone the necessary projects into a `jerry-nuttx` directory. The last tested working version of NuttX is 7.28.
+Clone the necessary projects into a `jerry-nuttx` directory. The last tested working version of NuttX is 9.0.
 
 ```sh
 # Create a base folder for all the projects.
 mkdir jerry-nuttx && cd jerry-nuttx
 
 git clone https://github.com/jerryscript-project/jerryscript.git
-git clone https://bitbucket.org/nuttx/nuttx.git -b nuttx-7.28
-git clone https://bitbucket.org/nuttx/apps.git -b nuttx-7.28
-git clone https://github.com/texane/stlink.git -b v1.5.1
+git clone https://bitbucket.org/nuttx/nuttx.git -b releases/9.0
+git clone https://bitbucket.org/nuttx/apps.git -b releases/9.0
+git clone https://github.com/texane/stlink.git -b v1.5.1-patch
 ```
 
 The following directory structure is created after these commands:
@@ -44,7 +44,7 @@ jerryscript/tools/build.py \
     --jerry-libm=ON \
     --all-in-one=ON \
     --mem-heap=70 \
-    --profile=es2015-subset \
+    --profile=es.next \
     --compile-flag="--sysroot=${PWD}/nuttx" \
     --toolchain=${PWD}/jerryscript/cmake/toolchain_mcu_stm32f4.cmake
 ```
@@ -108,7 +108,6 @@ cd nuttx-tools/kconfig-frontends
     --disable-nconf \
     --disable-gconf \
     --disable-qconf \
-    --disable-utils \
     --disable-shared \
     --enable-static \
     --prefix=${PWD}/install

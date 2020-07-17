@@ -15,7 +15,7 @@
 
 #include "js-parser-internal.h"
 
-#if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
+#if ENABLED (JERRY_MODULE_SYSTEM)
 #include "jcontext.h"
 #include "jerryscript-port.h"
 
@@ -293,7 +293,7 @@ parser_module_add_names_to_node (parser_context_t *context_p, /**< parser contex
  * Create module context if needed.
  */
 void
-parser_module_context_init (void)
+parser_module_context_init (parser_context_t *context_p)
 {
   if (JERRY_CONTEXT (module_top_context_p) == NULL)
   {
@@ -302,7 +302,7 @@ parser_module_context_init (void)
     memset (module_context_p, 0, sizeof (ecma_module_context_t));
     JERRY_CONTEXT (module_top_context_p) = module_context_p;
 
-    ecma_string_t *path_str_p = ecma_get_string_from_value (JERRY_CONTEXT (resource_name));
+    ecma_string_t *path_str_p = ecma_get_string_from_value (context_p->resource_name);
 
     lit_utf8_size_t path_str_size;
     uint8_t flags = ECMA_STRING_FLAG_EMPTY;
@@ -325,8 +325,8 @@ parser_module_context_init (void)
     ecma_module_t *module_p = ecma_module_find_or_create_module (path_p);
 
     module_p->state = ECMA_MODULE_STATE_EVALUATED;
-    module_p->scope_p = ecma_get_global_environment ();
-    ecma_ref_object (module_p->scope_p);
+    /* The lexical scope of the root module does not exist yet. */
+    module_p->scope_p = NULL;
 
     module_p->context_p = module_context_p;
     module_context_p->module_p = module_p;
@@ -367,7 +367,7 @@ parser_module_parse_export_clause (parser_context_t *context_p) /**< parser cont
     /* 15.2.3.1 The referenced binding cannot be a reserved word. */
     if (context_p->token.type != LEXER_LITERAL
         || context_p->token.lit_location.type != LEXER_IDENT_LITERAL
-        || context_p->token.literal_is_reserved)
+        || context_p->token.keyword_type >= LEXER_FIRST_FUTURE_STRICT_RESERVED_WORD)
     {
       parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
     }
@@ -381,7 +381,7 @@ parser_module_parse_export_clause (parser_context_t *context_p) /**< parser cont
     uint16_t export_name_index = PARSER_MAXIMUM_NUMBER_OF_LITERALS;
 
     lexer_next_token (context_p);
-    if (lexer_compare_literal_to_identifier (context_p, "as", 2))
+    if (lexer_token_is_identifier (context_p, "as", 2))
     {
       lexer_next_token (context_p);
 
@@ -433,7 +433,7 @@ parser_module_parse_export_clause (parser_context_t *context_p) /**< parser cont
       lexer_next_token (context_p);
     }
 
-    if (lexer_compare_literal_to_identifier (context_p, "from", 4))
+    if (lexer_token_is_identifier (context_p, "from", 4))
     {
       parser_raise_error (context_p, PARSER_ERR_RIGHT_BRACE_EXPECTED);
     }
@@ -463,13 +463,11 @@ parser_module_parse_import_clause (parser_context_t *context_p) /**< parser cont
       parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
     }
 
-#if ENABLED (JERRY_ES2015)
     if (context_p->next_scanner_info_p->source_p == context_p->source_p)
     {
       JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_ERR_REDECLARED);
       parser_raise_error (context_p, PARSER_ERR_VARIABLE_REDECLARED);
     }
-#endif /* ENABLED (JERRY_ES2015) */
 
     ecma_string_t *import_name_p = NULL;
     ecma_string_t *local_name_p = NULL;
@@ -480,7 +478,7 @@ parser_module_parse_import_clause (parser_context_t *context_p) /**< parser cont
     uint16_t local_name_index = PARSER_MAXIMUM_NUMBER_OF_LITERALS;
 
     lexer_next_token (context_p);
-    if (lexer_compare_literal_to_identifier (context_p, "as", 2))
+    if (lexer_token_is_identifier (context_p, "as", 2))
     {
       lexer_next_token (context_p);
 
@@ -490,13 +488,11 @@ parser_module_parse_import_clause (parser_context_t *context_p) /**< parser cont
         parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
       }
 
-#if ENABLED (JERRY_ES2015)
       if (context_p->next_scanner_info_p->source_p == context_p->source_p)
       {
         JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_ERR_REDECLARED);
         parser_raise_error (context_p, PARSER_ERR_VARIABLE_REDECLARED);
       }
-#endif /* ENABLED (JERRY_ES2015) */
 
       lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_NEW_IDENT_LITERAL);
 
@@ -540,7 +536,7 @@ parser_module_parse_import_clause (parser_context_t *context_p) /**< parser cont
       lexer_next_token (context_p);
     }
 
-    if (lexer_compare_literal_to_identifier (context_p, "from", 4))
+    if (lexer_token_is_identifier (context_p, "from", 4))
     {
       parser_raise_error (context_p, PARSER_ERR_RIGHT_BRACE_EXPECTED);
     }
@@ -555,7 +551,8 @@ parser_module_check_request_place (parser_context_t *context_p) /**< parser cont
 {
   if (context_p->last_context_p != NULL
       || context_p->stack_top_uint8 != 0
-      || (context_p->status_flags & (PARSER_IS_EVAL | PARSER_IS_FUNCTION)) != 0)
+      || (context_p->status_flags & PARSER_IS_FUNCTION)
+      || (context_p->global_status_flags & ECMA_PARSE_EVAL))
   {
     parser_raise_error (context_p, PARSER_ERR_MODULE_UNEXPECTED);
   }
@@ -614,4 +611,4 @@ module_found:
   lexer_next_token (context_p);
 } /* parser_module_handle_module_specifier */
 
-#endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */

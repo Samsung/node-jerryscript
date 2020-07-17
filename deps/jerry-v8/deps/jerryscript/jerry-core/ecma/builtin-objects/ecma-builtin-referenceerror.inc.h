@@ -24,10 +24,9 @@
 /* Number properties:
  *  (property name, number value, writable, enumerable, configurable) */
 
-/* ECMA-262 v5, 15.11.3 */
 NUMBER_VALUE (LIT_MAGIC_STRING_LENGTH,
               1,
-              ECMA_PROPERTY_FIXED)
+              ECMA_PROPERTY_FLAG_DEFAULT_LENGTH)
 
 /* Object properties:
  *  (property name, object pointer getter) */
@@ -36,6 +35,12 @@ NUMBER_VALUE (LIT_MAGIC_STRING_LENGTH,
 OBJECT_VALUE (LIT_MAGIC_STRING_PROTOTYPE,
               ECMA_BUILTIN_ID_REFERENCE_ERROR_PROTOTYPE,
               ECMA_PROPERTY_FIXED)
+
+#if ENABLED (JERRY_ESNEXT)
+STRING_VALUE (LIT_MAGIC_STRING_NAME,
+              LIT_MAGIC_STRING_REFERENCE_ERROR_UL,
+              ECMA_PROPERTY_FLAG_CONFIGURABLE)
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 #endif /* ENABLED (JERRY_BUILTIN_ERRORS) */
 

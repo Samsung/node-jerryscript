@@ -19,7 +19,7 @@
 
 #include "ecma-builtin-helpers-macro-defines.inc.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_WEAKMAP)
+#if ENABLED (JERRY_BUILTIN_WEAKMAP)
 
 /* Number properties:
  *  (property name, number value, writable, enumerable, configurable) */
@@ -27,7 +27,7 @@
 /* ECMA-262 v6, 23.3.2 */
 NUMBER_VALUE (LIT_MAGIC_STRING_LENGTH,
               0,
-              ECMA_PROPERTY_FIXED)
+              ECMA_PROPERTY_FLAG_CONFIGURABLE)
 
 /* ECMA-262 v6, 23.1 */
 STRING_VALUE (LIT_MAGIC_STRING_NAME,
@@ -42,6 +42,6 @@ OBJECT_VALUE (LIT_MAGIC_STRING_PROTOTYPE,
               ECMA_BUILTIN_ID_WEAKMAP_PROTOTYPE,
               ECMA_PROPERTY_FIXED)
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_WEAKMAP) */
+#endif /* ENABLED (JERRY_BUILTIN_WEAKMAP) */
 
 #include "ecma-builtin-helpers-macro-undefs.inc.h"

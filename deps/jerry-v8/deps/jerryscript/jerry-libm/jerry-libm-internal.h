@@ -30,7 +30,6 @@
 /* Sometimes it's necessary to define __LITTLE_ENDIAN explicitly
    but these catch some common cases. */
 
-
 #ifndef __LITTLE_ENDIAN
 /* Check if compiler has byte order macro. Some older versions do not.
  * If byte order is supported and set to little or target is among common
@@ -89,11 +88,24 @@ double cos (double x);
 double sin (double x);
 double tan (double x);
 
+double cosh (double x);
+double sinh (double x);
+double tanh (double x);
+
+double acosh (double x);
+double asinh (double x);
+double atanh (double x);
+
 double exp (double x);
+double expm1 (double x);
 double log (double x);
+double log1p (double x);
+double log2 (double x);
+double log10 (double);
 
 double pow (double x, double y);
 double sqrt (double x);
+double cbrt (double);
 
 double ceil (double x);
 double fabs (double x);

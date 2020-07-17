@@ -139,12 +139,12 @@ ecma_create_object_lex_env (ecma_object_t *outer_lexical_environment_p, /**< out
                             ecma_object_t *binding_obj_p, /**< binding object */
                             ecma_lexical_environment_type_t type) /**< type of the new lexical environment */
 {
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   JERRY_ASSERT (type == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND
-                || type == ECMA_LEXICAL_ENVIRONMENT_SUPER_OBJECT_BOUND);
-#else /* !ENABLED (JERRY_ES2015) */
+                || type == ECMA_LEXICAL_ENVIRONMENT_HOME_OBJECT_BOUND);
+#else /* !ENABLED (JERRY_ESNEXT) */
   JERRY_ASSERT (type == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND);
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   JERRY_ASSERT (binding_obj_p != NULL
                 && !ecma_is_lexical_environment (binding_obj_p));
@@ -180,39 +180,16 @@ ecma_is_lexical_environment (const ecma_object_t *object_p) /**< object or lexic
 } /* ecma_is_lexical_environment */
 
 /**
- * Get value of [[Extensible]] object's internal property.
- *
- * @return true  - if object is extensible
- *         false - otherwise
- */
-inline bool JERRY_ATTR_PURE
-ecma_get_object_extensible (const ecma_object_t *object_p) /**< object */
-{
-  JERRY_ASSERT (object_p != NULL);
-  JERRY_ASSERT (!ecma_is_lexical_environment (object_p));
-
-  return (object_p->type_flags_refs & ECMA_OBJECT_FLAG_EXTENSIBLE) != 0;
-} /* ecma_get_object_extensible */
-
-/**
  * Set value of [[Extensible]] object's internal property.
  */
 inline void
-ecma_set_object_extensible (ecma_object_t *object_p, /**< object */
-                            bool is_extensible) /**< value of [[Extensible]] */
+ecma_op_ordinary_object_set_extensible (ecma_object_t *object_p) /**< object */
 {
   JERRY_ASSERT (object_p != NULL);
   JERRY_ASSERT (!ecma_is_lexical_environment (object_p));
 
-  if (is_extensible)
-  {
-    object_p->type_flags_refs = (uint16_t) (object_p->type_flags_refs | ECMA_OBJECT_FLAG_EXTENSIBLE);
-  }
-  else
-  {
-    object_p->type_flags_refs = (uint16_t) (object_p->type_flags_refs & ~ECMA_OBJECT_FLAG_EXTENSIBLE);
-  }
-} /* ecma_set_object_extensible */
+  object_p->type_flags_refs = (uint16_t) (object_p->type_flags_refs | ECMA_OBJECT_FLAG_EXTENSIBLE);
+} /* ecma_op_ordinary_object_set_extensible */
 
 /**
  * Get object's internal implementation-defined type.
@@ -309,12 +286,12 @@ ecma_get_lex_env_binding_object (const ecma_object_t *object_p) /**< object-boun
 {
   JERRY_ASSERT (object_p != NULL);
   JERRY_ASSERT (ecma_is_lexical_environment (object_p));
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   JERRY_ASSERT (ecma_get_lex_env_type (object_p) == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND
-                || ecma_get_lex_env_type (object_p) == ECMA_LEXICAL_ENVIRONMENT_SUPER_OBJECT_BOUND);
-#else /* !ENABLED (JERRY_ES2015) */
+                || ecma_get_lex_env_type (object_p) == ECMA_LEXICAL_ENVIRONMENT_HOME_OBJECT_BOUND);
+#else /* !ENABLED (JERRY_ESNEXT) */
   JERRY_ASSERT (ecma_get_lex_env_type (object_p) == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND);
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   return ECMA_GET_NON_NULL_POINTER (ecma_object_t, object_p->u1.bound_object_cp);
 } /* ecma_get_lex_env_binding_object */
@@ -1256,7 +1233,6 @@ ecma_create_error_reference (ecma_value_t value, /**< referenced value */
 {
   ecma_error_reference_t *error_ref_p = (ecma_error_reference_t *) jmem_pools_alloc (sizeof (ecma_error_reference_t));
 
-  JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
   error_ref_p->refs_and_flags = ECMA_ERROR_REF_ONE | (is_exception ? 0 : ECMA_ERROR_REF_ABORT);
   error_ref_p->value = value;
   return ecma_make_error_reference_value (error_ref_p);
@@ -1270,8 +1246,13 @@ ecma_create_error_reference (ecma_value_t value, /**< referenced value */
 ecma_value_t
 ecma_create_error_reference_from_context (void)
 {
-  return ecma_create_error_reference (JERRY_CONTEXT (error_value),
-                                      (JERRY_CONTEXT (status_flags) & ECMA_STATUS_EXCEPTION) != 0);
+  bool is_abort = jcontext_has_pending_abort ();
+
+  if (is_abort)
+  {
+    jcontext_set_abort_flag (false);
+  }
+  return ecma_create_error_reference (jcontext_take_exception (), !is_abort);
 } /* ecma_create_error_reference_from_context */
 
 /**
@@ -1322,40 +1303,35 @@ ecma_deref_error_reference (ecma_error_reference_t *error_ref_p) /**< error refe
 } /* ecma_deref_error_reference */
 
 /**
- * Clears error reference, and returns with the value.
+ * Raise error from the given error reference.
  *
- * @return value referenced by the error
+ * Note: the error reference's ref count is also decreased
  */
-ecma_value_t
-ecma_clear_error_reference (ecma_value_t value, /**< error reference */
-                            bool set_abort_flag) /**< set abort flag */
+void
+ecma_raise_error_from_error_reference (ecma_value_t value) /**< error reference */
 {
+  JERRY_ASSERT (!jcontext_has_pending_exception () && !jcontext_has_pending_abort ());
   ecma_error_reference_t *error_ref_p = ecma_get_error_reference_from_value (value);
 
-  if (set_abort_flag)
-  {
-    if (error_ref_p->refs_and_flags & ECMA_ERROR_REF_ABORT)
-    {
-      JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
-    }
-    else
-    {
-      JERRY_CONTEXT (status_flags) |= ECMA_STATUS_EXCEPTION;
-    }
-  }
-
   JERRY_ASSERT (error_ref_p->refs_and_flags >= ECMA_ERROR_REF_ONE);
+
+  ecma_value_t referenced_value = error_ref_p->value;
+
+  jcontext_set_exception_flag (true);
+  jcontext_set_abort_flag (error_ref_p->refs_and_flags & ECMA_ERROR_REF_ABORT);
 
   if (error_ref_p->refs_and_flags >= 2 * ECMA_ERROR_REF_ONE)
   {
     error_ref_p->refs_and_flags -= ECMA_ERROR_REF_ONE;
-    return ecma_copy_value (error_ref_p->value);
+    referenced_value = ecma_copy_value (referenced_value);
+  }
+  else
+  {
+    jmem_pools_free (error_ref_p, sizeof (ecma_error_reference_t));
   }
 
-  ecma_value_t referenced_value = error_ref_p->value;
-  jmem_pools_free (error_ref_p, sizeof (ecma_error_reference_t));
-  return referenced_value;
-} /* ecma_clear_error_reference */
+  JERRY_CONTEXT (error_value) = referenced_value;
+} /* ecma_raise_error_from_error_reference */
 
 /**
  * Increase reference counter of Compact
@@ -1391,7 +1367,7 @@ ecma_bytecode_deref (ecma_compiled_code_t *bytecode_p) /**< byte code pointer */
     return;
   }
 
-  if (bytecode_p->status_flags & CBC_CODE_FLAGS_FUNCTION)
+  if (CBC_IS_FUNCTION (bytecode_p->status_flags))
   {
     ecma_value_t *literal_start_p = NULL;
     uint32_t literal_end;
@@ -1462,6 +1438,18 @@ ecma_bytecode_deref (ecma_compiled_code_t *bytecode_p) /**< byte code pointer */
     }
 #endif /* ENABLED (JERRY_DEBUGGER) */
 
+#if ENABLED (JERRY_ESNEXT)
+    if (bytecode_p->status_flags & CBC_CODE_FLAGS_HAS_TAGGED_LITERALS)
+    {
+      ecma_collection_t *collection_p = ecma_compiled_code_get_tagged_template_collection (bytecode_p);
+
+      /* Since the objects in the tagged template collection are not strong referenced anymore by the compiled code
+         we can treat them as 'new' objects. */
+      JERRY_CONTEXT (ecma_gc_new_objects) += collection_p->item_count;
+      ecma_collection_free (collection_p);
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
 #if ENABLED (JERRY_MEM_STATS)
     jmem_stats_free_byte_code_bytes (((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG);
 #endif /* ENABLED (JERRY_MEM_STATS) */
@@ -1479,6 +1467,107 @@ ecma_bytecode_deref (ecma_compiled_code_t *bytecode_p) /**< byte code pointer */
                         ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG);
 } /* ecma_bytecode_deref */
 
+#if ENABLED (JERRY_ESNEXT)
+/**
+ * Get the tagged template collection of the compiled code
+ *
+ * @return pointer to the tagged template collection
+ */
+ecma_collection_t *
+ecma_compiled_code_get_tagged_template_collection (const ecma_compiled_code_t *bytecode_header_p) /**< compiled code */
+{
+  JERRY_ASSERT (bytecode_header_p != NULL);
+  JERRY_ASSERT (bytecode_header_p->status_flags & CBC_CODE_FLAGS_HAS_TAGGED_LITERALS);
+
+  ecma_value_t *base_p = ecma_compiled_code_resolve_function_name (bytecode_header_p);
+
+  return ECMA_GET_INTERNAL_VALUE_POINTER (ecma_collection_t, base_p[-1]);
+} /* ecma_compiled_code_get_tagged_template_collection */
+
+/**
+ * Get the number of formal parameters of the compiled code
+ *
+ * @return number of formal parameters
+ */
+ecma_length_t
+ecma_compiled_code_get_formal_params (const ecma_compiled_code_t *bytecode_header_p) /**< compiled code */
+{
+  if (!(bytecode_header_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED))
+  {
+    return 0;
+  }
+
+  if (bytecode_header_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
+  {
+    return ((cbc_uint16_arguments_t *) bytecode_header_p)->argument_end;
+  }
+
+  return ((cbc_uint8_arguments_t *) bytecode_header_p)->argument_end;
+} /* ecma_compiled_code_get_formal_params */
+
+/**
+ * Resolve the position of the arguments list start of the compiled code
+ *
+ * @return start position of the arguments list start of the compiled code
+ */
+ecma_value_t *
+ecma_compiled_code_resolve_arguments_start (const ecma_compiled_code_t *bytecode_header_p) /**< compiled code */
+{
+  JERRY_ASSERT (bytecode_header_p != NULL);
+
+  uint8_t *byte_p = (uint8_t *) bytecode_header_p;
+  byte_p += ((size_t) bytecode_header_p->size) << JMEM_ALIGNMENT_LOG;
+
+  return ((ecma_value_t *) byte_p) - ecma_compiled_code_get_formal_params (bytecode_header_p);
+} /* ecma_compiled_code_resolve_arguments_start */
+
+/**
+ * Resolve the position of the function name of the compiled code
+ *
+ * @return position of the function name of the compiled code
+ */
+inline ecma_value_t * JERRY_ATTR_ALWAYS_INLINE
+ecma_compiled_code_resolve_function_name (const ecma_compiled_code_t *bytecode_header_p) /**< compiled code */
+{
+  JERRY_ASSERT (bytecode_header_p != NULL);
+  ecma_value_t *base_p = ecma_compiled_code_resolve_arguments_start (bytecode_header_p);
+
+#if ENABLED (JERRY_ESNEXT)
+  if (CBC_FUNCTION_GET_TYPE (bytecode_header_p->status_flags) != CBC_FUNCTION_CONSTRUCTOR)
+  {
+    base_p--;
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+  return base_p;
+} /* ecma_compiled_code_resolve_function_name */
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+/**
+ * Get the resource name of a compiled code.
+ *
+ * @return resource name value
+ */
+ecma_value_t
+ecma_get_resource_name (const ecma_compiled_code_t *bytecode_p) /**< compiled code */
+{
+#if ENABLED (JERRY_RESOURCE_NAME)
+  if (bytecode_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
+  {
+    cbc_uint16_arguments_t *args_p = (cbc_uint16_arguments_t *) bytecode_p;
+    ecma_value_t *lit_pool_p = (ecma_value_t *) ((uint8_t *) bytecode_p + sizeof (cbc_uint16_arguments_t));
+    return lit_pool_p[args_p->const_literal_end - args_p->register_end - 1];
+  }
+
+  cbc_uint8_arguments_t *args_p = (cbc_uint8_arguments_t *) bytecode_p;
+  ecma_value_t *lit_pool_p = (ecma_value_t *) ((uint8_t *) bytecode_p + sizeof (cbc_uint8_arguments_t));
+  return lit_pool_p[args_p->const_literal_end - args_p->register_end - 1];
+#else /* !ENABLED (JERRY_RESOURCE_NAME) */
+  JERRY_UNUSED (bytecode_p);
+  return ecma_make_magic_string_value (LIT_MAGIC_STRING_RESOURCE_ANON);
+#endif /* !ENABLED (JERRY_RESOURCE_NAME) */
+} /* ecma_get_resource_name */
+
 #if (JERRY_STACK_LIMIT != 0)
 /**
  * Check the current stack usage by calculating the difference from the initial stack base.
@@ -1489,7 +1578,7 @@ uintptr_t JERRY_ATTR_NOINLINE
 ecma_get_current_stack_usage (void)
 {
   volatile int __sp;
-  return (uintptr_t) (JERRY_CONTEXT (stack_base) - (uintptr_t)&__sp);
+  return (uintptr_t) (JERRY_CONTEXT (stack_base) - (uintptr_t) &__sp);
 } /* ecma_get_current_stack_usage */
 
 #endif /* (JERRY_STACK_LIMIT != 0) */

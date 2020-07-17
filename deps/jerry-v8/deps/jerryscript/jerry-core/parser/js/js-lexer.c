@@ -33,6 +33,9 @@
  * @{
  */
 
+JERRY_STATIC_ASSERT (LEXER_NUMBER_BINARY > LEXER_NUMBER_OCTAL,
+                     lexer_number_binary_must_be_greater_than_lexer_number_octal);
+
 /**
  * Check whether the UTF-8 intermediate is an octet or not
  */
@@ -53,14 +56,13 @@ align_column_to_tab (parser_line_counter_t column) /**< current column */
 /**
  * Parse hexadecimal character sequence
  *
- * @return character value
+ * @return character value or UINT32_MAX on error
  */
-ecma_char_t
-lexer_hex_to_character (parser_context_t *context_p, /**< context */
-                        const uint8_t *source_p, /**< current source position */
-                        int length) /**< source length */
+static lit_code_point_t
+lexer_hex_to_code_point (const uint8_t *source_p, /**< current source position */
+                         parser_line_counter_t length) /**< source length */
 {
-  uint32_t result = 0;
+  lit_code_point_t result = 0;
 
   do
   {
@@ -81,29 +83,94 @@ lexer_hex_to_character (parser_context_t *context_p, /**< context */
       }
       else
       {
-        parser_raise_error (context_p, PARSER_ERR_INVALID_ESCAPE_SEQUENCE);
+        return UINT32_MAX;
       }
     }
   }
   while (--length > 0);
 
-  return (ecma_char_t) result;
-} /* lexer_hex_to_character */
+  return result;
+} /* lexer_hex_to_code_point */
+
+#if ENABLED (JERRY_ESNEXT)
+
+/**
+ * Parse hexadecimal character sequence enclosed in braces
+ *
+ * @return character value or UINT32_MAX on error
+ */
+static lit_code_point_t
+lexer_hex_in_braces_to_code_point (const uint8_t *source_p, /**< current source position */
+                                   const uint8_t *source_end_p, /**< source end */
+                                   uint32_t *length_p) /**< [out] length of the sequence */
+{
+  lit_code_point_t result = 0;
+  /* Four is the size of \u{} sequence. */
+  uint32_t length = 4;
+
+  JERRY_ASSERT (source_p[-1] == LIT_CHAR_LEFT_BRACE);
+  JERRY_ASSERT (source_p < source_end_p);
+
+  do
+  {
+    uint32_t byte = *source_p++;
+
+    result <<= 4;
+
+    if (byte >= LIT_CHAR_0 && byte <= LIT_CHAR_9)
+    {
+      result += byte - LIT_CHAR_0;
+    }
+    else
+    {
+      byte = LEXER_TO_ASCII_LOWERCASE (byte);
+      if (byte >= LIT_CHAR_LOWERCASE_A && byte <= LIT_CHAR_LOWERCASE_F)
+      {
+        result += byte - (LIT_CHAR_LOWERCASE_A - 10);
+      }
+      else
+      {
+        return UINT32_MAX;
+      }
+    }
+
+    if (result >= (LIT_UNICODE_CODE_POINT_MAX + 1) || source_p >= source_end_p)
+    {
+      return UINT32_MAX;
+    }
+    length++;
+  }
+  while (*source_p != LIT_CHAR_RIGHT_BRACE);
+
+  *length_p = length;
+  return result;
+} /* lexer_hex_in_braces_to_code_point */
+
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Parse hexadecimal character sequence
  *
  * @return character value
  */
-static ecma_char_t
-lexer_unchecked_hex_to_character (const uint8_t *source_p, /**< current source position */
-                                  int length) /**< source length */
+static lit_code_point_t
+lexer_unchecked_hex_to_character (const uint8_t **source_p) /**< [in, out] current source position */
 {
-  uint32_t result = 0;
+  lit_code_point_t result = 0;
+  const uint8_t *char_p = *source_p;
+  uint32_t length = (char_p[-1] == LIT_CHAR_LOWERCASE_U) ? 4 : 2;
 
-  do
+#if ENABLED (JERRY_ESNEXT)
+  if (char_p[0] == LIT_CHAR_LEFT_BRACE)
   {
-    uint32_t byte = *source_p++;
+    length = 0;
+    char_p++;
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+  while (true)
+  {
+    uint32_t byte = *char_p++;
 
     result <<= 4;
 
@@ -118,10 +185,27 @@ lexer_unchecked_hex_to_character (const uint8_t *source_p, /**< current source p
 
       result += LEXER_TO_ASCII_LOWERCASE (byte) - (LIT_CHAR_LOWERCASE_A - 10);
     }
-  }
-  while (--length > 0);
 
-  return (ecma_char_t) result;
+    JERRY_ASSERT (result <= LIT_UNICODE_CODE_POINT_MAX);
+
+#if ENABLED (JERRY_ESNEXT)
+    if (length == 0)
+    {
+      if (*char_p != LIT_CHAR_RIGHT_BRACE)
+      {
+        continue;
+      }
+      *source_p = char_p + 1;
+      return result;
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+    if (--length == 0)
+    {
+      *source_p = char_p;
+      return result;
+    }
+  }
 } /* lexer_unchecked_hex_to_character */
 
 /**
@@ -304,14 +388,14 @@ lexer_skip_spaces (parser_context_t *context_p) /**< context */
     context_p->source_p++;
 
     if (context_p->source_p < source_end_p
-        && IS_UTF8_INTERMEDIATE_OCTET (context_p->source_p[0]))
+        && !IS_UTF8_INTERMEDIATE_OCTET (context_p->source_p[0]))
     {
       context_p->column++;
     }
   }
 } /* lexer_skip_spaces */
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
 /**
  * Skip all the continuous empty statements.
  */
@@ -329,7 +413,7 @@ lexer_skip_empty_statements (parser_context_t *context_p) /**< context */
 
   context_p->token.flags = (uint8_t) (context_p->token.flags | LEXER_NO_SKIP_SPACES);
 } /* lexer_skip_empty_statements */
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Keyword data.
@@ -347,6 +431,16 @@ typedef struct
 #define LEXER_KEYWORD(name, type) { (const uint8_t *) (name), (type) }
 #define LEXER_KEYWORD_LIST_LENGTH(name) (const uint8_t) (sizeof ((name)) / sizeof ((name)[0]))
 /** @} */
+
+/**
+ * Length of the shortest keyword.
+ */
+#define LEXER_KEYWORD_MIN_LENGTH 2
+
+/**
+ * Length of the longest keyword.
+ */
+#define LEXER_KEYWORD_MAX_LENGTH 10
 
 /**
  * Keywords with 2 characters.
@@ -378,6 +472,7 @@ static const keyword_string_t keywords_with_length_4[] =
   LEXER_KEYWORD ("case", LEXER_KEYW_CASE),
   LEXER_KEYWORD ("else", LEXER_KEYW_ELSE),
   LEXER_KEYWORD ("enum", LEXER_KEYW_ENUM),
+  LEXER_KEYWORD ("eval", LEXER_KEYW_EVAL),
   LEXER_KEYWORD ("null", LEXER_LIT_NULL),
   LEXER_KEYWORD ("this", LEXER_KEYW_THIS),
   LEXER_KEYWORD ("true", LEXER_LIT_TRUE),
@@ -390,9 +485,10 @@ static const keyword_string_t keywords_with_length_4[] =
  */
 static const keyword_string_t keywords_with_length_5[] =
 {
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
+  LEXER_KEYWORD ("async", LEXER_KEYW_ASYNC),
   LEXER_KEYWORD ("await", LEXER_KEYW_AWAIT),
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
   LEXER_KEYWORD ("break", LEXER_KEYW_BREAK),
   LEXER_KEYWORD ("catch", LEXER_KEYW_CATCH),
   LEXER_KEYWORD ("class", LEXER_KEYW_CLASS),
@@ -446,6 +542,7 @@ static const keyword_string_t keywords_with_length_8[] =
  */
 static const keyword_string_t keywords_with_length_9[] =
 {
+  LEXER_KEYWORD ("arguments", LEXER_KEYW_ARGUMENTS),
   LEXER_KEYWORD ("interface", LEXER_KEYW_INTERFACE),
   LEXER_KEYWORD ("protected", LEXER_KEYW_PROTECTED),
 };
@@ -475,6 +572,10 @@ static const keyword_string_t * const keyword_strings_list[] =
   keywords_with_length_10
 };
 
+JERRY_STATIC_ASSERT (sizeof (keyword_strings_list) / sizeof (const keyword_string_t *)
+                     == (LEXER_KEYWORD_MAX_LENGTH - LEXER_KEYWORD_MIN_LENGTH) + 1,
+                     keyword_strings_list_size_must_equal_to_keyword_max_length_difference);
+
 /**
  * List of the keyword groups length.
  */
@@ -495,100 +596,210 @@ static const uint8_t keyword_lengths_list[] =
 #undef LEXER_KEYWORD_LIST_LENGTH
 
 /**
- * Parse identifier.
+ * Flags for lexer_parse_identifier.
  */
-static void
+typedef enum
+{
+  LEXER_PARSE_NO_OPTS = 0, /**< no options */
+  LEXER_PARSE_CHECK_KEYWORDS = (1 << 0), /**< check keywords */
+  LEXER_PARSE_CHECK_START_AND_RETURN = (1 << 1), /**< check identifier start and return */
+  LEXER_PARSE_CHECK_PART_AND_RETURN = (1 << 2), /**< check identifier part and return */
+} lexer_parse_options_t;
+
+JERRY_STATIC_ASSERT (LEXER_FIRST_NON_RESERVED_KEYWORD < LEXER_FIRST_FUTURE_STRICT_RESERVED_WORD,
+                     lexer_first_non_reserved_keyword_must_be_before_lexer_first_future_strict_reserved_word);
+
+/**
+ * Parse identifier.
+ *
+ * @return true, if an identifier is parsed, false otherwise
+ */
+static bool
 lexer_parse_identifier (parser_context_t *context_p, /**< context */
-                        bool check_keywords) /**< check keywords */
+                        lexer_parse_options_t options) /**< check keywords */
 {
   /* Only very few identifiers contains \u escape sequences. */
   const uint8_t *source_p = context_p->source_p;
-  const uint8_t *ident_start_p = context_p->source_p;
   /* Note: newline or tab cannot be part of an identifier. */
   parser_line_counter_t column = context_p->column;
   const uint8_t *source_end_p = context_p->source_end_p;
   size_t length = 0;
-
-  context_p->token.type = LEXER_LITERAL;
-  context_p->token.literal_is_reserved = false;
-  context_p->token.lit_location.type = LEXER_IDENT_LITERAL;
-  context_p->token.lit_location.has_escape = false;
+  uint8_t has_escape = false;
 
   do
   {
     if (*source_p == LIT_CHAR_BACKSLASH)
     {
-      uint16_t character;
+      /* After a backslash an identifier must start. */
+      lit_code_point_t code_point = UINT32_MAX;
+      uint32_t escape_length = 6;
 
-      context_p->token.lit_location.has_escape = true;
-      context_p->source_p = source_p;
-      context_p->token.column = column;
-
-      if ((source_p + 6 > source_end_p) || (source_p[1] != LIT_CHAR_LOWERCASE_U))
+      if (options & (LEXER_PARSE_CHECK_START_AND_RETURN | LEXER_PARSE_CHECK_PART_AND_RETURN))
       {
+        return true;
+      }
+
+      has_escape = true;
+
+#if ENABLED (JERRY_ESNEXT)
+      if (source_p + 5 <= source_end_p && source_p[1] == LIT_CHAR_LOWERCASE_U)
+      {
+        if (source_p[2] == LIT_CHAR_LEFT_BRACE)
+        {
+          code_point = lexer_hex_in_braces_to_code_point (source_p + 3, source_end_p, &escape_length);
+        }
+        else if (source_p + 6 <= source_end_p)
+        {
+          code_point = lexer_hex_to_code_point (source_p + 2, 4);
+        }
+      }
+#else /* !ENABLED (JERRY_ESNEXT) */
+      if (source_p + 6 <= source_end_p && source_p[1] == LIT_CHAR_LOWERCASE_U)
+      {
+        code_point = lexer_hex_to_code_point (source_p + 2, 4);
+      }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+      if (code_point == UINT32_MAX)
+      {
+        context_p->source_p = source_p;
+        context_p->token.column = column;
         parser_raise_error (context_p, PARSER_ERR_INVALID_UNICODE_ESCAPE_SEQUENCE);
       }
 
-      character = lexer_hex_to_character (context_p, source_p + 2, 4);
-
       if (length == 0)
       {
-        if (!lit_char_is_identifier_start_character (character))
+        if (!lit_code_point_is_identifier_start (code_point))
         {
           parser_raise_error (context_p, PARSER_ERR_INVALID_IDENTIFIER_START);
         }
       }
       else
       {
-        if (!lit_char_is_identifier_part_character (character))
+        if (!lit_code_point_is_identifier_part (code_point))
         {
           parser_raise_error (context_p, PARSER_ERR_INVALID_IDENTIFIER_PART);
         }
       }
 
-      length += lit_char_get_utf8_length (character);
-      source_p += 6;
-      PARSER_PLUS_EQUAL_LC (column, 6);
+      length += lit_code_point_get_cesu8_length (code_point);
+      source_p += escape_length;
+      PARSER_PLUS_EQUAL_LC (column, escape_length);
       continue;
     }
 
-    /* Valid identifiers cannot contain 4 byte long utf-8
-     * characters, since those characters are represented
-     * by 2 ecmascript (UTF-16) characters, and those
-     * characters cannot be literal characters. */
-    JERRY_ASSERT (source_p[0] < LEXER_UTF8_4BYTE_START);
+    lit_code_point_t code_point = *source_p;
+    lit_utf8_size_t utf8_length = 1, decoded_length = 1, char_count = 1;
 
-    source_p++;
-    length++;
-    column++;
-
-    while (source_p < source_end_p
-           && IS_UTF8_INTERMEDIATE_OCTET (source_p[0]))
+    if (JERRY_UNLIKELY (code_point >= LIT_UTF8_2_BYTE_MARKER))
     {
-      source_p++;
-      length++;
+#if ENABLED (JERRY_ESNEXT)
+      utf8_length = lit_read_code_point_from_utf8 (source_p,
+                                                   (lit_utf8_size_t) (source_end_p - source_p),
+                                                   &code_point);
+      decoded_length = utf8_length;
+
+      /* Only ES2015+ supports code points outside of the basic plane which can be part of an identifier. */
+      if ((code_point >= LIT_UTF16_HIGH_SURROGATE_MIN && code_point <= LIT_UTF16_HIGH_SURROGATE_MAX)
+          && source_p + 3 < source_end_p)
+      {
+        lit_code_point_t low_surrogate;
+        lit_read_code_point_from_utf8 (source_p + 3,
+                                       (lit_utf8_size_t) (source_end_p - (source_p + 3)),
+                                       &low_surrogate);
+
+        if (low_surrogate >= LIT_UTF16_LOW_SURROGATE_MIN && low_surrogate <= LIT_UTF16_LOW_SURROGATE_MAX)
+        {
+          code_point = lit_convert_surrogate_pair_to_code_point ((ecma_char_t) code_point,
+                                                                 (ecma_char_t) low_surrogate);
+          utf8_length = 2 * 3;
+          decoded_length = 2 * 3;
+          char_count = 2;
+        }
+      }
+      else if (source_p[0] >= LIT_UTF8_4_BYTE_MARKER)
+      {
+        decoded_length = 2 * 3;
+        has_escape = true;
+      }
+#else /* !ENABLED (JERRY_ESNEXT) */
+      if (code_point < LIT_UTF8_4_BYTE_MARKER)
+      {
+        utf8_length = lit_read_code_point_from_utf8 (source_p,
+                                                     (lit_utf8_size_t) (source_end_p - source_p),
+                                                     &code_point);
+        decoded_length = utf8_length;
+      }
+      else
+      {
+        code_point = 0;
+      }
+#endif /* ENABLED (JERRY_ESNEXT) */
     }
+
+    if (length == 0)
+    {
+      if (JERRY_UNLIKELY (options & (LEXER_PARSE_CHECK_START_AND_RETURN | LEXER_PARSE_CHECK_PART_AND_RETURN)))
+      {
+        if (options & LEXER_PARSE_CHECK_START_AND_RETURN)
+        {
+          return lit_code_point_is_identifier_start (code_point);
+        }
+        else
+        {
+          return lit_code_point_is_identifier_part (code_point);
+        }
+      }
+
+      if (!lit_code_point_is_identifier_start (code_point))
+      {
+        return false;
+      }
+    }
+    else if (!lit_code_point_is_identifier_part (code_point))
+    {
+      break;
+    }
+
+    source_p += utf8_length;
+    length += decoded_length;
+    PARSER_PLUS_EQUAL_LC (column, char_count);
   }
-  while (source_p < source_end_p
-         && (lit_char_is_identifier_part (source_p) || *source_p == LIT_CHAR_BACKSLASH));
+  while (source_p < source_end_p);
 
-  context_p->source_p = ident_start_p;
+  JERRY_ASSERT (length > 0);
+
+  context_p->token.type = LEXER_LITERAL;
+  context_p->token.keyword_type = LEXER_EOS;
+  context_p->token.lit_location.type = LEXER_IDENT_LITERAL;
+  context_p->token.lit_location.has_escape = has_escape;
+
   context_p->token.column = context_p->column;
+  context_p->token.lit_location.char_p = context_p->source_p;
+  context_p->token.lit_location.length = (prop_length_t) length;
 
-  if (length > PARSER_MAXIMUM_IDENT_LENGTH)
+  if (JERRY_UNLIKELY (length > PARSER_MAXIMUM_IDENT_LENGTH))
   {
     parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_TOO_LONG);
   }
 
-  /* Check keywords (Only if there is no \u escape sequence in the pattern). */
-  if (check_keywords
-      && !context_p->token.lit_location.has_escape
-      && (length >= 2 && length <= 10))
+  /* Check keywords. */
+  if ((options & LEXER_PARSE_CHECK_KEYWORDS)
+      && (length >= LEXER_KEYWORD_MIN_LENGTH && length <= LEXER_KEYWORD_MAX_LENGTH))
   {
-    const keyword_string_t *keyword_list_p = keyword_strings_list[length - 2];
+    const uint8_t *ident_start_p = context_p->source_p;
+    uint8_t buffer_p[LEXER_KEYWORD_MAX_LENGTH];
+
+    if (JERRY_UNLIKELY (context_p->token.lit_location.has_escape))
+    {
+      lexer_convert_ident_to_cesu8 (buffer_p, ident_start_p, (prop_length_t) length);
+      ident_start_p = buffer_p;
+    }
+
+    const keyword_string_t *keyword_list_p = keyword_strings_list[length - LEXER_KEYWORD_MIN_LENGTH];
 
     int start = 0;
-    int end = keyword_lengths_list[length - 2];
+    int end = keyword_lengths_list[length - LEXER_KEYWORD_MIN_LENGTH];
     int middle = end / 2;
 
     do
@@ -602,31 +813,76 @@ lexer_parse_identifier (parser_context_t *context_p, /**< context */
 
         if (compare_result == 0)
         {
-          if (JERRY_UNLIKELY (keyword_p->type >= LEXER_FIRST_FUTURE_STRICT_RESERVED_WORD))
+          context_p->token.keyword_type = (uint8_t) keyword_p->type;
+
+          if (JERRY_LIKELY (keyword_p->type < LEXER_FIRST_NON_RESERVED_KEYWORD))
           {
-#if ENABLED (JERRY_ES2015)
-            if (keyword_p->type == LEXER_KEYW_YIELD && (context_p->status_flags & PARSER_IS_GENERATOR_FUNCTION))
+#if ENABLED (JERRY_ESNEXT)
+            if (JERRY_UNLIKELY (keyword_p->type == LEXER_KEYW_AWAIT))
             {
-              if (context_p->status_flags & PARSER_DISALLOW_YIELD)
+              if (!(context_p->status_flags & PARSER_IS_ASYNC_FUNCTION)
+                  && !(context_p->global_status_flags & ECMA_PARSE_MODULE))
               {
-                parser_raise_error (context_p, PARSER_ERR_YIELD_NOT_ALLOWED);
+                break;
               }
 
-              context_p->token.type = (uint8_t) LEXER_KEYW_YIELD;
+              if (context_p->status_flags & PARSER_DISALLOW_AWAIT_YIELD)
+              {
+                if (ident_start_p == buffer_p)
+                {
+                  parser_raise_error (context_p, PARSER_ERR_INVALID_KEYWORD);
+                }
+                parser_raise_error (context_p, PARSER_ERR_AWAIT_NOT_ALLOWED);
+              }
+
+              context_p->token.type = (uint8_t) LEXER_KEYW_AWAIT;
               break;
             }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
-            if (context_p->status_flags & PARSER_IS_STRICT)
+            if (ident_start_p == buffer_p)
             {
-              parser_raise_error (context_p, PARSER_ERR_STRICT_IDENT_NOT_ALLOWED);
+              /* Escape sequences are not allowed in a keyword. */
+              parser_raise_error (context_p, PARSER_ERR_INVALID_KEYWORD);
             }
 
-            context_p->token.literal_is_reserved = true;
+            context_p->token.type = (uint8_t) keyword_p->type;
             break;
           }
 
-          context_p->token.type = (uint8_t) keyword_p->type;
+#if ENABLED (JERRY_ESNEXT)
+          if (keyword_p->type == LEXER_KEYW_LET && (context_p->status_flags & PARSER_IS_STRICT))
+          {
+            if (ident_start_p == buffer_p)
+            {
+              parser_raise_error (context_p, PARSER_ERR_INVALID_KEYWORD);
+            }
+
+            context_p->token.type = (uint8_t) LEXER_KEYW_LET;
+            break;
+          }
+
+          if (keyword_p->type == LEXER_KEYW_YIELD && (context_p->status_flags & PARSER_IS_GENERATOR_FUNCTION))
+          {
+            if (context_p->status_flags & PARSER_DISALLOW_AWAIT_YIELD)
+            {
+              if (ident_start_p == buffer_p)
+              {
+                parser_raise_error (context_p, PARSER_ERR_INVALID_KEYWORD);
+              }
+              parser_raise_error (context_p, PARSER_ERR_YIELD_NOT_ALLOWED);
+            }
+
+            context_p->token.type = (uint8_t) LEXER_KEYW_YIELD;
+            break;
+          }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+          if (keyword_p->type >= LEXER_FIRST_FUTURE_STRICT_RESERVED_WORD
+              && (context_p->status_flags & PARSER_IS_STRICT))
+          {
+            parser_raise_error (context_p, PARSER_ERR_STRICT_IDENT_NOT_ALLOWED);
+          }
           break;
         }
       }
@@ -646,23 +902,24 @@ lexer_parse_identifier (parser_context_t *context_p, /**< context */
     while (start < end);
   }
 
-  if (context_p->token.type == LEXER_LITERAL)
-  {
-    /* Fill literal data. */
-    context_p->token.lit_location.char_p = ident_start_p;
-    context_p->token.lit_location.length = (prop_length_t) length;
-  }
-
   context_p->source_p = source_p;
   context_p->column = column;
+  return true;
 } /* lexer_parse_identifier */
 
 /**
  * Parse string.
  */
 void
-lexer_parse_string (parser_context_t *context_p) /**< context */
+lexer_parse_string (parser_context_t *context_p, /**< context */
+                    lexer_string_options_t opts) /**< options */
 {
+#if ENABLED (JERRY_ESNEXT)
+  int32_t raw_length_adjust = 0;
+#else /* ENABLED (JERRY_ESNEXT) */
+  JERRY_UNUSED (opts);
+#endif /* ENABLED (JERRY_ESNEXT) */
+
   uint8_t str_end_character = context_p->source_p[0];
   const uint8_t *source_p = context_p->source_p + 1;
   const uint8_t *string_start_p = source_p;
@@ -674,12 +931,12 @@ lexer_parse_string (parser_context_t *context_p) /**< context */
   size_t length = 0;
   uint8_t has_escape = false;
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   if (str_end_character == LIT_CHAR_RIGHT_BRACE)
   {
     str_end_character = LIT_CHAR_GRAVE_ACCENT;
   }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   while (true)
   {
@@ -714,6 +971,9 @@ lexer_parse_string (parser_context_t *context_p) /**< context */
         if (source_p < source_end_p
             && *source_p == LIT_CHAR_LF)
         {
+#if ENABLED (JERRY_ESNEXT)
+          raw_length_adjust--;
+#endif /* ENABLED (JERRY_ESNEXT) */
           source_p++;
         }
 
@@ -735,6 +995,19 @@ lexer_parse_string (parser_context_t *context_p) /**< context */
         column = 1;
         continue;
       }
+
+#if ENABLED (JERRY_ESNEXT)
+      if (opts & LEXER_STRING_RAW)
+      {
+        if ((*source_p == LIT_CHAR_GRAVE_ACCENT) || (*source_p == LIT_CHAR_BACKSLASH))
+        {
+          source_p++;
+          column++;
+          length++;
+        }
+        continue;
+      }
+#endif /* ENABLED (JERRY_ESNEXT) */
 
       if (*source_p == LIT_CHAR_0
           && source_p + 1 < source_end_p
@@ -805,35 +1078,56 @@ lexer_parse_string (parser_context_t *context_p) /**< context */
 
       if (*source_p == LIT_CHAR_LOWERCASE_X || *source_p == LIT_CHAR_LOWERCASE_U)
       {
-        uint8_t hex_part_length = (*source_p == LIT_CHAR_LOWERCASE_X) ? 2 : 4;
+        uint32_t escape_length = (*source_p == LIT_CHAR_LOWERCASE_X) ? 3 : 5;
+        lit_code_point_t code_point = UINT32_MAX;
 
         context_p->token.line = line;
         context_p->token.column = (parser_line_counter_t) (column - 1);
-        if (source_p + 1 + hex_part_length > source_end_p)
+
+#if ENABLED (JERRY_ESNEXT)
+        if (source_p + 4 <= source_end_p
+            && source_p[0] == LIT_CHAR_LOWERCASE_U
+            && source_p[1] == LIT_CHAR_LEFT_BRACE)
         {
-          parser_raise_error (context_p, PARSER_ERR_INVALID_ESCAPE_SEQUENCE);
+          code_point = lexer_hex_in_braces_to_code_point (source_p + 2, source_end_p, &escape_length);
+          escape_length--;
+        }
+        else
+        {
+#endif /* ENABLED (JERRY_ESNEXT) */
+          if (source_p + escape_length <= source_end_p)
+          {
+            code_point = lexer_hex_to_code_point (source_p + 1, escape_length - 1);
+          }
+#if ENABLED (JERRY_ESNEXT)
+        }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+        if (code_point == UINT32_MAX)
+        {
+          parser_raise_error (context_p, PARSER_ERR_INVALID_UNICODE_ESCAPE_SEQUENCE);
         }
 
-        length += lit_char_get_utf8_length (lexer_hex_to_character (context_p,
-                                                                    source_p + 1,
-                                                                    hex_part_length));
-        source_p += hex_part_length + 1;
-        PARSER_PLUS_EQUAL_LC (column, hex_part_length + 1u);
+        length += lit_code_point_get_cesu8_length (code_point);
+
+        source_p += escape_length;
+        PARSER_PLUS_EQUAL_LC (column, escape_length);
         continue;
       }
     }
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
     else if (str_end_character == LIT_CHAR_GRAVE_ACCENT &&
              source_p[0] == LIT_CHAR_DOLLAR_SIGN &&
              source_p + 1 < source_end_p &&
              source_p[1] == LIT_CHAR_LEFT_BRACE)
     {
+      raw_length_adjust--;
       source_p++;
       break;
     }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
-    if (*source_p >= LEXER_UTF8_4BYTE_START)
+    if (*source_p >= LIT_UTF8_4_BYTE_MARKER)
     {
       /* Processing 4 byte unicode sequence (even if it is
        * after a backslash). Always converted to two 3 byte
@@ -841,6 +1135,9 @@ lexer_parse_string (parser_context_t *context_p) /**< context */
       length += 2 * 3;
       has_escape = true;
       source_p += 4;
+#if ENABLED (JERRY_ESNEXT)
+      raw_length_adjust += 2;
+#endif /* ENABLED (JERRY_ESNEXT) */
       column++;
       continue;
     }
@@ -850,19 +1147,21 @@ lexer_parse_string (parser_context_t *context_p) /**< context */
       /* Subtract -1 because column is increased below. */
       column--;
     }
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
     else if (str_end_character == LIT_CHAR_GRAVE_ACCENT)
     {
-      /* Newline (without backslash) is part of the string. */
+      /* Newline (without backslash) is part of the string.
+         Note: ECMAScript v6, 11.8.6.1 <CR> or <CR><LF> are both normalized to <LF> */
       if (*source_p == LIT_CHAR_CR)
       {
+        has_escape = true;
         source_p++;
         length++;
         if (source_p < source_end_p
             && *source_p == LIT_CHAR_LF)
         {
           source_p++;
-          length++;
+          raw_length_adjust--;
         }
         line++;
         column = 1;
@@ -885,7 +1184,7 @@ lexer_parse_string (parser_context_t *context_p) /**< context */
         continue;
       }
     }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
     else if (*source_p == LIT_CHAR_CR
              || *source_p == LIT_CHAR_LF
              || (*source_p == LEXER_NEWLINE_LS_PS_BYTE_1 && LEXER_NEWLINE_LS_PS_BYTE_23 (source_p)))
@@ -907,17 +1206,24 @@ lexer_parse_string (parser_context_t *context_p) /**< context */
     }
   }
 
+#if ENABLED (JERRY_ESNEXT)
+  if (opts & LEXER_STRING_RAW)
+  {
+    length = (size_t) ((source_p - string_start_p) + raw_length_adjust);
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
   if (length > PARSER_MAXIMUM_STRING_LENGTH)
   {
     parser_raise_error (context_p, PARSER_ERR_STRING_TOO_LONG);
   }
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   context_p->token.type = ((str_end_character != LIT_CHAR_GRAVE_ACCENT) ? LEXER_LITERAL
                                                                         : LEXER_TEMPLATE_LITERAL);
-#else /* !ENABLED (JERRY_ES2015) */
+#else /* !ENABLED (JERRY_ESNEXT) */
   context_p->token.type = LEXER_LITERAL;
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   /* Fill literal data. */
   context_p->token.lit_location.char_p = string_start_p;
@@ -964,7 +1270,7 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
   size_t length;
 
   context_p->token.type = LEXER_LITERAL;
-  context_p->token.literal_is_reserved = false;
+  context_p->token.keyword_type = LEXER_EOS;
   context_p->token.extra_value = LEXER_NUMBER_DECIMAL;
   context_p->token.lit_location.char_p = source_p;
   context_p->token.lit_location.type = LEXER_NUMBER_LITERAL;
@@ -991,7 +1297,7 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
       while (source_p < source_end_p
              && lit_char_is_hex_digit (source_p[0]));
     }
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
     else if (LEXER_TO_ASCII_LOWERCASE (source_p[1]) == LIT_CHAR_LOWERCASE_O)
     {
       context_p->token.extra_value = LEXER_NUMBER_OCTAL;
@@ -1007,7 +1313,7 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
 
       lexer_parse_octal_number (context_p, &source_p);
     }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
     else if (source_p[1] >= LIT_CHAR_0
              && source_p[1] <= LIT_CHAR_7)
     {
@@ -1025,6 +1331,28 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
     {
       parser_raise_error (context_p, PARSER_ERR_INVALID_NUMBER);
     }
+#if ENABLED (JERRY_ESNEXT)
+    else if (LEXER_TO_ASCII_LOWERCASE (source_p[1]) == LIT_CHAR_LOWERCASE_B)
+    {
+      context_p->token.extra_value = LEXER_NUMBER_BINARY;
+      context_p->token.lit_location.char_p++;
+      context_p->source_p++;
+      source_p += 2;
+
+      if (source_p >= source_end_p
+          || !lit_char_is_binary_digit (source_p[0]))
+      {
+        parser_raise_error (context_p, PARSER_ERR_INVALID_BIN_DIGIT);
+      }
+
+      do
+      {
+        source_p++;
+      }
+      while (source_p < source_end_p
+               && lit_char_is_binary_digit (source_p[0]));
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
     else
     {
       can_be_float = true;
@@ -1085,12 +1413,6 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
     }
   }
 
-  if (source_p < source_end_p
-      && (lit_char_is_identifier_start (source_p) || source_p[0] == LIT_CHAR_BACKSLASH))
-  {
-    parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_AFTER_NUMBER);
-  }
-
   length = (size_t) (source_p - context_p->source_p);
   if (length > PARSER_MAXIMUM_IDENT_LENGTH)
   {
@@ -1100,6 +1422,11 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
   context_p->token.lit_location.length = (prop_length_t) length;
   PARSER_PLUS_EQUAL_LC (context_p->column, length);
   context_p->source_p = source_p;
+
+  if (source_p < source_end_p && lexer_parse_identifier (context_p, LEXER_PARSE_CHECK_START_AND_RETURN))
+  {
+    parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_AFTER_NUMBER);
+  }
 } /* lexer_parse_number */
 
 /**
@@ -1109,7 +1436,7 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
  * @param type1 type
  */
 #define LEXER_TYPE_A_TOKEN(char1, type1) \
-  case (uint8_t) (char1) : \
+  case (uint8_t) (char1): \
   { \
     context_p->token.type = (type1); \
     length = 1; \
@@ -1125,7 +1452,7 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
  * @param type2 type of the second character
  */
 #define LEXER_TYPE_B_TOKEN(char1, type1, char2, type2) \
-  case (uint8_t) (char1) : \
+  case (uint8_t) (char1): \
   { \
     if (length >= 2 && context_p->source_p[1] == (uint8_t) (char2)) \
     { \
@@ -1150,7 +1477,7 @@ lexer_parse_number (parser_context_t *context_p) /**< context */
  * @param type3 type of the third character
  */
 #define LEXER_TYPE_C_TOKEN(char1, type1, char2, type2, char3, type3) \
-  case (uint8_t) (char1) : \
+  case (uint8_t) (char1): \
   { \
     if (length >= 2) \
     { \
@@ -1194,10 +1521,8 @@ lexer_next_token (parser_context_t *context_p) /**< context */
     return;
   }
 
-  if (lit_char_is_identifier_start (context_p->source_p)
-      || context_p->source_p[0] == LIT_CHAR_BACKSLASH)
+  if (lexer_parse_identifier (context_p, LEXER_PARSE_CHECK_KEYWORDS))
   {
-    lexer_parse_identifier (context_p, true);
     return;
   }
 
@@ -1227,7 +1552,7 @@ lexer_next_token (parser_context_t *context_p) /**< context */
         return;
       }
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
       if (length >= 3
           && context_p->source_p[1] == LIT_CHAR_DOT
           && context_p->source_p[2] == LIT_CHAR_DOT)
@@ -1236,7 +1561,7 @@ lexer_next_token (parser_context_t *context_p) /**< context */
         length = 3;
         break;
       }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
       context_p->token.type = LEXER_DOT;
       length = 1;
@@ -1340,14 +1665,14 @@ lexer_next_token (parser_context_t *context_p) /**< context */
           break;
         }
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
         if (context_p->source_p[1] == (uint8_t) LIT_CHAR_GREATER_THAN)
         {
           context_p->token.type = LEXER_ARROW;
           length = 2;
           break;
         }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
       }
 
       context_p->token.type = LEXER_ASSIGN;
@@ -1381,8 +1706,39 @@ lexer_next_token (parser_context_t *context_p) /**< context */
     LEXER_TYPE_C_TOKEN (LIT_CHAR_MINUS, LEXER_SUBTRACT, LIT_CHAR_EQUALS,
                         LEXER_ASSIGN_SUBTRACT, LIT_CHAR_MINUS, LEXER_DECREASE)
 
-    LEXER_TYPE_B_TOKEN (LIT_CHAR_ASTERISK, LEXER_MULTIPLY, LIT_CHAR_EQUALS,
-                        LEXER_ASSIGN_MULTIPLY)
+    case (uint8_t) LIT_CHAR_ASTERISK:
+    {
+      if (length >= 2)
+      {
+        if (context_p->source_p[1] == (uint8_t) LIT_CHAR_EQUALS)
+        {
+          context_p->token.type = LEXER_ASSIGN_MULTIPLY;
+          length = 2;
+          break;
+        }
+
+#if ENABLED (JERRY_ESNEXT)
+        if (context_p->source_p[1] == (uint8_t) LIT_CHAR_ASTERISK)
+        {
+          if (length >= 3 && context_p->source_p[2] == (uint8_t) LIT_CHAR_EQUALS)
+          {
+            context_p->token.type = LEXER_ASSIGN_EXPONENTIATION;
+            length = 3;
+            break;
+          }
+
+          context_p->token.type = LEXER_EXPONENTIATION;
+          length = 2;
+          break;
+        }
+#endif /* ENABLED (JERRY_ESNEXT) */
+      }
+
+      context_p->token.type = LEXER_MULTIPLY;
+      length = 1;
+      break;
+    }
+
     LEXER_TYPE_B_TOKEN (LIT_CHAR_SLASH, LEXER_DIVIDE, LIT_CHAR_EQUALS,
                         LEXER_ASSIGN_DIVIDE)
     LEXER_TYPE_B_TOKEN (LIT_CHAR_PERCENT, LEXER_MODULO, LIT_CHAR_EQUALS,
@@ -1402,11 +1758,11 @@ lexer_next_token (parser_context_t *context_p) /**< context */
 
     case LIT_CHAR_SINGLE_QUOTE:
     case LIT_CHAR_DOUBLE_QUOTE:
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
     case LIT_CHAR_GRAVE_ACCENT:
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
     {
-      lexer_parse_string (context_p);
+      lexer_parse_string (context_p, LEXER_STRING_NO_OPTS);
       return;
     }
 
@@ -1473,7 +1829,7 @@ lexer_check_next_characters (parser_context_t *context_p, /**< context */
  * @return consumed character
  */
 inline uint8_t JERRY_ATTR_ALWAYS_INLINE
-lexer_consume_next_character (parser_context_t *context_p)
+lexer_consume_next_character (parser_context_t *context_p) /**< context */
 {
   JERRY_ASSERT (context_p->source_p < context_p->source_end_p);
 
@@ -1483,7 +1839,60 @@ lexer_consume_next_character (parser_context_t *context_p)
   return *context_p->source_p++;
 } /* lexer_consume_next_character */
 
-#if ENABLED (JERRY_ES2015)
+/**
+ * Checks whether the next character can be the start of a post primary expression
+ *
+ * Note:
+ *     the result is not precise, but this inprecise result
+ *     has no side effects for negating number literals
+ *
+ * @return true if the next character can be the start of a post primary expression
+ */
+bool
+lexer_check_post_primary_exp (parser_context_t *context_p) /**< context */
+{
+  if (!(context_p->token.flags & LEXER_NO_SKIP_SPACES))
+  {
+    lexer_skip_spaces (context_p);
+    context_p->token.flags = (uint8_t) (context_p->token.flags | LEXER_NO_SKIP_SPACES);
+  }
+
+  if (context_p->source_p >= context_p->source_end_p)
+  {
+    return false;
+  }
+
+  switch (context_p->source_p[0])
+  {
+    case LIT_CHAR_DOT:
+    case LIT_CHAR_LEFT_PAREN:
+    case LIT_CHAR_LEFT_SQUARE:
+#if ENABLED (JERRY_ESNEXT)
+    case LIT_CHAR_GRAVE_ACCENT:
+#endif /* ENABLED (JERRY_ESNEXT) */
+    {
+      return true;
+    }
+    case LIT_CHAR_PLUS:
+    case LIT_CHAR_MINUS:
+    {
+      return (!(context_p->token.flags & LEXER_WAS_NEWLINE)
+              && context_p->source_p + 1 < context_p->source_end_p
+              && context_p->source_p[1] == context_p->source_p[0]);
+    }
+#if ENABLED (JERRY_ESNEXT)
+    case LIT_CHAR_ASTERISK:
+    {
+      return (context_p->source_p + 1 < context_p->source_end_p
+              && context_p->source_p[1] == (uint8_t) LIT_CHAR_ASTERISK);
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
+  }
+
+  return false;
+} /* lexer_check_post_primary_exp */
+
+#if ENABLED (JERRY_ESNEXT)
 
 /**
  * Checks whether the next token is a type used for detecting arrow functions.
@@ -1566,18 +1975,379 @@ lexer_check_yield_no_arg (parser_context_t *context_p) /**< context */
   }
 } /* lexer_check_yield_no_arg */
 
-#endif /* ENABLED (JERRY_ES2015) */
+/**
+ * Checks whether the next token is a multiply and consumes it.
+ *
+ * @return true if the next token is a multiply
+ */
+bool
+lexer_consume_generator (parser_context_t *context_p) /**< context */
+{
+  if (!(context_p->token.flags & LEXER_NO_SKIP_SPACES))
+  {
+    lexer_skip_spaces (context_p);
+    context_p->token.flags = (uint8_t) (context_p->token.flags | LEXER_NO_SKIP_SPACES);
+  }
+
+  if (context_p->source_p >= context_p->source_end_p
+      || context_p->source_p[0] != LIT_CHAR_ASTERISK
+      || (context_p->source_p + 1 < context_p->source_end_p
+          && (context_p->source_p[1] == LIT_CHAR_EQUALS || context_p->source_p[1] == LIT_CHAR_ASTERISK)))
+  {
+    return false;
+  }
+
+  lexer_consume_next_character (context_p);
+  context_p->token.type = LEXER_MULTIPLY;
+  return true;
+} /* lexer_consume_generator */
 
 /**
- * Search or append the string to the literal pool.
+ * Update await / yield keywords after an arrow function with expression.
  */
-static void
-lexer_process_char_literal (parser_context_t *context_p, /**< context */
-                            const uint8_t *char_p, /**< characters */
-                            size_t length, /**< length of string */
-                            uint8_t literal_type, /**< final literal type */
-                            bool has_escape) /**< has escape sequences */
+void
+lexer_update_await_yield (parser_context_t *context_p, /**< context */
+                          uint32_t status_flags) /**< parser status flags after restore */
 {
+  if (!(status_flags & PARSER_IS_STRICT))
+  {
+    if (status_flags & PARSER_IS_GENERATOR_FUNCTION)
+    {
+      if (context_p->token.type == LEXER_LITERAL
+          && context_p->token.keyword_type == LEXER_KEYW_YIELD)
+      {
+        context_p->token.type = LEXER_KEYW_YIELD;
+      }
+    }
+    else
+    {
+      if (context_p->token.type == LEXER_KEYW_YIELD)
+      {
+        JERRY_ASSERT (context_p->token.keyword_type == LEXER_KEYW_YIELD);
+        context_p->token.type = LEXER_LITERAL;
+      }
+    }
+  }
+
+  if (!(context_p->global_status_flags & ECMA_PARSE_MODULE))
+  {
+    if (status_flags & PARSER_IS_ASYNC_FUNCTION)
+    {
+      if (context_p->token.type == LEXER_LITERAL
+          && context_p->token.keyword_type == LEXER_KEYW_AWAIT)
+      {
+        context_p->token.type = LEXER_KEYW_AWAIT;
+      }
+    }
+    else
+    {
+      if (context_p->token.type == LEXER_KEYW_AWAIT)
+      {
+        JERRY_ASSERT (context_p->token.keyword_type == LEXER_KEYW_AWAIT);
+        context_p->token.type = LEXER_LITERAL;
+      }
+    }
+  }
+} /* lexer_update_await_yield */
+
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+/**
+ * Convert an ident with escapes to a utf8 string.
+ */
+void
+lexer_convert_ident_to_cesu8 (uint8_t *destination_p, /**< destination string */
+                              const uint8_t *source_p, /**< source string */
+                              prop_length_t length) /**< length of destination string */
+{
+  const uint8_t *destination_end_p = destination_p + length;
+
+  JERRY_ASSERT (length <= PARSER_MAXIMUM_IDENT_LENGTH);
+
+  do
+  {
+    if (*source_p == LIT_CHAR_BACKSLASH)
+    {
+      source_p += 2;
+      destination_p += lit_code_point_to_cesu8_bytes (destination_p,
+                                                      lexer_unchecked_hex_to_character (&source_p));
+      continue;
+    }
+
+#if ENABLED (JERRY_ESNEXT)
+    if (*source_p >= LIT_UTF8_4_BYTE_MARKER)
+    {
+      lit_four_byte_utf8_char_to_cesu8 (destination_p, source_p);
+
+      destination_p += 6;
+      source_p += 4;
+      continue;
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+    *destination_p++ = *source_p++;
+  }
+  while (destination_p < destination_end_p);
+} /* lexer_convert_ident_to_cesu8 */
+
+/**
+ * Convert literal to character sequence
+ */
+const uint8_t *
+lexer_convert_literal_to_chars (parser_context_t *context_p, /**< context */
+                                const lexer_lit_location_t *literal_p, /**< literal location */
+                                uint8_t *local_byte_array_p, /**< local byte array to store chars */
+                                lexer_string_options_t opts) /**< options */
+{
+  JERRY_ASSERT (context_p->u.allocated_buffer_p == NULL);
+
+  if (!literal_p->has_escape)
+  {
+    return literal_p->char_p;
+  }
+
+  uint8_t *destination_start_p;
+  if (literal_p->length > LEXER_MAX_LITERAL_LOCAL_BUFFER_SIZE)
+  {
+    context_p->u.allocated_buffer_p = (uint8_t *) parser_malloc_local (context_p, literal_p->length);
+    context_p->allocated_buffer_size = literal_p->length;
+    destination_start_p = context_p->u.allocated_buffer_p;
+  }
+  else
+  {
+    destination_start_p = local_byte_array_p;
+  }
+
+  if (literal_p->type == LEXER_IDENT_LITERAL)
+  {
+    lexer_convert_ident_to_cesu8 (destination_start_p, literal_p->char_p, literal_p->length);
+    return destination_start_p;
+  }
+
+  const uint8_t *source_p = literal_p->char_p;
+  uint8_t *destination_p = destination_start_p;
+
+  uint8_t str_end_character = source_p[-1];
+
+#if ENABLED (JERRY_ESNEXT)
+  if (str_end_character == LIT_CHAR_RIGHT_BRACE)
+  {
+    str_end_character = LIT_CHAR_GRAVE_ACCENT;
+  }
+
+  bool is_raw = (opts & LEXER_STRING_RAW) != 0;
+#else /* !ENABLED (JERRY_ESNEXT) */
+  JERRY_UNUSED (opts);
+  bool is_raw = false;
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+  while (true)
+  {
+    if (*source_p == str_end_character)
+    {
+      break;
+    }
+
+    if (*source_p == LIT_CHAR_BACKSLASH && !is_raw)
+    {
+      uint8_t conv_character;
+
+      source_p++;
+      JERRY_ASSERT (source_p < context_p->source_end_p);
+
+      /* Newline is ignored. */
+      if (*source_p == LIT_CHAR_CR)
+      {
+        source_p++;
+        JERRY_ASSERT (source_p < context_p->source_end_p);
+
+        if (*source_p == LIT_CHAR_LF)
+        {
+          source_p++;
+        }
+        continue;
+      }
+      else if (*source_p == LIT_CHAR_LF)
+      {
+        source_p++;
+        continue;
+      }
+      else if (*source_p == LEXER_NEWLINE_LS_PS_BYTE_1 && LEXER_NEWLINE_LS_PS_BYTE_23 (source_p))
+      {
+        source_p += 3;
+        continue;
+      }
+
+      if (*source_p >= LIT_CHAR_0 && *source_p <= LIT_CHAR_3)
+      {
+        lit_code_point_t octal_number = (uint32_t) (*source_p - LIT_CHAR_0);
+
+        source_p++;
+        JERRY_ASSERT (source_p < context_p->source_end_p);
+
+        if (*source_p >= LIT_CHAR_0 && *source_p <= LIT_CHAR_7)
+        {
+          octal_number = octal_number * 8 + (uint32_t) (*source_p - LIT_CHAR_0);
+          source_p++;
+          JERRY_ASSERT (source_p < context_p->source_end_p);
+
+          if (*source_p >= LIT_CHAR_0 && *source_p <= LIT_CHAR_7)
+          {
+            octal_number = octal_number * 8 + (uint32_t) (*source_p - LIT_CHAR_0);
+            source_p++;
+            JERRY_ASSERT (source_p < context_p->source_end_p);
+          }
+        }
+
+        destination_p += lit_code_point_to_cesu8_bytes (destination_p, octal_number);
+        continue;
+      }
+
+      if (*source_p >= LIT_CHAR_4 && *source_p <= LIT_CHAR_7)
+      {
+        uint32_t octal_number = (uint32_t) (*source_p - LIT_CHAR_0);
+
+        source_p++;
+        JERRY_ASSERT (source_p < context_p->source_end_p);
+
+        if (*source_p >= LIT_CHAR_0 && *source_p <= LIT_CHAR_7)
+        {
+          octal_number = octal_number * 8 + (uint32_t) (*source_p - LIT_CHAR_0);
+          source_p++;
+          JERRY_ASSERT (source_p < context_p->source_end_p);
+        }
+
+        *destination_p++ = (uint8_t) octal_number;
+        continue;
+      }
+
+      if (*source_p == LIT_CHAR_LOWERCASE_X || *source_p == LIT_CHAR_LOWERCASE_U)
+      {
+        source_p++;
+        destination_p += lit_code_point_to_cesu8_bytes (destination_p,
+                                                        lexer_unchecked_hex_to_character (&source_p));
+        continue;
+      }
+
+      conv_character = *source_p;
+      switch (*source_p)
+      {
+        case LIT_CHAR_LOWERCASE_B:
+        {
+          conv_character = 0x08;
+          break;
+        }
+        case LIT_CHAR_LOWERCASE_T:
+        {
+          conv_character = 0x09;
+          break;
+        }
+        case LIT_CHAR_LOWERCASE_N:
+        {
+          conv_character = 0x0a;
+          break;
+        }
+        case LIT_CHAR_LOWERCASE_V:
+        {
+          conv_character = 0x0b;
+          break;
+        }
+        case LIT_CHAR_LOWERCASE_F:
+        {
+          conv_character = 0x0c;
+          break;
+        }
+        case LIT_CHAR_LOWERCASE_R:
+        {
+          conv_character = 0x0d;
+          break;
+        }
+      }
+
+      if (conv_character != *source_p)
+      {
+        *destination_p++ = conv_character;
+        source_p++;
+        continue;
+      }
+    }
+#if ENABLED (JERRY_ESNEXT)
+    else if (str_end_character == LIT_CHAR_GRAVE_ACCENT)
+    {
+      if (source_p[0] == LIT_CHAR_DOLLAR_SIGN
+          && source_p[1] == LIT_CHAR_LEFT_BRACE)
+      {
+        source_p++;
+        JERRY_ASSERT (source_p < context_p->source_end_p);
+        break;
+      }
+      if (*source_p == LIT_CHAR_CR)
+      {
+        *destination_p++ = LIT_CHAR_LF;
+        source_p++;
+        if (*source_p != str_end_character
+            && *source_p == LIT_CHAR_LF)
+        {
+          source_p++;
+        }
+        continue;
+      }
+      if ((*source_p == LIT_CHAR_BACKSLASH) && is_raw)
+      {
+        JERRY_ASSERT (source_p + 1 < context_p->source_end_p);
+        if ((*(source_p + 1) == LIT_CHAR_GRAVE_ACCENT) || (*(source_p + 1) == LIT_CHAR_BACKSLASH))
+        {
+          *destination_p++ = *source_p++;
+          *destination_p++ = *source_p++;
+          continue;
+        }
+      }
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+    if (*source_p >= LIT_UTF8_4_BYTE_MARKER)
+    {
+      /* Processing 4 byte unicode sequence (even if it is
+        * after a backslash). Always converted to two 3 byte
+        * long sequence. */
+      lit_four_byte_utf8_char_to_cesu8 (destination_p, source_p);
+
+      destination_p += 6;
+      source_p += 4;
+      continue;
+    }
+
+    *destination_p++ = *source_p++;
+
+    /* There is no need to check the source_end_p
+      * since the string is terminated by a quotation mark. */
+    while (IS_UTF8_INTERMEDIATE_OCTET (*source_p))
+    {
+      *destination_p++ = *source_p++;
+    }
+  }
+
+  JERRY_ASSERT (destination_p == destination_start_p + literal_p->length);
+
+  return destination_start_p;
+} /* lexer_convert_literal_to_chars */
+
+/**
+ * Construct a literal object from an identifier.
+ */
+void
+lexer_construct_literal_object (parser_context_t *context_p, /**< context */
+                                const lexer_lit_location_t *lit_location_p, /**< literal location */
+                                uint8_t literal_type) /**< final literal type */
+{
+  uint8_t local_byte_array[LEXER_MAX_LITERAL_LOCAL_BUFFER_SIZE];
+
+  const uint8_t *char_p = lexer_convert_literal_to_chars (context_p,
+                                                          lit_location_p,
+                                                          local_byte_array,
+                                                          LEXER_STRING_NO_OPTS);
+
+  size_t length = lit_location_p->length;
   parser_list_iterator_t literal_iterator;
   lexer_literal_t *literal_p;
   uint32_t literal_index = 0;
@@ -1605,27 +2375,22 @@ lexer_process_char_literal (parser_context_t *context_p, /**< context */
       context_p->lit_object.literal_p = literal_p;
       context_p->lit_object.index = (uint16_t) literal_index;
 
+      parser_free_allocated_buffer (context_p);
+
       if (search_scope_stack)
       {
-        parser_scope_stack *scope_stack_start_p = context_p->scope_stack_p;
-        parser_scope_stack *scope_stack_p = scope_stack_start_p + context_p->scope_stack_top;
+        parser_scope_stack_t *scope_stack_start_p = context_p->scope_stack_p;
+        parser_scope_stack_t *scope_stack_p = scope_stack_start_p + context_p->scope_stack_top;
 
         while (scope_stack_p > scope_stack_start_p)
         {
           scope_stack_p--;
 
-#if ENABLED (JERRY_ES2015)
-          bool cond = (scope_stack_p->map_from == literal_index
-                       && scope_stack_p->map_to != PARSER_SCOPE_STACK_FUNC);
-#else /* ENABLED (JERRY_ES2015) */
-          bool cond = (scope_stack_p->map_from == literal_index);
-#endif /* ENABLED (JERRY_ES2015) */
-
-          if (cond)
+          if (scope_stack_p->map_from == literal_index)
           {
-            JERRY_ASSERT (scope_stack_p->map_to >= PARSER_REGISTER_START
+            JERRY_ASSERT (scanner_decode_map_to (scope_stack_p) >= PARSER_REGISTER_START
                           || (literal_p->status_flags & LEXER_FLAG_USED));
-            context_p->lit_object.index = scope_stack_p->map_to;
+            context_p->lit_object.index = scanner_decode_map_to (scope_stack_p);
             return;
           }
         }
@@ -1645,26 +2410,30 @@ lexer_process_char_literal (parser_context_t *context_p, /**< context */
     parser_raise_error (context_p, PARSER_ERR_LITERAL_LIMIT_REACHED);
   }
 
-  if (length == 0)
-  {
-    has_escape = false;
-  }
-
   literal_p = (lexer_literal_t *) parser_list_append (context_p, &context_p->literal_pool);
   literal_p->prop.length = (prop_length_t) length;
   literal_p->type = literal_type;
 
   uint8_t status_flags = LEXER_FLAG_SOURCE_PTR;
 
-  if (has_escape)
+  if (length > 0 && char_p == local_byte_array)
   {
-    status_flags = 0;
     literal_p->u.char_p = (uint8_t *) jmem_heap_alloc_block (length);
     memcpy ((uint8_t *) literal_p->u.char_p, char_p, length);
+    status_flags = 0;
   }
   else
   {
     literal_p->u.char_p = char_p;
+
+    /* Buffer is taken over when a new literal is constructed. */
+    if (context_p->u.allocated_buffer_p != NULL)
+    {
+      JERRY_ASSERT (char_p == context_p->u.allocated_buffer_p);
+
+      context_p->u.allocated_buffer_p = NULL;
+      status_flags = 0;
+    }
   }
 
   if (search_scope_stack)
@@ -1677,310 +2446,9 @@ lexer_process_char_literal (parser_context_t *context_p, /**< context */
   context_p->lit_object.literal_p = literal_p;
   context_p->lit_object.index = (uint16_t) literal_index;
   context_p->literal_count++;
-} /* lexer_process_char_literal */
-
-/**
- * Maximum local buffer size for identifiers which contains escape sequences.
- */
-#define LEXER_MAX_LITERAL_LOCAL_BUFFER_SIZE 48
-
-/**
- * Convert an ident with escapes to a utf8 string.
- */
-void
-lexer_convert_ident_to_utf8 (const uint8_t *source_p, /**< source string */
-                             uint8_t *destination_p, /**< destination string */
-                             prop_length_t length) /**< length of destination string */
-{
-  const uint8_t *destination_end_p = destination_p + length;
-
-  JERRY_ASSERT (length <= PARSER_MAXIMUM_IDENT_LENGTH);
-
-  do
-  {
-    if (*source_p == LIT_CHAR_BACKSLASH)
-    {
-      destination_p += lit_char_to_utf8_bytes (destination_p,
-                                               lexer_unchecked_hex_to_character (source_p + 2, 4));
-      source_p += 6;
-      continue;
-    }
-
-    JERRY_ASSERT (IS_UTF8_INTERMEDIATE_OCTET (*source_p)
-                  || lit_char_is_identifier_part (source_p));
-
-    *destination_p++ = *source_p++;
-  }
-  while (destination_p < destination_end_p);
-} /* lexer_convert_ident_to_utf8 */
-
-/**
- * Construct a literal object from an identifier.
- */
-void
-lexer_construct_literal_object (parser_context_t *context_p, /**< context */
-                                const lexer_lit_location_t *literal_p, /**< literal location */
-                                uint8_t literal_type) /**< final literal type */
-{
-  uint8_t *destination_start_p;
-  const uint8_t *source_p;
-  uint8_t local_byte_array[LEXER_MAX_LITERAL_LOCAL_BUFFER_SIZE];
-
-  JERRY_ASSERT (literal_p->type == LEXER_IDENT_LITERAL
-                || literal_p->type == LEXER_STRING_LITERAL);
-  JERRY_ASSERT (context_p->u.allocated_buffer_p == NULL);
-
-  destination_start_p = local_byte_array;
-  source_p = literal_p->char_p;
-
-  if (literal_p->has_escape)
-  {
-    uint8_t *destination_p;
-
-    if (literal_p->length > LEXER_MAX_LITERAL_LOCAL_BUFFER_SIZE)
-    {
-      destination_start_p = (uint8_t *) parser_malloc_local (context_p, literal_p->length);
-      context_p->u.allocated_buffer_p = destination_start_p;
-      context_p->allocated_buffer_size = literal_p->length;
-    }
-
-    destination_p = destination_start_p;
-
-    if (literal_p->type == LEXER_IDENT_LITERAL)
-    {
-      lexer_convert_ident_to_utf8 (source_p, destination_start_p, literal_p->length);
-    }
-    else
-    {
-      uint8_t str_end_character = source_p[-1];
-
-#if ENABLED (JERRY_ES2015)
-      if (str_end_character == LIT_CHAR_RIGHT_BRACE)
-      {
-        str_end_character = LIT_CHAR_GRAVE_ACCENT;
-      }
-#endif /* ENABLED (JERRY_ES2015) */
-
-      while (true)
-      {
-        if (*source_p == str_end_character)
-        {
-          break;
-        }
-
-        if (*source_p == LIT_CHAR_BACKSLASH)
-        {
-          uint8_t conv_character;
-
-          source_p++;
-          JERRY_ASSERT (source_p < context_p->source_end_p);
-
-          /* Newline is ignored. */
-          if (*source_p == LIT_CHAR_CR)
-          {
-            source_p++;
-            JERRY_ASSERT (source_p < context_p->source_end_p);
-
-            if (*source_p == LIT_CHAR_LF)
-            {
-              source_p++;
-            }
-            continue;
-          }
-          else if (*source_p == LIT_CHAR_LF)
-          {
-            source_p++;
-            continue;
-          }
-          else if (*source_p == LEXER_NEWLINE_LS_PS_BYTE_1 && LEXER_NEWLINE_LS_PS_BYTE_23 (source_p))
-          {
-            source_p += 3;
-            continue;
-          }
-
-          if (*source_p >= LIT_CHAR_0 && *source_p <= LIT_CHAR_3)
-          {
-            uint32_t octal_number = (uint32_t) (*source_p - LIT_CHAR_0);
-
-            source_p++;
-            JERRY_ASSERT (source_p < context_p->source_end_p);
-
-            if (*source_p >= LIT_CHAR_0 && *source_p <= LIT_CHAR_7)
-            {
-              octal_number = octal_number * 8 + (uint32_t) (*source_p - LIT_CHAR_0);
-              source_p++;
-              JERRY_ASSERT (source_p < context_p->source_end_p);
-
-              if (*source_p >= LIT_CHAR_0 && *source_p <= LIT_CHAR_7)
-              {
-                octal_number = octal_number * 8 + (uint32_t) (*source_p - LIT_CHAR_0);
-                source_p++;
-                JERRY_ASSERT (source_p < context_p->source_end_p);
-              }
-            }
-
-            destination_p += lit_char_to_utf8_bytes (destination_p, (uint16_t) octal_number);
-            continue;
-          }
-
-          if (*source_p >= LIT_CHAR_4 && *source_p <= LIT_CHAR_7)
-          {
-            uint32_t octal_number = (uint32_t) (*source_p - LIT_CHAR_0);
-
-            source_p++;
-            JERRY_ASSERT (source_p < context_p->source_end_p);
-
-            if (*source_p >= LIT_CHAR_0 && *source_p <= LIT_CHAR_7)
-            {
-              octal_number = octal_number * 8 + (uint32_t) (*source_p - LIT_CHAR_0);
-              source_p++;
-              JERRY_ASSERT (source_p < context_p->source_end_p);
-            }
-
-            *destination_p++ = (uint8_t) octal_number;
-            continue;
-          }
-
-          if (*source_p == LIT_CHAR_LOWERCASE_X || *source_p == LIT_CHAR_LOWERCASE_U)
-          {
-            int hex_part_length = (*source_p == LIT_CHAR_LOWERCASE_X) ? 2 : 4;
-            JERRY_ASSERT (source_p + 1 + hex_part_length <= context_p->source_end_p);
-
-            destination_p += lit_char_to_utf8_bytes (destination_p,
-                                                     lexer_unchecked_hex_to_character (source_p + 1,
-                                                                                       hex_part_length));
-            source_p += hex_part_length + 1;
-            continue;
-          }
-
-          conv_character = *source_p;
-          switch (*source_p)
-          {
-            case LIT_CHAR_LOWERCASE_B:
-            {
-              conv_character = 0x08;
-              break;
-            }
-            case LIT_CHAR_LOWERCASE_T:
-            {
-              conv_character = 0x09;
-              break;
-            }
-            case LIT_CHAR_LOWERCASE_N:
-            {
-              conv_character = 0x0a;
-              break;
-            }
-            case LIT_CHAR_LOWERCASE_V:
-            {
-              conv_character = 0x0b;
-              break;
-            }
-            case LIT_CHAR_LOWERCASE_F:
-            {
-              conv_character = 0x0c;
-              break;
-            }
-            case LIT_CHAR_LOWERCASE_R:
-            {
-              conv_character = 0x0d;
-              break;
-            }
-          }
-
-          if (conv_character != *source_p)
-          {
-            *destination_p++ = conv_character;
-            source_p++;
-            continue;
-          }
-        }
-#if ENABLED (JERRY_ES2015)
-        else if (str_end_character == LIT_CHAR_GRAVE_ACCENT
-                 && source_p[0] == LIT_CHAR_DOLLAR_SIGN
-                 && source_p[1] == LIT_CHAR_LEFT_BRACE)
-        {
-          source_p++;
-          JERRY_ASSERT (source_p < context_p->source_end_p);
-          break;
-        }
-#endif /* ENABLED (JERRY_ES2015) */
-
-        if (*source_p >= LEXER_UTF8_4BYTE_START)
-        {
-          /* Processing 4 byte unicode sequence (even if it is
-           * after a backslash). Always converted to two 3 byte
-           * long sequence. */
-
-          uint32_t character = ((((uint32_t) source_p[0]) & 0x7) << 18);
-          character |= ((((uint32_t) source_p[1]) & LIT_UTF8_LAST_6_BITS_MASK) << 12);
-          character |= ((((uint32_t) source_p[2]) & LIT_UTF8_LAST_6_BITS_MASK) << 6);
-          character |= (((uint32_t) source_p[3]) & LIT_UTF8_LAST_6_BITS_MASK);
-
-          JERRY_ASSERT (character >= 0x10000);
-          character -= 0x10000;
-          destination_p += lit_char_to_utf8_bytes (destination_p,
-                                                   (ecma_char_t) (0xd800 | (character >> 10)));
-          destination_p += lit_char_to_utf8_bytes (destination_p,
-                                                   (ecma_char_t) (0xdc00 | (character & LIT_UTF16_LAST_10_BITS_MASK)));
-          source_p += 4;
-          continue;
-        }
-
-        *destination_p++ = *source_p++;
-
-        /* There is no need to check the source_end_p
-         * since the string is terminated by a quotation mark. */
-        while (IS_UTF8_INTERMEDIATE_OCTET (*source_p))
-        {
-          *destination_p++ = *source_p++;
-        }
-      }
-
-      JERRY_ASSERT (destination_p == destination_start_p + literal_p->length);
-    }
-
-    source_p = destination_start_p;
-  }
-
-  lexer_process_char_literal (context_p,
-                              source_p,
-                              literal_p->length,
-                              literal_type,
-                              literal_p->has_escape);
-
-  context_p->lit_object.type = LEXER_LITERAL_OBJECT_ANY;
-
-  if (literal_p->length == 4
-      && source_p[0] == LIT_CHAR_LOWERCASE_E
-      && source_p[3] == LIT_CHAR_LOWERCASE_L
-      && source_p[1] == LIT_CHAR_LOWERCASE_V
-      && source_p[2] == LIT_CHAR_LOWERCASE_A)
-  {
-    context_p->lit_object.type = LEXER_LITERAL_OBJECT_EVAL;
-  }
-
-  if (literal_p->length == 9
-      && source_p[0] == LIT_CHAR_LOWERCASE_A
-      && source_p[8] == LIT_CHAR_LOWERCASE_S
-      && memcmp (source_p + 1, "rgument", 7) == 0)
-  {
-    context_p->lit_object.type = LEXER_LITERAL_OBJECT_ARGUMENTS;
-  }
-
-  if (destination_start_p != local_byte_array)
-  {
-    JERRY_ASSERT (context_p->u.allocated_buffer_p == destination_start_p);
-
-    context_p->u.allocated_buffer_p = NULL;
-    parser_free_local (destination_start_p,
-                       context_p->allocated_buffer_size);
-  }
 
   JERRY_ASSERT (context_p->u.allocated_buffer_p == NULL);
 } /* lexer_construct_literal_object */
-
-#undef LEXER_MAX_LITERAL_LOCAL_BUFFER_SIZE
 
 /**
  * Construct a number object.
@@ -1998,7 +2466,7 @@ lexer_construct_number_object (parser_context_t *context_p, /**< context */
   uint32_t literal_index = 0;
   prop_length_t length = context_p->token.lit_location.length;
 
-  if (context_p->token.extra_value != LEXER_NUMBER_OCTAL)
+  if (context_p->token.extra_value < LEXER_NUMBER_OCTAL)
   {
     num = ecma_utf8_string_to_number (context_p->token.lit_location.char_p,
                                       length);
@@ -2007,12 +2475,20 @@ lexer_construct_number_object (parser_context_t *context_p, /**< context */
   {
     const uint8_t *src_p = context_p->token.lit_location.char_p;
     const uint8_t *src_end_p = src_p + length - 1;
+    ecma_number_t multiplier = 8.0;
+
+#if ENABLED (JERRY_ESNEXT)
+    if (context_p->token.extra_value == LEXER_NUMBER_BINARY)
+    {
+      multiplier = 2.0;
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
 
     num = 0;
     do
     {
       src_p++;
-      num = num * 8 + (ecma_number_t) (*src_p - LIT_CHAR_0);
+      num = num * multiplier + (ecma_number_t) (*src_p - LIT_CHAR_0);
     }
     while (src_p < src_end_p);
   }
@@ -2045,7 +2521,6 @@ lexer_construct_number_object (parser_context_t *context_p, /**< context */
     {
       context_p->lit_object.literal_p = literal_p;
       context_p->lit_object.index = (uint16_t) literal_index;
-      context_p->lit_object.type = LEXER_LITERAL_OBJECT_ANY;
       return false;
     }
 
@@ -2067,7 +2542,6 @@ lexer_construct_number_object (parser_context_t *context_p, /**< context */
 
   context_p->lit_object.literal_p = literal_p;
   context_p->lit_object.index = (uint16_t) literal_index;
-  context_p->lit_object.type = LEXER_LITERAL_OBJECT_ANY;
 
   context_p->literal_count++;
   return false;
@@ -2173,9 +2647,9 @@ lexer_construct_function_object (parser_context_t *context_p, /**< context */
 
   parser_flush_cbc (context_p);
 
-  if (context_p->status_flags & (PARSER_RESOLVE_BASE_FOR_CALLS | PARSER_INSIDE_WITH))
+  if (context_p->status_flags & PARSER_INSIDE_WITH)
   {
-    extra_status_flags |= PARSER_RESOLVE_BASE_FOR_CALLS;
+    extra_status_flags |= PARSER_INSIDE_WITH;
   }
 
   literal_p = (lexer_literal_t *) parser_list_append (context_p, &context_p->literal_pool);
@@ -2185,7 +2659,7 @@ lexer_construct_function_object (parser_context_t *context_p, /**< context */
   result_index = context_p->literal_count;
   context_p->literal_count++;
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   if (!(extra_status_flags & PARSER_IS_ARROW_FUNCTION))
   {
     compiled_code_p = parser_parse_function (context_p, extra_status_flags);
@@ -2194,9 +2668,9 @@ lexer_construct_function_object (parser_context_t *context_p, /**< context */
   {
     compiled_code_p = parser_parse_arrow_function (context_p, extra_status_flags);
   }
-#else /* !ENABLED (JERRY_ES2015) */
+#else /* !ENABLED (JERRY_ESNEXT) */
   compiled_code_p = parser_parse_function (context_p, extra_status_flags);
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   literal_p->u.bytecode_p = compiled_code_p;
   literal_p->type = LEXER_FUNCTION_LITERAL;
@@ -2341,14 +2815,13 @@ lexer_construct_regexp_object (parser_context_t *context_p, /**< context */
     column++;
   }
 
-  if (source_p < source_end_p
-      && lit_char_is_identifier_part (source_p))
+  context_p->source_p = source_p;
+  context_p->column = column;
+
+  if (source_p < source_end_p && lexer_parse_identifier (context_p, LEXER_PARSE_CHECK_PART_AND_RETURN))
   {
     parser_raise_error (context_p, PARSER_ERR_UNKNOWN_REGEXP_FLAG);
   }
-
-  context_p->source_p = source_p;
-  context_p->column = column;
 
   length = (lit_utf8_size_t) (regex_end_p - regex_start_p);
   if (length > PARSER_MAXIMUM_STRING_LENGTH)
@@ -2377,9 +2850,6 @@ lexer_construct_regexp_object (parser_context_t *context_p, /**< context */
   context_p->literal_count++;
 
   /* Compile the RegExp literal and store the RegExp bytecode pointer */
-  const re_compiled_code_t *re_bytecode_p = NULL;
-  ecma_value_t completion_value;
-
   ecma_string_t *pattern_str_p = NULL;
 
   if (lit_is_valid_cesu8_string (regex_start_p, length))
@@ -2392,19 +2862,11 @@ lexer_construct_regexp_object (parser_context_t *context_p, /**< context */
     pattern_str_p = ecma_new_ecma_string_from_utf8_converted_to_cesu8 (regex_start_p, length);
   }
 
-
-  completion_value = re_compile_bytecode (&re_bytecode_p,
-                                          pattern_str_p,
-                                          current_flags);
+  re_compiled_code_t *re_bytecode_p = re_compile_bytecode (pattern_str_p, current_flags);
   ecma_deref_ecma_string (pattern_str_p);
 
-  bool is_throw = ECMA_IS_VALUE_ERROR (completion_value) != 0;
-
-  ecma_free_value (completion_value);
-
-  if (is_throw)
+  if (JERRY_UNLIKELY (re_bytecode_p == NULL))
   {
-    ecma_free_value (JERRY_CONTEXT (error_value));
     parser_raise_error (context_p, PARSER_ERR_INVALID_REGEXP);
   }
 
@@ -2412,12 +2874,11 @@ lexer_construct_regexp_object (parser_context_t *context_p, /**< context */
   literal_p->u.bytecode_p = (ecma_compiled_code_t *) re_bytecode_p;
 
   context_p->token.type = LEXER_LITERAL;
-  context_p->token.literal_is_reserved = false;
+  context_p->token.keyword_type = LEXER_EOS;
   context_p->token.lit_location.type = LEXER_REGEXP_LITERAL;
 
   context_p->lit_object.literal_p = literal_p;
   context_p->lit_object.index = (uint16_t) (context_p->literal_count - 1);
-  context_p->lit_object.type = LEXER_LITERAL_OBJECT_ANY;
 #else /* !ENABLED (JERRY_BUILTIN_REGEXP) */
   JERRY_UNUSED (parse_only);
   parser_raise_error (context_p, PARSER_ERR_UNSUPPORTED_REGEXP);
@@ -2440,10 +2901,9 @@ lexer_expect_identifier (parser_context_t *context_p, /**< context */
   context_p->token.column = context_p->column;
 
   if (context_p->source_p < context_p->source_end_p
-      && (lit_char_is_identifier_start (context_p->source_p) || context_p->source_p[0] == LIT_CHAR_BACKSLASH))
+      && lexer_parse_identifier (context_p, (literal_type != LEXER_STRING_LITERAL ? LEXER_PARSE_CHECK_KEYWORDS
+                                                                                  : LEXER_PARSE_NO_OPTS)))
   {
-    lexer_parse_identifier (context_p, literal_type != LEXER_STRING_LITERAL);
-
     if (context_p->token.type == LEXER_LITERAL)
     {
       JERRY_ASSERT (context_p->token.lit_location.type == LEXER_IDENT_LITERAL);
@@ -2453,41 +2913,44 @@ lexer_expect_identifier (parser_context_t *context_p, /**< context */
                                       literal_type);
 
       if (literal_type != LEXER_STRING_LITERAL
-          && (context_p->status_flags & PARSER_IS_STRICT)
-          && context_p->lit_object.type != LEXER_LITERAL_OBJECT_ANY)
+          && (context_p->status_flags & PARSER_IS_STRICT))
       {
-        parser_error_t error;
-
-        if (context_p->lit_object.type == LEXER_LITERAL_OBJECT_EVAL)
+        if (context_p->token.keyword_type == LEXER_KEYW_EVAL)
         {
-          error = PARSER_ERR_EVAL_NOT_ALLOWED;
+          parser_raise_error (context_p, PARSER_ERR_EVAL_NOT_ALLOWED);
         }
-        else
+        else if (context_p->token.keyword_type == LEXER_KEYW_ARGUMENTS)
         {
-          JERRY_ASSERT (context_p->lit_object.type == LEXER_LITERAL_OBJECT_ARGUMENTS);
-          error = PARSER_ERR_ARGUMENTS_NOT_ALLOWED;
+          parser_raise_error (context_p, PARSER_ERR_ARGUMENTS_NOT_ALLOWED);
         }
-
-        parser_raise_error (context_p, error);
       }
       return;
     }
   }
-#if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
+#if ENABLED (JERRY_MODULE_SYSTEM)
   else if (context_p->status_flags & PARSER_MODULE_DEFAULT_CLASS_OR_FUNC)
   {
     /* When parsing default exports for modules, it is not required by functions or classes to have identifiers.
      * In this case we use a synthetic name for them. */
     context_p->token.type = LEXER_LITERAL;
-    context_p->token.literal_is_reserved = false;
-    context_p->token.lit_location.type = LEXER_IDENT_LITERAL;
-    context_p->token.lit_location.has_escape = false;
-    lexer_construct_literal_object (context_p, &lexer_default_literal, literal_type);
+    context_p->token.keyword_type = LEXER_EOS;
+    context_p->token.lit_location = lexer_default_literal;
+    lexer_construct_literal_object (context_p, &context_p->token.lit_location, literal_type);
     context_p->status_flags &= (uint32_t) ~(PARSER_MODULE_DEFAULT_CLASS_OR_FUNC);
     return;
   }
-#endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 
+#if ENABLED (JERRY_ESNEXT)
+  if (context_p->token.type == LEXER_KEYW_YIELD)
+  {
+    parser_raise_error (context_p, PARSER_ERR_YIELD_NOT_ALLOWED);
+  }
+  if (context_p->token.type == LEXER_KEYW_AWAIT)
+  {
+    parser_raise_error (context_p, PARSER_ERR_AWAIT_NOT_ALLOWED);
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
   parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
 } /* lexer_expect_identifier */
 
@@ -2505,32 +2968,29 @@ lexer_expect_object_literal_id (parser_context_t *context_p, /**< context */
     parser_raise_error (context_p, PARSER_ERR_PROPERTY_IDENTIFIER_EXPECTED);
   }
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
   int is_class_method = ((ident_opts & LEXER_OBJ_IDENT_CLASS_METHOD)
                          && !(ident_opts & LEXER_OBJ_IDENT_ONLY_IDENTIFIERS)
                          && (context_p->token.type != LEXER_KEYW_STATIC));
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   context_p->token.line = context_p->line;
   context_p->token.column = context_p->column;
   bool create_literal_object = false;
 
-  if (lit_char_is_identifier_start (context_p->source_p) || context_p->source_p[0] == LIT_CHAR_BACKSLASH)
+  if (lexer_parse_identifier (context_p, LEXER_PARSE_NO_OPTS))
   {
-    lexer_parse_identifier (context_p, false);
-
-    if (!(ident_opts & (LEXER_OBJ_IDENT_ONLY_IDENTIFIERS | LEXER_OBJ_IDENT_OBJECT_PATTERN))
-        && context_p->token.lit_location.length == 3)
+    if (!(ident_opts & (LEXER_OBJ_IDENT_ONLY_IDENTIFIERS | LEXER_OBJ_IDENT_OBJECT_PATTERN)))
     {
       lexer_skip_spaces (context_p);
       context_p->token.flags = (uint8_t) (context_p->token.flags | LEXER_NO_SKIP_SPACES);
 
       if (context_p->source_p < context_p->source_end_p
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
           && context_p->source_p[0] != LIT_CHAR_COMMA
           && context_p->source_p[0] != LIT_CHAR_RIGHT_BRACE
           && context_p->source_p[0] != LIT_CHAR_LEFT_PAREN
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
           && context_p->source_p[0] != LIT_CHAR_COLON)
       {
         if (lexer_compare_literal_to_string (context_p, "get", 3))
@@ -2538,21 +2998,30 @@ lexer_expect_object_literal_id (parser_context_t *context_p, /**< context */
           context_p->token.type = LEXER_PROPERTY_GETTER;
           return;
         }
-        else if (lexer_compare_literal_to_string (context_p, "set", 3))
+
+        if (lexer_compare_literal_to_string (context_p, "set", 3))
         {
           context_p->token.type = LEXER_PROPERTY_SETTER;
           return;
         }
+
+#if ENABLED (JERRY_ESNEXT)
+        if (lexer_compare_literal_to_string (context_p, "async", 5))
+        {
+          context_p->token.type = LEXER_KEYW_ASYNC;
+          return;
+        }
+#endif /* ENABLED (JERRY_ESNEXT) */
       }
     }
 
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
     if (is_class_method && lexer_compare_literal_to_string (context_p, "static", 6))
     {
       context_p->token.type = LEXER_KEYW_STATIC;
       return;
     }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
     create_literal_object = true;
   }
@@ -2563,11 +3032,11 @@ lexer_expect_object_literal_id (parser_context_t *context_p, /**< context */
       case LIT_CHAR_DOUBLE_QUOTE:
       case LIT_CHAR_SINGLE_QUOTE:
       {
-        lexer_parse_string (context_p);
+        lexer_parse_string (context_p, LEXER_STRING_NO_OPTS);
         create_literal_object = true;
         break;
       }
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
       case LIT_CHAR_LEFT_SQUARE:
       {
         lexer_consume_next_character (context_p);
@@ -2582,7 +3051,33 @@ lexer_expect_object_literal_id (parser_context_t *context_p, /**< context */
         return;
       }
       case LIT_CHAR_ASTERISK:
-#endif /* ENABLED (JERRY_ES2015) */
+      {
+        if (ident_opts & (LEXER_OBJ_IDENT_ONLY_IDENTIFIERS | LEXER_OBJ_IDENT_OBJECT_PATTERN))
+        {
+          break;
+        }
+
+        context_p->token.type = LEXER_MULTIPLY;
+        lexer_consume_next_character (context_p);
+        return;
+      }
+      case LIT_CHAR_DOT:
+      {
+        if (ident_opts != LEXER_OBJ_IDENT_NO_OPTS
+            || context_p->source_p + 2 >= context_p->source_end_p
+            || context_p->source_p[1] != LIT_CHAR_DOT
+            || context_p->source_p[2] != LIT_CHAR_DOT)
+        {
+          break;
+        }
+
+        context_p->token.type = LEXER_THREE_DOTS;
+        context_p->token.flags &= (uint8_t) ~LEXER_NO_SKIP_SPACES;
+        PARSER_PLUS_EQUAL_LC (context_p->column, 3);
+        context_p->source_p += 3;
+        return;
+      }
+#endif /* ENABLED (JERRY_ESNEXT) */
       case LIT_CHAR_RIGHT_BRACE:
       {
         if (ident_opts & LEXER_OBJ_IDENT_ONLY_IDENTIFIERS)
@@ -2591,13 +3086,6 @@ lexer_expect_object_literal_id (parser_context_t *context_p, /**< context */
         }
 
         context_p->token.type = LEXER_RIGHT_BRACE;
-#if ENABLED (JERRY_ES2015)
-        if (context_p->source_p[0] == LIT_CHAR_ASTERISK)
-        {
-          context_p->token.type = LEXER_MULTIPLY;
-        }
-#endif /* ENABLED (JERRY_ES2015) */
-
         lexer_consume_next_character (context_p);
         return;
       }
@@ -2625,13 +3113,14 @@ lexer_expect_object_literal_id (parser_context_t *context_p, /**< context */
 
   if (create_literal_object)
   {
-#if ENABLED (JERRY_ES2015)
+#if ENABLED (JERRY_ESNEXT)
     if (is_class_method && lexer_compare_literal_to_string (context_p, "constructor", 11))
     {
       context_p->token.type = LEXER_CLASS_CONSTRUCTOR;
+      context_p->token.flags &= (uint8_t) ~LEXER_NO_SKIP_SPACES;
       return;
     }
-#endif /* ENABLED (JERRY_ES2015) */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
     lexer_construct_literal_object (context_p,
                                     &context_p->token.lit_location,
@@ -2643,125 +3132,206 @@ lexer_expect_object_literal_id (parser_context_t *context_p, /**< context */
 } /* lexer_expect_object_literal_id */
 
 /**
- * Next token must be an identifier.
+ * Read next token without checking keywords
+ *
+ * @return true if the next literal is identifier, false otherwise
  */
-void
-lexer_scan_identifier (parser_context_t *context_p, /**< context */
-                       uint32_t ident_opts) /**< lexer_scan_ident_opts_t option bits */
+bool
+lexer_scan_identifier (parser_context_t *context_p) /**< context */
 {
   lexer_skip_spaces (context_p);
   context_p->token.line = context_p->line;
   context_p->token.column = context_p->column;
 
   if (context_p->source_p < context_p->source_end_p
-      && (lit_char_is_identifier_start (context_p->source_p) || context_p->source_p[0] == LIT_CHAR_BACKSLASH))
+      && lexer_parse_identifier (context_p, LEXER_PARSE_NO_OPTS))
   {
-    lexer_parse_identifier (context_p, false);
-
-    if ((ident_opts & LEXER_SCAN_IDENT_PROPERTY)
-        && context_p->token.lit_location.length == 3)
-    {
-      lexer_skip_spaces (context_p);
-      context_p->token.flags = (uint8_t) (context_p->token.flags | LEXER_NO_SKIP_SPACES);
-
-      if (context_p->source_p < context_p->source_end_p
-#if ENABLED (JERRY_ES2015)
-          && context_p->source_p[0] != LIT_CHAR_COMMA
-          && context_p->source_p[0] != LIT_CHAR_RIGHT_BRACE
-          && context_p->source_p[0] != LIT_CHAR_LEFT_PAREN
-#endif /* ENABLED (JERRY_ES2015) */
-          && context_p->source_p[0] != LIT_CHAR_COLON)
-      {
-        if (lexer_compare_literal_to_string (context_p, "get", 3))
-        {
-          context_p->token.type = LEXER_PROPERTY_GETTER;
-        }
-        else if (lexer_compare_literal_to_string (context_p, "set", 3))
-        {
-          context_p->token.type = LEXER_PROPERTY_SETTER;
-        }
-      }
-    }
-
-    return;
+    return true;
   }
 
   lexer_next_token (context_p);
+  return false;
 } /* lexer_scan_identifier */
+
+/**
+ * Check whether the identifier is a modifier in a property definition.
+ */
+void
+lexer_check_property_modifier (parser_context_t *context_p) /**< context */
+{
+  JERRY_ASSERT (!(context_p->token.flags & LEXER_NO_SKIP_SPACES));
+  JERRY_ASSERT (context_p->token.type = LEXER_LITERAL
+                && context_p->token.lit_location.type == LEXER_IDENT_LITERAL);
+
+  lexer_skip_spaces (context_p);
+  context_p->token.flags = (uint8_t) (context_p->token.flags | LEXER_NO_SKIP_SPACES);
+
+  if (context_p->source_p >= context_p->source_end_p
+#if ENABLED (JERRY_ESNEXT)
+      || context_p->source_p[0] == LIT_CHAR_COMMA
+      || context_p->source_p[0] == LIT_CHAR_RIGHT_BRACE
+      || context_p->source_p[0] == LIT_CHAR_LEFT_PAREN
+      || context_p->source_p[0] == LIT_CHAR_EQUALS
+#endif /* ENABLED (JERRY_ESNEXT) */
+      || context_p->source_p[0] == LIT_CHAR_COLON)
+  {
+    return;
+  }
+
+  if (lexer_compare_literal_to_string (context_p, "get", 3))
+  {
+    context_p->token.type = LEXER_PROPERTY_GETTER;
+    return;
+  }
+
+  if (lexer_compare_literal_to_string (context_p, "set", 3))
+  {
+    context_p->token.type = LEXER_PROPERTY_SETTER;
+    return;
+  }
+
+#if ENABLED (JERRY_ESNEXT)
+  if (lexer_compare_literal_to_string (context_p, "async", 5))
+  {
+    context_p->token.type = LEXER_KEYW_ASYNC;
+    return;
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+} /* lexer_check_property_modifier */
 
 /**
  * Compares two identifiers.
  *
  * Note:
- *   Escape sequences are allowed, size must be the same.
+ *   Escape sequences are allowed in the left identifier, but not in the right
  *
  * @return true if the two identifiers are the same
  */
-bool
-lexer_compare_identifiers (const uint8_t *left_p, /**< left identifier */
-                           const uint8_t *right_p, /**< right identifier */
-                           size_t size) /**< byte size of the two identifiers */
+static bool
+lexer_compare_identifier_to_chars (const uint8_t *left_p, /**< left identifier */
+                                   const uint8_t *right_p, /**< right identifier string */
+                                   size_t size) /**< byte size of the two identifiers */
 {
-  uint8_t utf8_buf[3];
-  size_t utf8_len, offset;
+  uint8_t utf8_buf[6];
 
   do
   {
-    /* Backslash cannot be part of a multibyte UTF-8 character. */
-    if (*left_p != LIT_CHAR_BACKSLASH && *right_p != LIT_CHAR_BACKSLASH)
+    if (*left_p == *right_p)
     {
-      if (*left_p++ != *right_p++)
-      {
-        return false;
-      }
+      left_p++;
+      right_p++;
       size--;
       continue;
     }
 
-    if (*left_p == LIT_CHAR_BACKSLASH && *right_p == LIT_CHAR_BACKSLASH)
+    size_t escape_size;
+
+    if (*left_p == LIT_CHAR_BACKSLASH)
     {
-      uint16_t left_chr = lexer_unchecked_hex_to_character (left_p + 2, 4);
+      left_p += 2;
+      lit_code_point_t code_point = lexer_unchecked_hex_to_character (&left_p);
 
-      if (left_chr != lexer_unchecked_hex_to_character (right_p + 2, 4))
-      {
-        return false;
-      }
-
-      left_p += 6;
-      right_p += 6;
-      size -= lit_char_get_utf8_length (left_chr);
-      continue;
+      escape_size = lit_code_point_to_cesu8_bytes (utf8_buf, code_point);
+    }
+    else if (*left_p >= LIT_UTF8_4_BYTE_MARKER)
+    {
+      lit_four_byte_utf8_char_to_cesu8 (utf8_buf, left_p);
+      escape_size = 3 * 2;
+      left_p += 4;
+    }
+    else
+    {
+      return false;
     }
 
-    /* One character is encoded as unicode sequence. */
-    if (*right_p == LIT_CHAR_BACKSLASH)
-    {
-      /* The pointers can be swapped. */
-      const uint8_t *swap_p = left_p;
-      left_p = right_p;
-      right_p = swap_p;
-    }
+    size -= escape_size;
 
-    utf8_len = lit_char_to_utf8_bytes (utf8_buf, lexer_unchecked_hex_to_character (left_p + 2, 4));
-    JERRY_ASSERT (utf8_len > 0);
-    size -= utf8_len;
-    offset = 0;
-
+    uint8_t *utf8_p = utf8_buf;
     do
     {
-      if (utf8_buf[offset] != *right_p++)
+      if (*right_p++ != *utf8_p++)
       {
         return false;
       }
-      offset++;
     }
-    while (offset < utf8_len);
-
-    left_p += 6;
+    while (--escape_size > 0);
   }
   while (size > 0);
 
   return true;
+} /* lexer_compare_identifier_to_chars */
+
+/**
+ * Compares an identifier to a string.
+ *
+ * Note:
+ *   Escape sequences are allowed in the left identifier, but not in the right
+ *
+ * @return true if the identifier equals to string
+ */
+bool
+lexer_compare_identifier_to_string (const lexer_lit_location_t *left_p, /**< left literal */
+                                    const uint8_t *right_p, /**< right identifier string */
+                                    size_t size) /**< byte size of the right identifier */
+{
+  if (left_p->length != size)
+  {
+    return false;
+  }
+
+  if (!left_p->has_escape)
+  {
+    return memcmp (left_p->char_p, right_p, size) == 0;
+  }
+
+  return lexer_compare_identifier_to_chars (left_p->char_p, right_p, size);
+} /* lexer_compare_identifier_to_string */
+
+/**
+ * Compares two identifiers.
+ *
+ * Note:
+ *   Escape sequences are allowed in both identifiers
+ *
+ * @return true if the two identifiers are the same
+ */
+bool
+lexer_compare_identifiers (parser_context_t *context_p, /**< context */
+                           const lexer_lit_location_t *left_p, /**< left literal */
+                           const lexer_lit_location_t *right_p) /**< right literal */
+{
+  prop_length_t length = left_p->length;
+
+  if (length != right_p->length)
+  {
+    return false;
+  }
+
+  if (!left_p->has_escape)
+  {
+    return lexer_compare_identifier_to_chars (right_p->char_p, left_p->char_p, length);
+  }
+
+  if (!right_p->has_escape)
+  {
+    return lexer_compare_identifier_to_chars (left_p->char_p, right_p->char_p, length);
+  }
+
+  uint8_t buf_p[64];
+
+  if (length <= 64)
+  {
+    lexer_convert_ident_to_cesu8 (buf_p, left_p->char_p, length);
+    return lexer_compare_identifier_to_chars (right_p->char_p, buf_p, length);
+  }
+
+  uint8_t *dynamic_buf_p = parser_malloc (context_p, length);
+
+  lexer_convert_ident_to_cesu8 (dynamic_buf_p, left_p->char_p, length);
+  bool result = lexer_compare_identifier_to_chars (right_p->char_p, dynamic_buf_p, length);
+  parser_free (dynamic_buf_p, length);
+
+  return result;
 } /* lexer_compare_identifiers */
 
 /**
@@ -2773,16 +3343,19 @@ lexer_compare_identifiers (const uint8_t *left_p, /**< left identifier */
  * @return true if the input identifiers are the same
  */
 bool
-lexer_compare_identifier_to_current (parser_context_t *context_p, /**< context */
-                                     const lexer_lit_location_t *right_ident_p) /**< identifier */
+lexer_current_is_literal (parser_context_t *context_p, /**< context */
+                          const lexer_lit_location_t *right_ident_p) /**< identifier */
 {
+  JERRY_ASSERT (context_p->token.type == LEXER_LITERAL
+                && context_p->token.lit_location.type == LEXER_IDENT_LITERAL);
+
   lexer_lit_location_t *left_ident_p = &context_p->token.lit_location;
 
   JERRY_ASSERT (left_ident_p->length > 0 && right_ident_p->length > 0);
 
   if (left_ident_p->length != right_ident_p->length)
   {
-    return 0;
+    return false;
   }
 
   if (!left_ident_p->has_escape && !right_ident_p->has_escape)
@@ -2790,11 +3363,50 @@ lexer_compare_identifier_to_current (parser_context_t *context_p, /**< context *
     return memcmp (left_ident_p->char_p, right_ident_p->char_p, left_ident_p->length) == 0;
   }
 
-  return lexer_compare_identifiers (left_ident_p->char_p, right_ident_p->char_p, left_ident_p->length);
-} /* lexer_compare_identifier_to_current */
+  return lexer_compare_identifiers (context_p, left_ident_p, right_ident_p);
+} /* lexer_current_is_literal */
 
 /**
- * Compares the current identifier to an expected identifier.
+ * Compares the current string token to "use strict".
+ *
+ * Note:
+ *   Escape sequences are not allowed.
+ *
+ * @return true if "use strict" is found, false otherwise
+ */
+inline bool JERRY_ATTR_ALWAYS_INLINE
+lexer_string_is_use_strict (parser_context_t *context_p) /**< context */
+{
+  JERRY_ASSERT (context_p->token.type == LEXER_LITERAL
+                && context_p->token.lit_location.type == LEXER_STRING_LITERAL);
+
+  return (context_p->token.lit_location.length == 10
+          && !context_p->token.lit_location.has_escape
+          && memcmp (context_p->token.lit_location.char_p, "use strict", 10) == 0);
+} /* lexer_string_is_use_strict */
+
+/**
+ * Checks whether the string before the current token is a directive or a string literal.
+ *
+ * @return true if the string is a directive, false otherwise
+ */
+inline bool JERRY_ATTR_ALWAYS_INLINE
+lexer_string_is_directive (parser_context_t *context_p) /**< context */
+{
+  return (context_p->token.type == LEXER_SEMICOLON
+          || context_p->token.type == LEXER_RIGHT_BRACE
+          || context_p->token.type == LEXER_EOS
+          || ((context_p->token.flags & LEXER_WAS_NEWLINE)
+              && !LEXER_IS_BINARY_OP_TOKEN (context_p->token.type)
+              && context_p->token.type != LEXER_LEFT_PAREN
+              && context_p->token.type != LEXER_LEFT_SQUARE
+              && context_p->token.type != LEXER_DOT));
+} /* lexer_string_is_directive */
+
+#if ENABLED (JERRY_ESNEXT)
+
+/**
+ * Compares the current token to an expected identifier.
  *
  * Note:
  *   Escape sequences are not allowed.
@@ -2802,16 +3414,53 @@ lexer_compare_identifier_to_current (parser_context_t *context_p, /**< context *
  * @return true if they are the same, false otherwise
  */
 inline bool JERRY_ATTR_ALWAYS_INLINE
-lexer_compare_literal_to_identifier (parser_context_t *context_p, /**< context */
-                                     const char *identifier_p, /**< identifier */
-                                     size_t identifier_length) /**< identifier length */
+lexer_token_is_identifier (parser_context_t *context_p, /**< context */
+                           const char *identifier_p, /**< identifier */
+                           size_t identifier_length) /**< identifier length */
 {
   /* Checking has_escape is unnecessary because memcmp will fail if escape sequences are present. */
   return (context_p->token.type == LEXER_LITERAL
           && context_p->token.lit_location.type == LEXER_IDENT_LITERAL
           && context_p->token.lit_location.length == identifier_length
           && memcmp (context_p->token.lit_location.char_p, identifier_p, identifier_length) == 0);
-} /* lexer_compare_literal_to_identifier */
+} /* lexer_token_is_identifier */
+
+/**
+ * Compares the current identifier token to "let".
+ *
+ * Note:
+ *   Escape sequences are not allowed.
+ *
+ * @return true if "let" is found, false otherwise
+ */
+inline bool JERRY_ATTR_ALWAYS_INLINE
+lexer_token_is_let (parser_context_t *context_p) /**< context */
+{
+  JERRY_ASSERT (context_p->token.type == LEXER_LITERAL);
+
+  return (context_p->token.keyword_type == LEXER_KEYW_LET
+          && !context_p->token.lit_location.has_escape);
+} /* lexer_token_is_let */
+
+/**
+ * Compares the current identifier token to "async".
+ *
+ * Note:
+ *   Escape sequences are not allowed.
+ *
+ * @return true if "async" is found, false otherwise
+ */
+inline bool JERRY_ATTR_ALWAYS_INLINE
+lexer_token_is_async (parser_context_t *context_p) /**< context */
+{
+  JERRY_ASSERT (context_p->token.type == LEXER_LITERAL
+                || context_p->token.type == LEXER_TEMPLATE_LITERAL);
+
+  return (context_p->token.keyword_type == LEXER_KEYW_ASYNC
+          && !context_p->token.lit_location.has_escape);
+} /* lexer_token_is_async */
+
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Compares the current identifier or string to an expected string.
@@ -2848,10 +3497,17 @@ lexer_convert_binary_lvalue_token_to_binary (uint8_t token) /**< binary lvalue t
   JERRY_ASSERT (LEXER_IS_BINARY_LVALUE_TOKEN (token));
   JERRY_ASSERT (token != LEXER_ASSIGN);
 
+#if ENABLED (JERRY_ESNEXT)
+  if (token <= LEXER_ASSIGN_EXPONENTIATION)
+  {
+    return (uint8_t) (LEXER_ADD + (token - LEXER_ASSIGN_ADD));
+  }
+#else /* !ENABLED (JERRY_ESNEXT) */
   if (token <= LEXER_ASSIGN_MODULO)
   {
     return (uint8_t) (LEXER_ADD + (token - LEXER_ASSIGN_ADD));
   }
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   if (token <= LEXER_ASSIGN_UNS_RIGHT_SHIFT)
   {

@@ -15,6 +15,7 @@
 
 #include "ecma-arraybuffer-object.h"
 #include "ecma-try-catch-macro.h"
+#include "ecma-typedarray-object.h"
 #include "ecma-objects.h"
 #include "ecma-builtins.h"
 #include "ecma-exceptions.h"
@@ -23,7 +24,7 @@
 #include "ecma-helpers.h"
 #include "jmem.h"
 
-#if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
+#if ENABLED (JERRY_BUILTIN_TYPEDARRAY)
 
 /** \addtogroup ecma ECMA
  * @{
@@ -91,7 +92,6 @@ ecma_arraybuffer_new_object_external (ecma_length_t length, /**< length of the b
 
   return object_p;
 } /* ecma_arraybuffer_new_object_external */
-
 
 /**
  * ArrayBuffer object creation operation.
@@ -280,4 +280,4 @@ ecma_arraybuffer_detach (ecma_object_t *object_p) /**< pointer to the ArrayBuffe
  * @}
  * @}
  */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY) */
+#endif /* ENABLED (JERRY_BUILTIN_TYPEDARRAY) */
