@@ -128,8 +128,15 @@ public:
     bool IsAsyncFunction() const { return false; }
     bool IsNativeError() const { return false; }
     bool IsArrayBufferView() const { return jerry_value_is_typedarray(m_value) || jerry_value_is_dataview(m_value); }
+    bool IsFloat32Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_FLOAT32; }
     bool IsFloat64Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_FLOAT64; }
+    bool IsUint8ClampedArray() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_UINT8CLAMPED; }
     bool IsUint8Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_UINT8; }
+    bool IsUint16Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_UINT16; }
+    bool IsUint32Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_UINT32; }
+    bool IsInt8Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_UINT8; }
+    bool IsInt16Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_INT16; }
+    bool IsInt32Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_INT32; }
     bool IsDataView() const { return jerry_value_is_dataview(m_value); }
     bool IsNull() const { return jerry_value_is_null(m_value); }
     bool IsUndefined() const { return jerry_value_is_undefined(m_value); }

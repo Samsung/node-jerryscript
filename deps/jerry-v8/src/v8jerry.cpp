@@ -308,6 +308,17 @@ Local<ArrayBuffer> ArrayBuffer::New(Isolate* isolate, void* data, size_t byte_le
     RETURN_HANDLE(ArrayBuffer, isolate, new JerryValue(buffer));
 }
 
+Local<ArrayBuffer> ArrayBuffer::New(Isolate* isolate, size_t byte_length) {
+    V8_CALL_TRACE();
+
+    jerry_object_native_free_callback_t free_cb = delete_external_array_buffer;
+
+    uint8_t *data = (uint8_t*)malloc(sizeof(uint8_t) * byte_length);
+    jerry_value_t buffer = jerry_create_arraybuffer_external(byte_length, (uint8_t*)data, free_cb);
+
+    RETURN_HANDLE(ArrayBuffer, isolate, new JerryValue(buffer));
+}
+
 ArrayBuffer::Contents ArrayBuffer::GetContents() {
     V8_CALL_TRACE();
 
@@ -423,9 +434,26 @@ Local<ArrayBuffer> ArrayBufferView::Buffer() {
         RETURN_HANDLE(view_class, Isolate::GetCurrent(), new JerryValue(arrayview)); \
     }
 
+ArrayBufferView(Uint8ClampedArray, JERRY_TYPEDARRAY_UINT8CLAMPED);
 ArrayBufferView(Uint8Array, JERRY_TYPEDARRAY_UINT8);
+ArrayBufferView(Uint16Array, JERRY_TYPEDARRAY_INT16);
 ArrayBufferView(Uint32Array, JERRY_TYPEDARRAY_UINT32);
+ArrayBufferView(Int8Array, JERRY_TYPEDARRAY_INT8);
+ArrayBufferView(Int16Array, JERRY_TYPEDARRAY_INT16);
+ArrayBufferView(Int32Array, JERRY_TYPEDARRAY_INT32);
 ArrayBufferView(Float64Array, JERRY_TYPEDARRAY_FLOAT64);
+ArrayBufferView(Float32Array, JERRY_TYPEDARRAY_FLOAT32);
+
+/*static*/
+Local<DataView> DataView::New(Local<ArrayBuffer> array_buffer, size_t byte_offset, size_t length) {
+    V8_CALL_TRACE();
+    JerryValue* abuffer = reinterpret_cast<JerryValue*> (*array_buffer);
+
+    jerry_value_t dataview = jerry_create_dataview(abuffer->value(), byte_offset, length);
+
+    RETURN_HANDLE(DataView, Isolate::GetCurrent(), new JerryValue(dataview));
+}
+
 
 /* Isolate */
 ResourceConstraints::ResourceConstraints() {
@@ -931,7 +959,7 @@ bool Value::IsSymbol() const {
 
 bool Value::IsName() const {
     V8_CALL_TRACE();
-    if (reinterpret_cast<const JerryValue*>(this)->IsSymbol() 
+    if (reinterpret_cast<const JerryValue*>(this)->IsSymbol()
         || reinterpret_cast<const JerryValue*>(this)->IsString()) {
         return true;
     }
@@ -1021,14 +1049,49 @@ bool Value::IsArrayBufferView() const {
     return reinterpret_cast<const JerryValue*> (this)->IsArrayBufferView();
 }
 
+bool Value::IsFloat32Array() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsFloat32Array();
+}
+
 bool Value::IsFloat64Array() const {
     V8_CALL_TRACE();
     return reinterpret_cast<const JerryValue*> (this)->IsFloat64Array();
 }
 
+bool Value::IsUint8ClampedArray() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsUint8ClampedArray();
+}
+
 bool Value::IsUint8Array() const {
     V8_CALL_TRACE();
     return reinterpret_cast<const JerryValue*> (this)->IsUint8Array();
+}
+
+bool Value::IsUint16Array() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsUint16Array();
+}
+
+bool Value::IsUint32Array() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsUint32Array();
+}
+
+bool Value::IsInt8Array() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsInt8Array();
+}
+
+bool Value::IsInt16Array() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsInt16Array();
+}
+
+bool Value::IsInt32Array() const {
+    V8_CALL_TRACE();
+    return reinterpret_cast<const JerryValue*> (this)->IsInt32Array();
 }
 
 bool Value::IsDataView() const {
@@ -1093,6 +1156,19 @@ bool Value::StrictEquals(Local<Value> value) const {
     jerry_release_value(result);
 
     return isEqual;
+}
+
+Maybe<bool> Value::InstanceOf(Local<Context> context, Local<Object> object) {
+    V8_CALL_TRACE();
+    const JerryValue* lhs = reinterpret_cast<const JerryValue*> (this);
+    JerryValue* rhs = reinterpret_cast<JerryValue*> (*object);
+
+    jerry_value_t result = jerry_binary_operation(JERRY_BIN_OP_INSTANCEOF, lhs->value(), rhs->value());
+    if (jerry_value_is_error(result)) {
+        return Nothing<bool>();
+    }
+
+    return Just(jerry_get_boolean_value(result));
 }
 
 /* Integer */
@@ -1325,7 +1401,7 @@ Maybe<bool> Object::Has(Local<Context> context, Local<Value> key) {
 }
 
 Maybe<bool> Object::Has(Local<Context> context, uint32_t index) {
-    JerryValue* jobj = reinterpret_cast<JerryValue*> (this);    
+    JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
     jerry_value_t key_js = jerry_create_number((int32_t)index);
 
     jerry_value_t has_prop_js = jerry_has_property (jobj->value(), key_js);
@@ -1361,6 +1437,14 @@ Maybe<bool> Object::SetPrivate(Local<Context> context, Local<Private> key, Local
     return Just(reinterpret_cast<JerryValue*>(this)->SetProperty(
                     reinterpret_cast<JerryValue*>(*key),
                     reinterpret_cast<JerryValue*>(*value)));
+}
+
+Maybe<bool> Object::DeletePrivate(Local<Context> context, Local<Private> key) {
+    V8_CALL_TRACE();
+    JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
+    JerryValue* jkey = reinterpret_cast<JerryValue*> (*key);
+
+    return Just(jerry_delete_property (jobj->value(), jkey->value()));
 }
 
 MaybeLocal<Value> Object::GetOwnPropertyDescriptor(Local<Context> context, Local<Name> key) {
@@ -1399,6 +1483,16 @@ Local<Array> Object::GetPropertyNames() {
 
     JerryIsolate* iso = JerryIsolate::GetCurrent();
 
+    jerry_value_t props = iso->HelperGetNames().Call(jobject->value(), NULL, 1);
+
+    RETURN_HANDLE(Array, JerryIsolate::toV8(iso), new JerryValue(props));
+}
+
+MaybeLocal<Array> Object::GetPropertyNames(Local<Context> context) {
+    V8_CALL_TRACE();
+    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+
+    JerryIsolate* iso = JerryIsolate::fromV8(context->GetIsolate());
     jerry_value_t props = iso->HelperGetNames().Call(jobject->value(), NULL, 1);
 
     RETURN_HANDLE(Array, JerryIsolate::toV8(iso), new JerryValue(props));
@@ -2369,6 +2463,25 @@ void ObjectTemplate::SetAccessor(Local<String> name,
     tmplt->SetAccessor(jname, getter, setter, jdata, settings, attribute);
 }
 
+void ObjectTemplate::SetAccessor(Local<Name> name,
+                                 AccessorNameGetterCallback getter,
+                                 AccessorNameSetterCallback setter /* = 0 */,
+                                 Local<Value> data /* = Local<Value>() */,
+                                 AccessControl settings /* = DEFAULT */,
+                                 PropertyAttribute attribute /* = None */,
+                                 Local<AccessorSignature> signature /* = Local<AccessorSignature>() */) {
+    V8_CALL_TRACE();
+    JerryObjectTemplate* tmplt = reinterpret_cast<JerryObjectTemplate*>(this);
+
+    JerryValue* jname = reinterpret_cast<JerryValue*>(*name)->Copy();
+    JerryValue* jdata = NULL;
+    if (!data.IsEmpty()) {
+        jdata = reinterpret_cast<JerryValue*>(*data)->Copy();
+    }
+
+    tmplt->SetAccessor(jname, getter, setter, jdata, settings, attribute);
+}
+
 void ObjectTemplate::SetInternalFieldCount(int count) {
     V8_CALL_TRACE();
     JerryObjectTemplate* tmplt = reinterpret_cast<JerryObjectTemplate*>(this);
@@ -2397,6 +2510,15 @@ Local<Signature> Signature::New(Isolate* isolate, Local<FunctionTemplate> receiv
 EXCEPTION_ERROR(Error, JERRY_ERROR_COMMON);
 EXCEPTION_ERROR(RangeError, JERRY_ERROR_RANGE);
 EXCEPTION_ERROR(TypeError, JERRY_ERROR_TYPE);
+
+/*static*/
+Local<Message> Exception::CreateMessage(Isolate* isolate, Local<Value> exception) {
+    V8_CALL_TRACE();
+    //JerryIsolate* iso = JerryIsolate::fromV8(isolate_);
+    // TODO: implement
+    return  Local<v8::Message>();
+}
+
 
 /* StackFrame && StackTrace */
 int StackFrame::GetColumn() const {
@@ -2554,6 +2676,12 @@ Maybe<bool> Promise::Resolver::Reject(Local<v8::Context> context, Local<v8::Valu
     } else {
         return Just(true);
     }
+}
+
+Local<Promise> Promise::Resolver::GetPromise(void) {
+    V8_CALL_TRACE();
+    // TODO: maybe wrap the promise object into a resolver?
+    RETURN_HANDLE(Promise, JerryIsolate::toV8(JerryIsolate::GetCurrent()), reinterpret_cast<JerryValue*>(this));
 }
 
 Promise::PromiseState Promise::State(void) {

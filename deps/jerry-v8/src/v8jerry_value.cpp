@@ -321,7 +321,9 @@ void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8
 }
 
 void* JerryValue::ClearWeak() {
-    assert(IsWeakReferenced() == true);
+    if (!IsWeakReferenced()) {
+        return NULL;
+    }
 
     JerryV8WeakReferenceData* weak_data;
     jerry_get_object_native_pointer (m_value, reinterpret_cast<void**>(&weak_data), &JerryV8WeakReferenceInfo);

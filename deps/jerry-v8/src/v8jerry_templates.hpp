@@ -171,6 +171,15 @@ public:
         m_accessors.push_back(new AccessorEntry(name, getter, setter, data, settings, attribute));
     }
 
+    void SetAccessor(JerryValue* name,
+                     v8::AccessorNameGetterCallback getter,
+                     v8::AccessorNameSetterCallback setter,
+                     JerryValue* data,
+                     v8::AccessControl settings,
+                     v8::PropertyAttribute attribute) {
+        m_accessors.push_back(new AccessorEntry(name, getter, setter, data, settings, attribute));
+    }
+
     void SetAccessor(AccessorEntry* entry) {
         m_accessors.push_back(entry);
     }
