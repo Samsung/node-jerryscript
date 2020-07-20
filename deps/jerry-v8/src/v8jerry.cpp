@@ -1466,17 +1466,6 @@ Local<Array> Object::GetOwnPropertyNames() {
     RETURN_HANDLE(Array, JerryIsolate::toV8(iso), new JerryValue(props));
 }
 
-MaybeLocal<Array> Object::GetPropertyNames(Local<Context> context)
-{
-    V8_CALL_TRACE();
-    JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
-
-    JerryIsolate* iso = JerryIsolate::fromV8(context->GetIsolate());
-    jerry_value_t props = iso->HelperGetNames().Call(jobject->value(), NULL, 1);
-
-    RETURN_HANDLE(Array, JerryIsolate::toV8(iso), new JerryValue(props));
-}
-
 Local<Array> Object::GetPropertyNames() {
     V8_CALL_TRACE();
     JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
@@ -1791,17 +1780,7 @@ MaybeLocal<Map> Map::Set(Local<Context> context, Local<Value> key, Local<Value> 
 Local<Private> Private::New(Isolate* isolate, Local<String> name) {
     V8_CALL_TRACE();
     JerryValue* jname = reinterpret_cast<JerryValue*>(*name);
-
-    jerry_size_t size = jerry_get_string_size (jname->value());
-    std::vector<char> buffer(size);
-
-    jerry_length_t copied =
-        jerry_string_to_char_buffer (jname->value(), reinterpret_cast<jerry_char_t*>(&buffer[0]), size);
-
-    std::string private_name("$$private_");
-    private_name.append(buffer.data(), copied);
-
-    jerry_value_t private_key = jerry_create_string_sz_from_utf8((const jerry_char_t*)private_name.c_str(), private_name.size());
+    jerry_value_t private_key = jerry_create_symbol(jname->value());
 
     RETURN_HANDLE(Private, isolate, new JerryValue(private_key));
 }
