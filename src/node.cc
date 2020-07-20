@@ -2852,7 +2852,8 @@ void SetupProcessObject(Environment* env,
       "HOME",
       "TEMP",
       "TMP",
-      "TMPDIR"
+      "TMPDIR",
+      "PATH",
 
       // Only for windows, skip for now:
       //"SystemRoot"

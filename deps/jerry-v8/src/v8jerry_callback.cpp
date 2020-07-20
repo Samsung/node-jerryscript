@@ -20,15 +20,17 @@ class JerryPropertyCallbackInfo : public v8::PropertyCallbackInfo<T> {
 
 */
 public:
-    static const int kImplicitArgsSize = v8::FunctionCallbackInfo<T>::kArgsLength + 1;
+    static const int kImplicitArgsSize = v8::PropertyCallbackInfo<T>::kArgsLength + 1;
 
     JerryPropertyCallbackInfo(
         const jerry_value_t function_obj,
         const jerry_value_t this_val,
         const jerry_value_t args_p[],
         const jerry_length_t args_cnt,
-        const JerryV8GetterSetterHandlerData* data)
-        : v8::PropertyCallbackInfo<T>(reinterpret_cast<v8::internal::Object**>(BuildArgs(this_val, data)))
+        //const JerryV8GetterSetterHandlerData* data)
+        const jerry_value_t external_data)
+        //: v8::PropertyCallbackInfo<T>(reinterpret_cast<v8::internal::Object**>(BuildArgs(this_val, data)))
+        : v8::PropertyCallbackInfo<T>(reinterpret_cast<v8::internal::Object**>(BuildArgs(this_val, external_data)))
         , m_args(reinterpret_cast<JerryHandle**>(this->args_))
     {
     }
@@ -38,7 +40,8 @@ public:
     }
 
 private:
-    static JerryHandle** BuildArgs(const jerry_value_t this_val, const JerryV8GetterSetterHandlerData* data) {
+//    static JerryHandle** BuildArgs(const jerry_value_t this_val, const JerryV8GetterSetterHandlerData* data) {
+    static JerryHandle** BuildArgs(const jerry_value_t this_val, const jerry_value_t external_data) {
         JerryHandle **values = new JerryHandle*[kImplicitArgsSize];
 
         values[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = 0; // TODO: fix this
@@ -48,7 +51,7 @@ private:
         //values[v8::PropertyCallbackInfo<T>::kReturnValueDefaultValueIndex] = new JerryValue(jerry_create_undefined()); // TODO
         values[v8::PropertyCallbackInfo<T>::kReturnValueIndex] = new JerryValue(jerry_create_undefined());
 
-        values[v8::PropertyCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(data->external)); /* data; */
+        values[v8::PropertyCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(external_data)); /* data; */
         values[v8::PropertyCallbackInfo<T>::kThisIndex] = new JerryValue(jerry_acquire_value(this_val));
         values[v8::PropertyCallbackInfo<T>::kArgsLength] = 0; // TODO
 
@@ -86,7 +89,7 @@ jerry_value_t JerryV8GetterSetterHandler(
     v8::Local<v8::Name> v8_name = data->accessor->name->AsLocal<v8::Name>();
 
     if (data->is_setter) {
-        JerryPropertyCallbackInfo<void> info(function_obj, this_val, args_p, args_cnt, data);
+        JerryPropertyCallbackInfo<void> info(function_obj, this_val, args_p, args_cnt, data->external);
 
         // TODO: assert on args[0]?
         JerryValue new_value(jerry_acquire_value(args_p[0]));
@@ -99,7 +102,7 @@ jerry_value_t JerryV8GetterSetterHandler(
             data->v8.setter.stringed(v8_name.As<v8::String>(), v8_value, info);
         }
     } else {
-        JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data);
+        JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data->external);
         if (data->is_named) {
             data->v8.getter.named(v8_name, info);
         } else {
