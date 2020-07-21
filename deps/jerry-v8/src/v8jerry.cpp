@@ -1403,10 +1403,12 @@ Maybe<bool> Object::Has(Local<Context> context, Local<Value> key) {
 Maybe<bool> Object::Has(Local<Context> context, uint32_t index) {
     JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
     jerry_value_t key_js = jerry_create_number((int32_t)index);
+    jerry_value_t key_string_js = jerry_value_to_string(key_js);
 
-    jerry_value_t has_prop_js = jerry_has_property (jobj->value(), key_js);
+    jerry_value_t has_prop_js = jerry_has_property (jobj->value(), key_string_js);
     bool has_prop = jerry_get_boolean_value (has_prop_js);
     jerry_release_value (has_prop_js);
+    jerry_release_value (key_string_js);
     jerry_release_value (key_js);
 
     // NOTE: Is `return Has(context, Local<Value>::New(context->GetIsolate(), JerryValue*))` better?

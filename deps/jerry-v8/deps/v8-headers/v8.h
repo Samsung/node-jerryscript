@@ -10285,8 +10285,8 @@ Local<Value> PropertyCallbackInfo<T>::Data() const {
 template<typename T>
 Local<Object> PropertyCallbackInfo<T>::This() const {
   // TODO: revert to original
-  //return Local<Object>(reinterpret_cast<Object*>(args_[kThisIndex]));
-  return Local<Object>(reinterpret_cast<Object*>(&args_[kThisIndex]));
+  //return Local<Object>(reinterpret_cast<Object*>(&args_[kThisIndex]));
+  return Local<Object>(reinterpret_cast<Object*>(args_[kThisIndex]));
 }
 
 
