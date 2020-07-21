@@ -71,7 +71,7 @@ bool JerryObjectTemplate::SetAccessor(const jerry_value_t target, AccessorEntry*
     {
         JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
         data->v8.getter = entry->getter;
-        data->external = NULL; // TODO
+        data->external = (entry->data != NULL) ? entry->data->value() : jerry_create_undefined();
         data->is_setter = false;
         data->accessor = entry;
 
@@ -84,7 +84,7 @@ bool JerryObjectTemplate::SetAccessor(const jerry_value_t target, AccessorEntry*
 
         JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
         data->v8.setter = entry->setter;
-        data->external = NULL; // TODO
+        data->external = (entry->data != NULL) ? entry->data->value() : jerry_create_undefined();
         data->is_setter = true;
         data->accessor = entry;
 
