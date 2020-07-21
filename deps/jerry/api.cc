@@ -521,15 +521,77 @@ Maybe<bool> Module::SetSyntheticModuleExport(Isolate* isolate,
 MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
     Isolate* v8_isolate, Source* source, CompileOptions options,
     NoCacheReason no_cache_reason) {
-  UNIMPLEMENTED(2463);
-  return MaybeLocal<UnboundScript>();
+  V8_CALL_TRACE();
+
+  if (options == CompileOptions::kConsumeCodeCache) {
+    String::Utf8Value text(v8_isolate, source->source_string);
+    CachedData* data = source->cached_data;
+    if (data->length != text.length() || memcmp(data->data, (const uint8_t*) *text, text.length())) {
+        data->rejected = true;
+    }
+  }
+
+  Local<String> file;
+
+  if (source->resource_name.IsEmpty()) {
+    file = source->resource_name.As<String>();
+  } else {
+    bool isOk =source->resource_name->ToString(v8_isolate->GetCurrentContext()).ToLocal(&file);
+
+    if (!isOk) {
+      return MaybeLocal<UnboundScript>();
+    }
+  }
+
+  String::Utf8Value text(v8_isolate, source->source_string);
+  String::Utf8Value fileName(v8_isolate,file);
+
+  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
+                                              file->Utf8Length(v8_isolate),
+                                              (const jerry_char_t*)*text,
+                                              source->source_string->Utf8Length(v8_isolate),
+                                              JERRY_PARSE_NO_OPTS);
+
+  JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(v8_isolate), scriptFunction);
+  RETURN_HANDLE(UnboundScript, v8_isolate, result);
 }
 
 MaybeLocal<Module> ScriptCompiler::CompileModule(
     Isolate* isolate, Source* source, CompileOptions options,
     NoCacheReason no_cache_reason) {
-  UNIMPLEMENTED(2489);
-  return MaybeLocal<Module>();
+  V8_CALL_TRACE();
+
+  if (options == CompileOptions::kConsumeCodeCache) {
+    String::Utf8Value text(isolate, source->source_string);
+    CachedData* data = source->cached_data;
+    if (data->length != text.length() || memcmp(data->data, (const uint8_t*) *text, text.length())) {
+        data->rejected = true;
+    }
+  }
+
+  Local<String> file;
+
+  if (source->resource_name.IsEmpty()) {
+    file = source->resource_name.As<String>();
+  } else {
+    bool isOk =source->resource_name->ToString(isolate->GetCurrentContext()).ToLocal(&file);
+
+    if (!isOk) {
+      return MaybeLocal<Module>();
+    }
+  }
+
+  String::Utf8Value text(isolate, source->source_string);
+  String::Utf8Value fileName(isolate, file);
+
+  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
+                                              file->Utf8Length(isolate),
+                                              (const jerry_char_t*)*text,
+                                              source->source_string->Utf8Length(isolate),
+                                              JERRY_PARSE_NO_OPTS | 2); // [[TODO]] propagete ECMA_PARSE_MODULE to api
+
+  JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
+  RETURN_HANDLE(Module, isolate, result);
 }
 
 MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
@@ -538,30 +600,76 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
     Local<Object> context_extensions[], CompileOptions options,
     NoCacheReason no_cache_reason,
     Local<ScriptOrModule>* script_or_module_out) {
-  UNIMPLEMENTED(2531);
+  V8_CALL_TRACE();
+
+  Isolate *isolate = v8_context->GetIsolate();
+
+  if (options == CompileOptions::kConsumeCodeCache) {
+    String::Utf8Value text(isolate, source->source_string);
+    CachedData* data = source->cached_data;
+    if (data->length != text.length() || memcmp(data->data, (const uint8_t*) *text, text.length())) {
+        data->rejected = true;
+    }
+  }
+
+  Local<String> file;
+  if (source->resource_name.IsEmpty()) {
+    file = source->resource_name.As<String>();
+  } else {
+    bool isOk =source->resource_name->ToString(isolate->GetCurrentContext()).ToLocal(&file);
+
+    if (!isOk) {
+      return MaybeLocal<Function>();
+    }
+  }
+
+  std::string args;
+
+  for (size_t i = 0; i < arguments_count; i++) {
+    String::Utf8Value arg(isolate, arguments[i]);
+    args.append((const char*)*arg, (size_t) arguments[i]->Utf8Length(isolate));
+    if (i != arguments_count - 1) {
+      args.append(",", 1);
+    }
+  }
+
+  String::Utf8Value text(isolate, source->source_string);
+  String::Utf8Value fileName(isolate, file);
+
+  jerry_value_t scriptFunction = jerry_parse_function((const jerry_char_t*)*fileName,
+                                                      file->Utf8Length(isolate),
+                                                      (const jerry_char_t*) args.c_str(),
+                                                      args.length(),
+                                                      (const jerry_char_t*)*text,
+                                                      source->source_string->Utf8Length(isolate),
+                                                      JERRY_PARSE_NO_OPTS);
+
+  JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
+  RETURN_HANDLE(Function, isolate, result);
   return MaybeLocal<Function>();
 }
 
 uint32_t ScriptCompiler::CachedDataVersionTag() {
-  UNIMPLEMENTED(2665);
+  V8_CALL_TRACE();
   return 0;
 }
 
 ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCache(
     Local<UnboundScript> unbound_script) {
-  UNIMPLEMENTED(2671);
-  return NULL;
+  V8_CALL_TRACE();
+  return new CachedData();
 }
 
 ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCache(
     Local<UnboundModuleScript> unbound_module_script) {
-  UNIMPLEMENTED(2681);
-  return NULL;
+  V8_CALL_TRACE();
+  return new CachedData();
 }
 
 ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCacheForFunction(
     Local<Function> function) {
-  UNIMPLEMENTED(2690);
+  V8_CALL_TRACE();
+  return new CachedData();
 }
 
 MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source,
@@ -630,8 +738,7 @@ Local<String> Message::Get() const {
 }
 
 v8::Isolate* Message::GetIsolate() const {
-  UNIMPLEMENTED(2854);
-  return NULL;
+  return JerryIsolate::toV8(JerryIsolate::GetCurrent());
 }
 
 ScriptOrigin Message::GetScriptOrigin() const {
@@ -655,7 +762,7 @@ Maybe<int> Message::GetLineNumber(Local<Context> context) const {
 }
 
 int Message::ErrorLevel() const {
-  UNIMPLEMENTED(2909);
+  V8_CALL_TRACE();
   return 0;
 }
 
@@ -1007,38 +1114,43 @@ bool Value::IsModuleNamespaceObject() const {
 }
 
 MaybeLocal<String> Value::ToString(Local<Context> context) const {
-  UNIMPLEMENTED(3535);
-  return MaybeLocal<String>();
+  V8_CALL_TRACE();
+  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToString();
+  RETURN_HANDLE(String, context->GetIsolate(), result);
 }
 
 MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
-  UNIMPLEMENTED(3546);
-  return MaybeLocal<String>();
+  V8_CALL_TRACE();
+  return ToString(context);
 }
 
 MaybeLocal<Object> Value::ToObject(Local<Context> context) const {
-  UNIMPLEMENTED(3556);
-  return MaybeLocal<Object>();
+  V8_CALL_TRACE();
+  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToObject();
+  RETURN_HANDLE(Object, Isolate::GetCurrent(), result);
 }
 
 bool Value::BooleanValue(Isolate* v8_isolate) const {
-  UNIMPLEMENTED(3578);
-  return false;
+  V8_CALL_TRACE();
+  return reinterpret_cast<const JerryValue*>(this)->BooleanValue();
 }
 
 Local<Boolean> Value::ToBoolean(Isolate* v8_isolate) const {
-  UNIMPLEMENTED(3583);
-  return Local<Boolean>();
+  V8_CALL_TRACE();
+  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToBoolean();
+  RETURN_HANDLE(Boolean, v8_isolate, result);
 }
 
 MaybeLocal<Number> Value::ToNumber(Local<Context> context) const {
-  UNIMPLEMENTED(3589);
-  return MaybeLocal<Number>();
+  V8_CALL_TRACE();
+  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToNumber();
+  RETURN_HANDLE(Number, context->GetIsolate(), result);
 }
 
 MaybeLocal<Integer> Value::ToInteger(Local<Context> context) const {
-  UNIMPLEMENTED(3600);
-  return MaybeLocal<Integer>();
+  V8_CALL_TRACE();
+  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+  RETURN_HANDLE(Integer, context->GetIsolate(), result);
 }
 
 i::Isolate* i::IsolateFromNeverReadOnlySpaceObject(i::Address obj) {
@@ -1481,39 +1593,72 @@ Local<String> v8::Object::GetConstructorName() {
 
 Maybe<bool> v8::Object::SetIntegrityLevel(Local<Context> context,
                                           IntegrityLevel level) {
-  UNIMPLEMENTED(4420);
-  return Just(false);
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+
+  const char* prop_name = level == IntegrityLevel::kFrozen ? "freeze" : "seal";
+
+  jerry_value_t prop_name_value = jerry_create_string ((const jerry_char_t *) prop_name);
+  jerry_value_t result = JerryIsolate::fromV8(GetIsolate())->HelperSetIntegrityLevel().Call(jobj->value(), &prop_name_value, 1);
+  jerry_release_value (prop_name_value);
+
+  // [[TODO]] error handling?
+  return Just(jerry_get_boolean_value(result));
 }
 
 Maybe<bool> v8::Object::Delete(Local<Context> context, Local<Value> key) {
-  UNIMPLEMENTED(4435);
-  return Just(false);
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+  return Just(jerry_delete_property(jobj->value(), jkey->value()));
 }
 
 Maybe<bool> v8::Object::DeletePrivate(Local<Context> context,
                                       Local<Private> key) {
-  UNIMPLEMENTED(4459);
-  return Just(false);
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+  return Just(jobj->DeleteInternalProperty(jkey));
 }
 
 Maybe<bool> v8::Object::Has(Local<Context> context, Local<Value> key) {
-  UNIMPLEMENTED(4475);
-  return Just(false);
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
+  JerryValue* jkey = reinterpret_cast<JerryValue*> (*key);
+
+  jerry_value_t has_prop_js = jerry_has_property (jobj->value(), jkey->value());
+  bool has_prop = jerry_get_boolean_value (has_prop_js);
+  jerry_release_value (has_prop_js);
+
+  return Just(has_prop);
 }
 
 Maybe<bool> v8::Object::HasPrivate(Local<Context> context, Local<Private> key) {
-  UNIMPLEMENTED(4497);
-  return Just(false);
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+  return Just(jobj->HasInternalProperty(jkey));
 }
 
 Maybe<bool> v8::Object::Delete(Local<Context> context, uint32_t index) {
-  UNIMPLEMENTED(4501);
-  return Just(false);
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
+  return Just(jerry_delete_property_by_index(jobj->value(), index));
 }
 
 Maybe<bool> v8::Object::Has(Local<Context> context, uint32_t index) {
-  UNIMPLEMENTED(4511);
-  return Just(false);
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*> (this);
+  jerry_value_t key_js = jerry_create_number((int32_t)index);
+
+  jerry_value_t has_prop_js = jerry_has_property (jobj->value(), key_js);
+  bool has_prop = jerry_get_boolean_value (has_prop_js);
+  jerry_release_value (has_prop_js);
+  jerry_release_value (key_js);
+
+  // NOTE: Is `return Has(context, Local<Value>::New(context->GetIsolate(), JerryValue*))` better?
+  return Just(has_prop);
 }
 
 Maybe<bool> Object::SetAccessor(Local<Context> context, Local<Name> name,
@@ -1523,40 +1668,124 @@ Maybe<bool> Object::SetAccessor(Local<Context> context, Local<Name> name,
                                 PropertyAttribute attribute,
                                 SideEffectType getter_side_effect_type,
                                 SideEffectType setter_side_effect_type) {
-  UNIMPLEMENTED(4557);
-  return Just(false);
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+
+  JerryValue* jdata = NULL;
+  if (!data.IsEmpty()) {
+      Local<Value> dataValue;
+      bool isOk = data.ToLocal(&dataValue);
+
+      jdata = reinterpret_cast<JerryValue*>(*dataValue)->Copy();
+  }
+
+  AccessorEntry* entry = new AccessorEntry(reinterpret_cast<JerryValue*>(*name)->Copy(),
+                                            getter,
+                                            setter,
+                                            jdata,
+                                            settings,
+                                            attribute);
+  bool configured = JerryObjectTemplate::SetAccessor(jobj->value(), entry);
+  JerryIsolate::fromV8(context->GetIsolate())->HiddenObjectTemplate()->SetAccessor(entry);
+
+  return Just(configured);
 }
 
 Maybe<bool> v8::Object::HasOwnProperty(Local<Context> context,
                                        Local<Name> key) {
-  UNIMPLEMENTED(4611);
-  return Just(false);
+  V8_CALL_TRACE();
+
+  JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+  jerry_value_t has_prop = jerry_has_own_property(jobject->value(), jkey->value());
+  bool property_exists = jerry_get_boolean_value(has_prop);
+  jerry_release_value(property_exists);
+
+  return Just(property_exists);
 }
 
 MaybeLocal<Value> v8::Object::GetRealNamedProperty(Local<Context> context,
                                                    Local<Name> key) {
-  UNIMPLEMENTED(4737);
-  return MaybeLocal<Value>();
+  V8_CALL_TRACE();
+  JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+  jerry_value_t property = jerry_get_property(jobject->value(), jkey->value());
+
+  JerryValue* result = NULL;
+  if (!jerry_value_is_error(property)) {
+      result = new JerryValue(property);
+  } else {
+      jerry_release_value(property);
+  }
+
+  RETURN_HANDLE(Value, context->GetIsolate(), result);
 }
 
 Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
     Local<Context> context, Local<Name> key) {
-  UNIMPLEMENTED(4752);
-  return Just(PropertyAttribute());
+  V8_CALL_TRACE();
+  JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+  int attributes = PropertyAttribute::None;
+
+  jerry_value_t target_object = jerry_acquire_value(jobject->value());
+  bool found = false;
+  do {
+      jerry_property_descriptor_t prop_desc;
+      jerry_init_property_descriptor_fields(&prop_desc);
+
+      found = jerry_get_own_property_descriptor(target_object, jkey->value(), &prop_desc);
+
+      if (found) {
+          if (prop_desc.is_writable_defined && !prop_desc.is_writable) { attributes |= PropertyAttribute::ReadOnly; }
+          if (prop_desc.is_enumerable_defined && !prop_desc.is_enumerable) { attributes |= PropertyAttribute::DontEnum; }
+          if (prop_desc.is_configurable_defined && !prop_desc.is_configurable) { attributes |= PropertyAttribute::DontDelete; }
+      } else {
+          jerry_value_t new_target_object = jerry_get_prototype(target_object);
+          jerry_release_value(target_object);
+
+          target_object = new_target_object;
+      }
+
+      jerry_free_property_descriptor_fields(&prop_desc);
+  } while (!found && !jerry_value_is_null(target_object));
+
+  jerry_release_value(target_object);
+
+  return found ? Just((PropertyAttribute)attributes) : Nothing<PropertyAttribute>();
 }
 
 Local<v8::Object> v8::Object::Clone() {
-  UNIMPLEMENTED(4772);
-  return Local<v8::Object>();
+    V8_CALL_TRACE();
+    // shallow copy!
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+
+    jerry_value_t arg = jobj->value();
+    jerry_value_t result = JerryIsolate::fromV8(GetIsolate())->HelperObjectAssign().Call(jerry_create_undefined(), &arg, 1);
+
+    RETURN_HANDLE(Object, GetIsolate(), new JerryValue(result));
 }
 
 Local<v8::Context> v8::Object::CreationContext() {
-  UNIMPLEMENTED(4781);
-  return Local<v8::Context>();
+    V8_CALL_TRACE();
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+
+    JerryValue* jctx = jobj->GetObjectCreationContext();
+
+    // TODO: remove the hack:
+    if (jctx == NULL) {
+        jctx = JerryIsolate::GetCurrent()->CurrentContext();
+    }
+
+    // Copy the context
+    RETURN_HANDLE(Context, GetIsolate(), jctx->Copy());
 }
 
 int v8::Object::GetIdentityHash() {
-  UNIMPLEMENTED(4787);
+  V8_CALL_TRACE();
   return 0;
 }
 
@@ -1564,21 +1793,49 @@ MaybeLocal<Function> Function::New(Local<Context> context,
                                    FunctionCallback callback, Local<Value> data,
                                    int length, ConstructorBehavior behavior,
                                    SideEffectType side_effect_type) {
-  UNIMPLEMENTED(4846);
-  return MaybeLocal<Function>();
+  V8_CALL_TRACE();
+  // TODO: maybe don't use function template?
+  Local<FunctionTemplate> tmplt = FunctionTemplate::New(context->GetIsolate(), callback, data, Local<Signature>(), length, behavior);
+  return tmplt->GetFunction(context);
 }
 
 MaybeLocal<Object> Function::NewInstance(Local<Context> context, int argc,
                                          v8::Local<v8::Value> argv[]) const {
-  UNIMPLEMENTED(4860);
-  return MaybeLocal<Object>();
+  V8_CALL_TRACE();
+  const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
+
+  std::vector<jerry_value_t> arguments;
+  arguments.resize(argc);
+  for (int idx = 0; idx < argc; idx++) {
+      JerryValue* arg = reinterpret_cast<JerryValue*>(*argv[idx]);
+      arguments[idx] = arg->value();
+  }
+
+  JerryValue* object = new JerryValue(jerry_construct_object(jvalue->value(), &arguments[0], (jerry_size_t)argc));
+  RETURN_HANDLE(Object, Isolate::GetCurrent(), object);
 }
 
 MaybeLocal<v8::Value> Function::Call(Local<Context> context,
                                      v8::Local<v8::Value> recv, int argc,
                                      v8::Local<v8::Value> argv[]) {
-  UNIMPLEMENTED(4913);
-  return MaybeLocal<v8::Value>();
+  V8_CALL_TRACE();
+  const JerryValue* jfunc = reinterpret_cast<const JerryValue*>(this);
+  const JerryValue* jthis = reinterpret_cast<const JerryValue*>(*recv);
+
+  std::vector<jerry_value_t> arguments;
+  arguments.resize(argc);
+  for (int idx = 0; idx < argc; idx++) {
+      arguments[idx] = reinterpret_cast<JerryValue*>(*argv[idx])->value();
+  }
+
+  jerry_value_t result = jerry_call_function(jfunc->value(), jthis->value(), &arguments[0], argc);
+  JerryValue* return_value = JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), result);
+
+  if (return_value == NULL) {
+      JerryIsolate::GetCurrent()->TryReportError();
+  }
+
+  RETURN_HANDLE(Value, Isolate::GetCurrent(), return_value);
 }
 
 void Function::SetName(v8::Local<v8::String> name) {
@@ -1601,13 +1858,12 @@ int Name::GetIdentityHash() {
 }
 
 int String::Length() const {
-  UNIMPLEMENTED(5074);
-  return 0;
+  return reinterpret_cast<const JerryValue*>(this)->GetStringLength();
 }
 
 int String::Utf8Length(Isolate* isolate) const {
-  UNIMPLEMENTED(5199);
-  return 0;
+  V8_CALL_TRACE();
+  return reinterpret_cast<const JerryValue*>(this)->GetStringUtf8Length();
 }
 
 int String::WriteUtf8(Isolate* v8_isolate, char* buffer, int capacity,
@@ -1629,29 +1885,33 @@ int String::Write(Isolate* isolate, uint16_t* buffer, int start, int length,
 }
 
 bool v8::String::IsExternal() const {
-  UNIMPLEMENTED(5401);
-  return false;
+  V8_CALL_TRACE ();
+  const JerryString *jstring = reinterpret_cast<const JerryString*>(this);
+  return (jstring->type() & JerryStringType::EXTERNAL) != 0;
 }
 
 bool v8::String::IsExternalOneByte() const {
-  UNIMPLEMENTED(5406);
-  return false;
+  V8_CALL_TRACE ();
+  const JerryString *jstring = reinterpret_cast<const JerryString*>(this);
+  return (jstring->type() & (JerryStringType::EXTERNAL | JerryStringType::ONE_BYTE)) == (JerryStringType::EXTERNAL | JerryStringType::ONE_BYTE);
 }
 
 void v8::String::VerifyExternalStringResource(
     v8::String::ExternalStringResource* value) const {
-  UNIMPLEMENTED(5411);
+  V8_CALL_TRACE ();
 }
 
 String::ExternalStringResource* String::GetExternalStringResourceSlow() const {
-  UNIMPLEMENTED(5458);
-  return NULL;
+  V8_CALL_TRACE ();
+  const JerryExternalString *jstring = reinterpret_cast<const JerryExternalString*>(this);
+  return reinterpret_cast<ExternalStringResource*>(jstring->resource());
 }
 
 const v8::String::ExternalOneByteStringResource*
 v8::String::GetExternalOneByteStringResource() const {
-  UNIMPLEMENTED(5496);
-  return NULL;
+  V8_CALL_TRACE ();
+  const JerryExternalString *jstring = reinterpret_cast<const JerryExternalString*>(this);
+  return reinterpret_cast<ExternalOneByteStringResource*>(jstring->resource());
 }
 
 Local<Value> Symbol::Description() const {
@@ -1660,51 +1920,62 @@ Local<Value> Symbol::Description() const {
 }
 
 double Number::Value() const {
-  UNIMPLEMENTED(5535);
-  return 0;
+  V8_CALL_TRACE();
+  return reinterpret_cast<const JerryValue*>(this)->GetNumberValue();
 }
 
 bool Boolean::Value() const {
-  UNIMPLEMENTED(5540);
-  return false;
+  V8_CALL_TRACE();
+  return reinterpret_cast<const JerryValue*>(this)->GetBooleanValue();
 }
 
 int64_t Integer::Value() const {
-  UNIMPLEMENTED(5545);
-  return 0;
+  V8_CALL_TRACE();
+  return reinterpret_cast<const JerryValue*>(this)->GetInt64Value();
 }
 
 int32_t Int32::Value() const {
-  UNIMPLEMENTED(5554);
-  return 0;
+  V8_CALL_TRACE();
+  return reinterpret_cast<const JerryValue*>(this)->GetInt32Value();
 }
 
 uint32_t Uint32::Value() const {
-  UNIMPLEMENTED(5563);
-  return 0;
+  V8_CALL_TRACE();
+  return reinterpret_cast<const JerryValue*>(this)->GetUInt32Value();
 }
 
 int v8::Object::InternalFieldCount() {
-  UNIMPLEMENTED(5572);
-  return 0;
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+  return jobj->InternalFieldCount();
 }
 
 Local<Value> v8::Object::SlowGetInternalField(int index) {
-  UNIMPLEMENTED(5586);
-  return Local<Value>();
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+  RETURN_HANDLE(Value, Isolate::GetCurrent(), jobj->GetInternalField<JerryValue*>(index));
 }
 
 void v8::Object::SetInternalField(int index, v8::Local<Value> value) {
-  UNIMPLEMENTED(5595);
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+  // Indexing starts from 0!
+
+  jobj->SetInternalField(index, reinterpret_cast<JerryValue*>(*value));
 }
 
 void* v8::Object::SlowGetAlignedPointerFromInternalField(int index) {
-  UNIMPLEMENTED(5603);
-  return NULL;
+  V8_CALL_TRACE();
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+  return jobj->GetInternalField<void*>(index);
 }
 
 void v8::Object::SetAlignedPointerInInternalField(int index, void* value) {
-  UNIMPLEMENTED(5614);
+  V8_CALL_TRACE();
+    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+    // Indexing starts from 0!
+
+    jobj->SetInternalField(index, value);
 }
 
 void v8::V8::InitializePlatform(Platform* platform) {
@@ -1889,35 +2160,68 @@ MaybeLocal<String> String::NewFromUtf8(Isolate* isolate, const char* data,
 MaybeLocal<String> String::NewFromOneByte(Isolate* isolate, const uint8_t* data,
                                           NewStringType type, int length) {
   V8_CALL_TRACE();
-  return String::NewFromUtf8(isolate, (const char*)data, type, length);
+  if (length >= String::kMaxLength) {
+      return Local<String>();
+  }
+
+  jerry_value_t str = JerryString::FromBuffer((const char*)data, length);
+
+  RETURN_HANDLE(String, isolate, new JerryString(str));
 }
 
 MaybeLocal<String> String::NewFromTwoByte(Isolate* isolate,
                                           const uint16_t* data,
                                           NewStringType type, int length) {
+  V8_CALL_TRACE();
   std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
   std::string dest = convert.to_bytes(reinterpret_cast<const char16_t*>(data),
                                       reinterpret_cast<const char16_t*>(data + length));
 
-  return String::NewFromUtf8(isolate, dest.c_str(), type, dest.size());
+  if (dest.size() >= String::kMaxLength) {
+      return Local<String>();
+  }
+
+  jerry_value_t str = JerryString::FromBuffer(dest.c_str(), dest.size());
+
+  RETURN_HANDLE(String, isolate, new JerryString(str, JerryStringType::TWO_BYTE));
 }
 
 Local<String> v8::String::Concat(Isolate* v8_isolate, Local<String> left,
                                  Local<String> right) {
-  UNIMPLEMENTED(6339);
-  return Local<String>();
+  V8_CALL_TRACE();
+
+  JerryValue *jleft = reinterpret_cast<JerryValue*>(*left);
+  JerryValue *jright = reinterpret_cast<JerryValue*>(*right);
+
+  jerry_value_t concat = jerry_binary_operation (JERRY_BIN_OP_ADD, jleft->value(), jright->value());
+
+  RETURN_HANDLE (String, v8_isolate, new JerryValue (concat));
 }
 
 MaybeLocal<String> v8::String::NewExternalTwoByte(
     Isolate* isolate, v8::String::ExternalStringResource* resource) {
-  UNIMPLEMENTED(6357);
-  return MaybeLocal<String>();
+  V8_CALL_TRACE();
+
+  if (resource->length() >= String::kMaxLength) {
+      return Local<String>();
+  }
+
+  jerry_value_t str = JerryString::FromBuffer((const char*)resource->data(), resource->length());
+
+  RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::TWO_BYTE));
 }
 
 MaybeLocal<String> v8::String::NewExternalOneByte(
     Isolate* isolate, v8::String::ExternalOneByteStringResource* resource) {
-  UNIMPLEMENTED(6379);
-  return MaybeLocal<String>();
+  V8_CALL_TRACE();
+
+  if (resource->length() >= String::kMaxLength) {
+      return Local<String>();
+  }
+
+  jerry_value_t str = JerryString::FromBuffer((const char*)resource->data(), resource->length());
+
+  RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::TWO_BYTE));
 }
 
 Isolate* v8::Object::GetIsolate() {
@@ -2158,18 +2462,21 @@ Local<Private> v8::Private::ForApi(Isolate* isolate, Local<String> name) {
 }
 
 Local<Number> v8::Number::New(Isolate* isolate, double value) {
-  UNIMPLEMENTED(7917);
-  return Local<Number>();
+  V8_CALL_TRACE();
+  jerry_value_t result = jerry_create_number(value);
+  RETURN_HANDLE(Integer, isolate, new JerryValue(result));
 }
 
 Local<Integer> v8::Integer::New(Isolate* isolate, int32_t value) {
-  UNIMPLEMENTED(7928);
-  return Local<Integer>();
+  V8_CALL_TRACE();
+  jerry_value_t result = jerry_create_number(value);
+  RETURN_HANDLE(Integer, isolate, new JerryValue(result));
 }
 
 Local<Integer> v8::Integer::NewFromUnsigned(Isolate* isolate, uint32_t value) {
-  UNIMPLEMENTED(7939);
-  return Local<Integer>();
+  V8_CALL_TRACE();
+  jerry_value_t result = jerry_create_number(value);
+  RETURN_HANDLE(Integer, isolate, new JerryValue(result));
 }
 
 Local<BigInt> v8::BigInt::New(Isolate* isolate, int64_t value) {
@@ -2474,20 +2781,78 @@ void MicrotasksScope::PerformCheckpoint(Isolate* v8_isolate) {
 
 String::Utf8Value::Utf8Value(v8::Isolate* isolate, v8::Local<v8::Value> obj)
     : str_(nullptr), length_(0) {
-  UNIMPLEMENTED(9140);
+  V8_CALL_TRACE();
+  JerryValue* jvalue = reinterpret_cast<JerryValue*>(*obj);
+
+  if (jvalue == NULL || jvalue->value() == 0) {
+      return;
+  }
+
+  jerry_value_t value;
+  if (!jvalue->IsString()) {
+      value = jerry_value_to_string(jvalue->value());
+  } else {
+      value = jvalue->value();
+  }
+
+  length_ = jerry_get_utf8_string_length(value);
+  uint32_t size = (uint32_t)jerry_get_utf8_string_size(value);
+
+  str_ = new char[size + 1];
+
+  jerry_string_to_utf8_char_buffer (value, (jerry_char_t *)str_, size + 1);
+  str_[size] = '\0';
+
+  if (!jvalue->IsString()) {
+      jerry_release_value(value);
+  }
 }
 
 String::Utf8Value::~Utf8Value() {
-  UNIMPLEMENTED(9155);
+  V8_CALL_TRACE();
+  delete [] str_;
 }
 
 String::Value::Value(v8::Isolate* isolate, v8::Local<v8::Value> obj)
     : str_(nullptr), length_(0) {
-  UNIMPLEMENTED(9157);
+  V8_CALL_TRACE();
+  V8_CALL_TRACE();
+    JerryValue* jvalue = reinterpret_cast<JerryValue*>(*obj);
+
+    if (jvalue == NULL || jvalue->value() == 0) {
+        return;
+    }
+
+    jerry_value_t value;
+    if (!jvalue->IsString()) {
+        value = jerry_value_to_string(jvalue->value());
+    } else {
+        value = jvalue->value();
+    }
+
+    uint32_t size = (uint32_t)jerry_get_utf8_string_size(value);
+    char* buffer = new char[size + 1];
+    jerry_string_to_utf8_char_buffer (value, (jerry_char_t *)buffer, size + 1);
+    buffer[size] = '\0';
+
+    // Possible todo: remove the UTF8->UTF16 conversion.
+    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+    std::u16string* wstring = new std::u16string(converter.from_bytes(buffer));
+
+    str_ = (uint16_t*) wstring->c_str();
+    length_ = wstring->length();
+
+    reinterpret_cast<JerryIsolate*>(isolate)->AddUTF16String(wstring);
+    delete buffer;
+
+    if (!jvalue->IsString()) {
+        jerry_release_value(value);
+    }
 }
 
 String::Value::~Value() {
-  UNIMPLEMENTED(9172);
+  V8_CALL_TRACE();
+  reinterpret_cast<JerryIsolate*>(Isolate::GetCurrent())->RemoveUTF16String(str_);
 }
 
 v8::Local<Value> Exception::RangeError(v8::Local<v8::String> raw_message) {

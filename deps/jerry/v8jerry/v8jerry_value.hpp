@@ -101,6 +101,8 @@ public:
     JerryValue* GetPropertyIdx(uint32_t idx);
 
     bool SetInternalProperty(JerryValue* key, JerryValue* value);
+    bool HasInternalProperty(JerryValue* key);
+    bool DeleteInternalProperty(JerryValue* key);
     JerryValue* GetInternalProperty(JerryValue* key);
 
     JerryValue* GetOwnPropertyDescriptor(const JerryValue& jkey) const;
@@ -160,9 +162,16 @@ public:
         return new JerryValue(jerry_value_to_number(m_value));
     }
 
-    bool ToBoolean(void) const {
-        // TODO: error handling?
-        return jerry_value_to_boolean(m_value);
+    JerryValue* ToNumber() const {
+        return new JerryValue(jerry_value_to_number(m_value));
+    }
+
+    bool BooleanValue() const {
+        return jerry_get_boolean_value(m_value);
+    }
+
+    JerryValue* ToBoolean(void) const {
+        return new JerryValue(jerry_value_to_boolean(m_value));
     }
 
     JerryValue* ToObject(void) const {
@@ -248,5 +257,46 @@ private:
 
     jerry_value_t m_value;
 };
+
+enum JerryStringType {
+    ONE_BYTE = 0x0,
+    TWO_BYTE = 0x1,
+    EXTERNAL = 0x2,
+};
+
+class JerryString : public JerryValue {
+public:
+    JerryString(jerry_value_t value, JerryStringType type = JerryStringType::ONE_BYTE)
+        : JerryValue(value)
+        , m_type(type)
+    {}
+
+    JerryStringType type () const {
+        return m_type;
+    }
+
+    static jerry_value_t FromBuffer (const char* buffer, int length);
+
+private:
+    JerryStringType m_type;
+};
+
+class JerryExternalString : public JerryString {
+public:
+    JerryExternalString(jerry_value_t value, v8::String::ExternalStringResourceBase* resource, JerryStringType type = JerryStringType::ONE_BYTE)
+        : JerryString(value, (JerryStringType) (JerryStringType::EXTERNAL | type))
+        , m_resource(resource)
+    {}
+
+    v8::String::ExternalStringResourceBase* resource () const {
+        return m_resource;
+    }
+
+    ~JerryExternalString();
+
+private:
+    v8::String::ExternalStringResourceBase* m_resource;
+};
+
 
 #endif /* V8JERRY_VALUE_HPP */

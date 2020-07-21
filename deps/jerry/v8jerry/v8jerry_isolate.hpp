@@ -40,6 +40,7 @@ public:
     const JerryPolyfill& HelperGetOwnPropDesc(void) const { return *m_fn_get_own_prop; }
     const JerryPolyfill& HelperGetOwnPropNames(void) const { return *m_fn_get_own_names; }
     const JerryPolyfill& HelperGetPropNames(void) const { return *m_fn_get_names; }
+    const JerryPolyfill& HelperSetIntegrityLevel(void) const { return *m_fn_set_integrity; }
 
     void Enter(void);
     void Exit(void);
@@ -94,7 +95,6 @@ public:
     void RemoveAsWeak(JerryValue* value);
     bool HasAsWeak(JerryValue* value);
 
-    void AddExternalStringResource(v8::String::ExternalStringResource* resource);
 
     void AddUTF16String(std::u16string*);
     void RemoveUTF16String(uint16_t*);
@@ -136,9 +136,8 @@ private:
     std::deque<JerryValue*> m_contexts;
     std::vector<JerryTemplate*> m_templates;
     std::vector<JerryValue*> m_eternals;
-    std::vector<JerryValue*> m_global_symbols;
+    std::vector<std::pair<JerryValue*, JerryValue*>> m_global_symbols;
     std::vector<JerryValue*> m_weakrefs;
-    std::vector<v8::String::ExternalStringResource*> m_ext_str_res;
     std::unordered_map<uint16_t*, std::u16string*> m_utf16strs;
 
     JerryObjectTemplate* m_hidden_object_template;
@@ -152,6 +151,7 @@ private:
     JerryPolyfill* m_fn_get_own_prop;
     JerryPolyfill* m_fn_get_own_names;
     JerryPolyfill* m_fn_get_names;
+    JerryPolyfill* m_fn_set_integrity;
 
     JerryValue* m_magic_string_stack;
 

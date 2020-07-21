@@ -11,6 +11,8 @@
 #include "v8jerry_templates.hpp"
 #include "v8jerry_utils.hpp"
 
+#define DEBUG_PRINT 1
+
 JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
 
 JerryIsolate::JerryIsolate() {
@@ -20,9 +22,142 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     this->InitializeJerryIsolate(params);
 }
 
+#if DEBUG_PRINT
+jerry_value_t
+jerryx_handler_print (const jerry_value_t func_obj_val, /**< function object */
+                      const jerry_value_t this_p, /**< this arg */
+                      const jerry_value_t args_p[], /**< function arguments */
+                      const jerry_length_t args_cnt) /**< number of function arguments */
+{
+  (void) func_obj_val; /* unused */
+  (void) this_p; /* unused */
+
+  const char * const null_str = "\\u0000";
+
+  jerry_value_t ret_val = jerry_create_undefined ();
+
+  for (jerry_length_t arg_index = 0; arg_index < args_cnt; arg_index++)
+  {
+    jerry_value_t str_val;
+
+    if (jerry_value_is_symbol (args_p[arg_index]))
+    {
+      str_val = jerry_get_symbol_descriptive_string (args_p[arg_index]);
+    }
+    else
+    {
+      str_val = jerry_value_to_string (args_p[arg_index]);
+    }
+
+    if (jerry_value_is_error (str_val))
+    {
+      /* There is no need to free the undefined value. */
+      ret_val = str_val;
+      break;
+    }
+
+    jerry_length_t length = jerry_get_utf8_string_length (str_val);
+    jerry_length_t substr_pos = 0;
+    jerry_char_t substr_buf[256];
+
+    do
+    {
+      jerry_size_t substr_size = jerry_substring_to_utf8_char_buffer (str_val,
+                                                                      substr_pos,
+                                                                      length,
+                                                                      substr_buf,
+                                                                      256 - 1);
+
+      jerry_char_t *buf_end_p = substr_buf + substr_size;
+
+      /* Update start position by the number of utf-8 characters. */
+      for (jerry_char_t *buf_p = substr_buf; buf_p < buf_end_p; buf_p++)
+      {
+        /* Skip intermediate utf-8 octets. */
+        if ((*buf_p & 0xc0) != 0x80)
+        {
+          substr_pos++;
+        }
+      }
+
+      if (substr_pos == length)
+      {
+        *buf_end_p++ = (arg_index < args_cnt - 1) ? ' ' : '\n';
+      }
+
+      for (jerry_char_t *buf_p = substr_buf; buf_p < buf_end_p; buf_p++)
+      {
+        char chr = (char) *buf_p;
+
+        if (chr != '\0')
+        {
+          jerry_port_print_char (chr);
+          continue;
+        }
+
+        for (jerry_size_t null_index = 0; null_str[null_index] != '\0'; null_index++)
+        {
+          jerry_port_print_char (null_str[null_index]);
+        }
+      }
+    }
+    while (substr_pos < length);
+
+    jerry_release_value (str_val);
+  }
+
+  if (args_cnt == 0 || jerry_value_is_error (ret_val))
+  {
+    jerry_port_print_char ('\n');
+  }
+
+  return ret_val;
+} /* jerryx_handler_print */
+
+jerry_value_t
+jerryx_handler_register_global (const jerry_char_t *name_p, /**< name of the function */
+                                jerry_external_handler_t handler_p) /**< function callback */
+{
+  jerry_value_t global_obj_val = jerry_get_global_object ();
+  jerry_value_t function_name_val = jerry_create_string (name_p);
+  jerry_value_t function_val = jerry_create_external_function (handler_p);
+
+  jerry_value_t result_val = jerry_set_property (global_obj_val, function_name_val, function_val);
+
+  jerry_release_value (function_val);
+  jerry_release_value (function_name_val);
+  jerry_release_value (global_obj_val);
+
+  return result_val;
+} /* jerryx_handler_register_global */
+
+/**
+ * Register a JavaScript function in the global object.
+ */
+static void
+register_js_function (const char *name_p, /**< name of the function */
+                      jerry_external_handler_t handler_p) /**< function callback */
+{
+  jerry_value_t result_val = jerryx_handler_register_global ((const jerry_char_t *) name_p, handler_p);
+
+  if (jerry_value_is_error (result_val))
+  {
+    jerry_port_log (JERRY_LOG_LEVEL_WARNING, "Warning: failed to register '%s' method.", name_p);
+    result_val = jerry_get_value_from_error (result_val, true);
+  }
+
+  jerry_release_value (result_val);
+} /* register_js_function */
+#endif
+
+
 void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& params) {
     m_terminated = false;
     jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
+#if DEBUG_PRINT
+    register_js_function ("print", jerryx_handler_print);
+#endif
+
     m_fatalErrorCallback = nullptr;
 
     m_fn_map_new = new JerryPolyfill("new_map", "", "return new Map();");
@@ -35,6 +170,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_fn_get_own_prop = new JerryPolyfill("get_own_prop", "key", "return Object.getOwnPropertyDescriptor(this, key);");
     m_fn_get_own_names = new JerryPolyfill("get_own_names", "", "return Object.getOwnPropertyNames(this);");
     m_fn_get_names = new JerryPolyfill("get_names", "", "var names = []; for (var name in this) { names.push(name); } return names;");
+    m_fn_set_integrity = new JerryPolyfill("set_integrity", "prop", "Object[prop](this)");
 
     InitalizeSlots();
 
@@ -76,17 +212,6 @@ void JerryIsolate::CancelTerminate(void) {
     jerry_set_vm_exec_stop_callback(NULL, NULL, 1);
 }
 
-namespace v8 {
-    namespace internal {
-        class Heap {
-        public:
-            static void DisposeExternalString(v8::String::ExternalStringResourceBase* external_string) {
-                external_string->Dispose();
-            }
-        };
-    }
-}
-
 void JerryIsolate::RunWeakCleanup(void) {
     for (std::vector<JerryValue*>::reverse_iterator it = m_weakrefs.rbegin();
         it != m_weakrefs.rend();
@@ -117,12 +242,6 @@ void JerryIsolate::Dispose(void) {
         delete *it;
     }
 
-    for (std::vector<v8::String::ExternalStringResource*>::iterator it = m_ext_str_res.begin();
-        it != m_ext_str_res.end();
-        it++) {
-        v8::internal::Heap::DisposeExternalString(*it);
-    }
-
     delete m_magic_string_stack;
     ClearError();
 
@@ -139,6 +258,7 @@ void JerryIsolate::Dispose(void) {
     delete m_fn_get_own_prop;
     delete m_fn_get_own_names;
     delete m_fn_get_names;
+    delete m_fn_set_integrity;
 
     // Release slots
     {
@@ -237,14 +357,15 @@ JerryValue* JerryIsolate::CurrentContext(void) {
 }
 
 JerryValue* JerryIsolate::GetGlobalSymbol(JerryValue* name) {
-    auto element = std::find(m_global_symbols.begin(), m_global_symbols.end(), name);
-    if (element == m_global_symbols.end()) {
-        JerryValue *symbolHandle = new JerryValue (jerry_create_symbol(name->value()));
-        m_global_symbols.push_back(symbolHandle);
-        return symbolHandle;
+    for (auto &it : m_global_symbols) {
+        if (jerry_get_boolean_value (jerry_binary_operation (JERRY_BIN_OP_STRICT_EQUAL, it.first->value(), name->value()))) {
+            return it.second;
+        }
     }
+    JerryValue *symbolHandle = new JerryValue (jerry_create_symbol(name->value()));
+    m_global_symbols.push_back(std::pair<JerryValue*, JerryValue*>(name, symbolHandle));
 
-    return *element;
+    return symbolHandle;
 }
 
 void JerryIsolate::PushHandleScope(JerryHandleScopeType type, void* handle_scope) {
@@ -393,16 +514,6 @@ void JerryIsolate::RemoveAsWeak(JerryValue* value) {
 
     m_weakrefs.erase(weak_iter);
     m_eternals.push_back(value);
-}
-
-void JerryIsolate::AddExternalStringResource(v8::String::ExternalStringResource* resource) {
-    std::vector<v8::String::ExternalStringResource*>::iterator iter = std::find(m_ext_str_res.begin(), m_ext_str_res.end(), resource);
-
-    if (iter != m_ext_str_res.end()) {
-        return;
-    }
-
-    m_ext_str_res.push_back(resource);
 }
 
 void JerryIsolate::AddUTF16String(std::u16string* str) {
