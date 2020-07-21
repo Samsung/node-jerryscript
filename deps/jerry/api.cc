@@ -420,7 +420,7 @@ ScriptCompiler::CachedData::CachedData(const uint8_t* data_, int length_,
 }
 
 ScriptCompiler::CachedData::~CachedData() {
-  UNIMPLEMENTED(2044);
+  V8_CALL_TRACE();
 }
 
 Local<Script> UnboundScript::BindToCurrentContext() {
@@ -2102,9 +2102,7 @@ v8::Isolate* Context::GetIsolate() {
 
 v8::Local<v8::Object> Context::Global() {
   V8_CALL_TRACE();
-  jerry_value_t global = jerry_get_global_object();
-  jerry_release_value (global);
-  RETURN_HANDLE(Object, GetIsolate(), new JerryValue(global));
+  RETURN_HANDLE(Object, GetIsolate(), new JerryValue(jerry_get_global_object()));
 }
 
 Local<v8::Object> Context::GetExtrasBindingObject() {
