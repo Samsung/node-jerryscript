@@ -161,6 +161,9 @@ typedef enum
   VM_OC_ERROR,                   /**< error while the vm_loop is suspended */
 
   VM_OC_JUMP,                    /**< jump */
+#if ENABLED (JERRY_ESNEXT)
+  VM_OC_BRANCH_IF_NULLISH,       /** branch if undefined or null */
+#endif /* ENABLED (JERRY_ESNEXT) */
   VM_OC_BRANCH_IF_STRICT_EQUAL,  /**< branch if strict equal */
 
   /* These four opcodes must be in this order. */
@@ -296,6 +299,7 @@ typedef enum
 {
 #if !ENABLED (JERRY_ESNEXT)
   VM_OC_EXP = VM_OC_NONE,                     /**< exponentiation */
+  VM_OC_BRANCH_IF_NULLISH = VM_OC_NONE,       /** branch if undefined or null */
 #endif /* !ENABLED (JERRY_ESNEXT) */
 #if !ENABLED (JERRY_DEBUGGER)
   VM_OC_BREAKPOINT_ENABLED = VM_OC_NONE,      /**< enabled breakpoint for debugger is unused */
@@ -454,7 +458,7 @@ ecma_value_t vm_run_module (const ecma_compiled_code_t *bytecode_p, ecma_object_
 #endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 
 ecma_value_t vm_run (const ecma_compiled_code_t *bytecode_header_p, ecma_value_t this_binding_value,
-                     ecma_object_t *lex_env_p, const ecma_value_t *arg_list_p, ecma_length_t arg_list_len);
+                     ecma_object_t *lex_env_p, const ecma_value_t *arg_list_p, uint32_t arg_list_len);
 ecma_value_t vm_execute (vm_frame_ctx_t *frame_ctx_p);
 
 bool vm_is_strict_mode (void);

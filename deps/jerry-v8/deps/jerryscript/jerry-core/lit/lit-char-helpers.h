@@ -223,6 +223,7 @@ bool lit_char_is_hex_digit (ecma_char_t c);
 #if ENABLED (JERRY_ESNEXT)
 bool lit_char_is_binary_digit (ecma_char_t c);
 #endif /* ENABLED (JERRY_ESNEXT) */
+void lit_char_unicode_escape (ecma_stringbuilder_t *builder_p, ecma_char_t c);
 uint32_t lit_char_hex_to_int (ecma_char_t c);
 size_t lit_code_point_to_cesu8_bytes (uint8_t *dst_p, lit_code_point_t code_point);
 size_t lit_code_point_get_cesu8_length (lit_code_point_t code_point);
@@ -246,5 +247,10 @@ bool lit_char_is_word_char (lit_code_point_t c);
 
 lit_code_point_t lit_char_to_lower_case (lit_code_point_t cp, ecma_stringbuilder_t *builder_p);
 lit_code_point_t lit_char_to_upper_case (lit_code_point_t cp, ecma_stringbuilder_t *builder_p);
+
+#if ENABLED (JERRY_ESNEXT)
+bool lit_char_fold_to_lower (lit_code_point_t cp);
+bool lit_char_fold_to_upper (lit_code_point_t cp);
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 #endif /* !LIT_CHAR_HELPERS_H */

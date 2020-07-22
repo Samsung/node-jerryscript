@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-var t = /abc/g;
-t.lastIndex = -12.5;
-result = t.exec("abc   abc");
-assert(!result);
-assert(t.lastIndex === 0);
+try {
+  var v0 = Object.freeze (RegExp ("foo", "g")).compile ();
+  assert(false);
+} catch (e) {
+  assert(e instanceof TypeError);
+}

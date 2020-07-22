@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-var t = /abc/g;
-t.lastIndex = -12.5;
-result = t.exec("abc   abc");
-assert(!result);
-assert(t.lastIndex === 0);
+var r = /(?:(?:^b?)*)*a/.exec("bbba")
+
+assert (r !== null);
+assert (r.index === 3);
+assert (r[0] === "a");
