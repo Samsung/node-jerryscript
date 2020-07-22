@@ -1889,11 +1889,20 @@ MaybeLocal<String> String::NewFromTwoByte(Isolate* isolate, const uint16_t* data
 
 /* External strings are not supported yet. */
 MaybeLocal<String> String::NewExternalOneByte(Isolate* isolate, ExternalOneByteStringResource* resource) {
-    MaybeLocal<String> result = String::NewFromUtf8(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
+    //MaybeLocal<String> result = String::NewFromUtf8(isolate, resource->data(), v8::NewStringType::kNormal, resource->length());
     // TODO: bind ExternalStringResource to the String and NOT the Isolate lifecycle.
-    reinterpret_cast<JerryIsolate*>(isolate)->AddExternalStringResource(reinterpret_cast<ExternalStringResource*>(resource));
+    //reinterpret_cast<JerryIsolate*>(isolate)->AddExternalStringResource(reinterpret_cast<ExternalStringResource*>(resource));
 
-    return result;
+    V8_CALL_TRACE();
+    uint32_t length = resource->length();
+
+    if (length >= String::kMaxLength) {
+        return Local<String>();
+    }
+
+    jerry_value_t str_value = jerry_create_external_string_sz((const jerry_char_t*)resource->data(), length, NULL);
+
+    RETURN_HANDLE(String, isolate, new JerryValue(str_value));
 }
 
 MaybeLocal<String> String::NewExternalTwoByte(Isolate* isolate, ExternalStringResource* resource) {
