@@ -2922,6 +2922,20 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
           ecma_fast_free_value (value);
           continue;
         }
+#if ENABLED (JERRY_ESNEXT)
+        case VM_OC_BRANCH_IF_NULLISH:
+        {
+          left_value = stack_top_p[-1];
+
+          if (!ecma_is_value_null (left_value) && !ecma_is_value_undefined (left_value))
+          {
+            byte_code_p = byte_code_start_p + branch_offset;
+            continue;
+          }
+          --stack_top_p;
+          continue;
+        }
+#endif /* ENABLED (JERRY_ESNEXT) */
         case VM_OC_PLUS:
         case VM_OC_MINUS:
         {
@@ -4572,7 +4586,7 @@ finish:
 static void JERRY_ATTR_NOINLINE
 vm_init_exec (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
               const ecma_value_t *arg_p, /**< arguments list */
-              ecma_length_t arg_list_len) /**< length of arguments list */
+              uint32_t arg_list_len) /**< length of arguments list */
 {
   frame_ctx_p->prev_context_p = JERRY_CONTEXT (vm_top_context_p);
   frame_ctx_p->block_result = ECMA_VALUE_UNDEFINED;
@@ -4746,7 +4760,7 @@ vm_run (const ecma_compiled_code_t *bytecode_header_p, /**< byte-code data heade
         ecma_value_t this_binding_value, /**< value of 'ThisBinding' */
         ecma_object_t *lex_env_p, /**< lexical environment to use */
         const ecma_value_t *arg_list_p, /**< arguments list */
-        ecma_length_t arg_list_len) /**< length of arguments list */
+        uint32_t arg_list_len) /**< length of arguments list */
 {
   vm_frame_ctx_t *frame_ctx_p;
   size_t frame_size;
