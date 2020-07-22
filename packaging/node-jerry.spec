@@ -43,7 +43,7 @@ rm -rf out
   --without-bundled-v8 \
   --ninja
 
-ninja -C %{output_path}
+ninja -v -C %{output_path}
 strip -v %{output_path}/node
 
 %install

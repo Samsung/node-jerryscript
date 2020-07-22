@@ -48,9 +48,9 @@ jerry_value_t JerryV8GetterSetterHandler(
 static void JerryV8GetterSetterHandlerDataFree(void *data_p) {
     JerryV8GetterSetterHandlerData* data = reinterpret_cast<JerryV8GetterSetterHandlerData*>(data_p);
 
-    if (data->is_setter == false && data->external) {
-        jerry_release_value(data->external);
-    }
+    // if (data->is_setter == false && data->external) {
+    //     jerry_release_value(data->external);
+    // }
 
     delete data;
 }

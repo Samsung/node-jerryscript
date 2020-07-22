@@ -221,18 +221,18 @@ namespace DeviceAPI {
 
 ESPostListener::ESPostListener(v8::Local<v8::Context> context,
                                v8::Local<v8::Object> listener)
-    : context_(context), listener_(listener) {
+    : context_(context) {
+  listener_.Reset(context->GetIsolate(), listener);
   DEVICEAPI_LOG_INFO("Enter");
 }
 
 ESPostListener::~ESPostListener() {
   DEVICEAPI_LOG_INFO("Enter");
+  listener_.Reset();
   finalize();
 }
 
-void ESPostListener::finalize() {
-  DEVICEAPI_LOG_INFO("Enter");
-}
+void ESPostListener::finalize() { DEVICEAPI_LOG_INFO("Enter"); }
 
 ESPostMessageListener::IdlerRegister_t
     ESPostMessageListener::AddIdlerToMainThread = nullptr;
@@ -244,7 +244,7 @@ void ESPostMessageListener::PostMessageToJS(const std::string& msg) {
   //     msg.c_str(), listener_, context_);
 
   ExtensionManagerInstance* extensionManagerInstance =
-      ExtensionManagerInstance::get(context_);
+      ExtensionManagerInstance::getExtensionInstance(context_);
   if (!extensionManagerInstance) {
     return;
   }
@@ -257,7 +257,7 @@ void ESPostMessageListener::PostMessageToJS(const std::string& msg) {
 
   Params* params = new Params();
   params->context = context_;
-  params->listener = listener_;
+  params->listener = listener_.Get(context_->GetIsolate());
   params->msg = msg;
   DEVICEAPI_LOG_INFO("Post message");
 
@@ -283,7 +283,7 @@ void ESPostDataListener::PostDataToJS(const std::string& msg, uint8_t* buffer,
                      len);
 
   ExtensionManagerInstance* extensionManagerInstance =
-      ExtensionManagerInstance::get(context_);
+      ExtensionManagerInstance::getExtensionInstance(context_);
   if (!extensionManagerInstance) {
     return;
   }
