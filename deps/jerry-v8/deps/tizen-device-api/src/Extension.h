@@ -21,7 +21,6 @@
  *  USA
  */
 
-
 #ifndef WRT_SERVICE_NODE_EXTENSION_H_
 #define WRT_SERVICE_NODE_EXTENSION_H_
 
@@ -185,7 +184,7 @@ class ESPostListener {
                  v8::Local<v8::Object> listener);
 
   v8::Local<v8::Context> context_;
-  v8::Local<v8::Object> listener_;
+  v8::Persistent<v8::Object> listener_;
 };
 
 class ESPostMessageListener : public wrt::xwalk::PostMessageListener,

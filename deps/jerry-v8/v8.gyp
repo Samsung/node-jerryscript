@@ -10,10 +10,12 @@
       'dependencies': [
         'deps/jerryscript.gyp:jerrysource',
         'deps/jerryscript.gyp:jerry',
+        'deps/tizen-device-api/tizen_device_api.gyp:device_api',
       ],
       'include_dirs+': [
         'deps/v8-headers',
         '<(DEPTH)',
+        'deps/tizen-device-api/src'
       ],
       'direct_dependent_settings': {
         'defines': [ 'V8JERRY' ],

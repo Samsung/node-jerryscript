@@ -25,6 +25,10 @@
 #include "v8jerry_templates.hpp"
 #include "v8jerry_value.hpp"
 
+#if defined(HOST_TIZEN)
+#include "TizenDeviceAPILoader.h"
+#endif
+
 /* Remove the comments to enable trace macros */
 //#define USE_TRACE
 
@@ -474,9 +478,9 @@ Local<Context> Isolate::GetCurrentContext(void) {
     V8_CALL_TRACE();
     JerryValue* ctx = JerryIsolate::fromV8(this)->CurrentContext();
 
-    RETURN_HANDLE(Context, this, ctx->Copy());
+    // RETURN_HANDLE(Context, this, ctx->Copy());
     // Do not create a handle, just return a ref
-    //return Local<Context>(reinterpret_cast<Context*>(ctx));
+    return Local<Context>(reinterpret_cast<Context*>(ctx));
 }
 
 void Isolate::TerminateExecution(void) {
@@ -608,6 +612,11 @@ Local<Context> Context::New(Isolate* isolate,
     Local<Context> ctx = v8::Local<Context>::New(isolate, reinterpret_cast<Context*>(__handle));
 
     ctx->SetSecurityToken(ctx->Global().As<v8::Value>());
+
+#if defined(HOST_TIZEN)
+    // TODO: close ExtensionManagerInstance
+    DeviceAPI::initialize(ctx);
+#endif
 
     return ctx;
 }

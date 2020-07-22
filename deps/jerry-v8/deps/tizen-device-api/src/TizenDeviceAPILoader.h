@@ -54,11 +54,13 @@
 #include <assert.h>
 #define DEVICEAPI_ASSERT(assertion) assert(assertion)
 #else
-#define DEVICEAPI_ASSERT(assertion)                                         \
-  do {                                                                      \
-    DEVICEAPI_LOG_ERROR("ASSERT_SHOULD_NOT_BE_HERE at %s (%d)\n", __FILE__, \
-                        __LINE__);                                          \
-    ::abort();                                                              \
+#define DEVICEAPI_ASSERT(assertion)                                           \
+  do {                                                                        \
+    if (!assertion) {                                                         \
+      DEVICEAPI_LOG_ERROR("ASSERT_SHOULD_NOT_BE_HERE at %s (%d)\n", __FILE__, \
+                          __LINE__);                                          \
+      ::abort();                                                              \
+    }                                                                         \
   } while (0)
 #endif
 
@@ -124,13 +126,17 @@ class ExtensionManagerInstance {
   ExtensionManagerInstance(v8::Local<v8::Context> context);
   ~ExtensionManagerInstance();
 
-  void* operator new(size_t size);
-  void* operator new[](size_t size) = delete;
-
-  static ExtensionManagerInstance* get(v8::Local<v8::Context> context);
-  wrt::xwalk::ExtensionInstance* getExtensionInstanceFromCallingContext(
-      v8::Local<v8::Context> context, v8::Local<v8::Value> thisValue);
+  static ExtensionManagerInstance* getExtensionInstance(
+      v8::Local<v8::Context> context);
+  static wrt::xwalk::ExtensionInstance* getExtensionInstanceFromCallingObject(
+      v8::Local<v8::Value> thisValue);
   v8::Local<v8::Object> initializeExtensionInstance(const char*);
+  v8::Local<v8::Context> Context() { return m_context; }
+
+  v8::Persistent<v8::Value> m_tizenValue;
+  v8::Persistent<v8::Value> m_xwalkValue;
+
+  v8::Local<v8::ObjectTemplate> m_extensionObjectTemplate;
 
  private:
   struct ChunkData {
@@ -146,7 +152,7 @@ class ExtensionManagerInstance {
       ExtensionInstanceMap;
   typedef std::vector<ESPostListener*> ESPostListenerVector;
 
-  v8::Local<v8::Object> createExtensionObject(v8::Local<v8::Context> context);
+  v8::Local<v8::Object> createExtensionObject();
   size_t addChunk(uint8_t* buffer, size_t length);
   ChunkData getChunk(size_t chunkID);
 
@@ -155,14 +161,6 @@ class ExtensionManagerInstance {
   ESPostListenerVector m_postListeners;
   ChunkDataMap m_chunkDataMap;
   size_t m_chunkID;
-
-#define DECLARE_TIZEN_OBJECT(name) \
-  v8::Local<v8::Value> VALUE_NAME_STRCAT(m_##name);
-  FOR_EACH_EARLY_TIZEN_STRINGS(DECLARE_TIZEN_OBJECT);
-  FOR_EACH_LAZY_TIZEN_STRINGS(DECLARE_TIZEN_OBJECT);
-  SUPPORTED_TIZEN_PROPERTY(DECLARE_TIZEN_OBJECT);
-  SUPPORTED_TIZEN_ENTRYPOINTS(DECLARE_TIZEN_OBJECT);
-#undef DECLARE_TIZEN_OBJECT
 
   // static members
   typedef std::map<v8::Context*, ExtensionManagerInstance*>
@@ -174,7 +172,7 @@ class ExtensionManagerInstance {
 
 inline ExtensionManagerInstance* ExtensionManagerInstanceGet(
     v8::Local<v8::Context> context) {
-  return ExtensionManagerInstance::get(context);
+  return ExtensionManagerInstance::getExtensionInstance(context);
 }
 
 ExtensionManagerInstance* initialize(v8::Local<v8::Context> context);
