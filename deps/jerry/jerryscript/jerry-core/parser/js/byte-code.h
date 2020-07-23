@@ -576,6 +576,10 @@
               VM_OC_INITIALIZER_PUSH_PROP | VM_OC_GET_STACK) \
   CBC_FORWARD_BRANCH (CBC_EXT_DEFAULT_INITIALIZER, -1, \
                       VM_OC_DEFAULT_INITIALIZER) \
+  CBC_OPCODE (CBC_EXT_ERROR, CBC_NO_FLAG, 0, \
+              VM_OC_ERROR) \
+  CBC_FORWARD_BRANCH (CBC_EXT_BRANCH_IF_NULLISH, -1, \
+                      VM_OC_BRANCH_IF_NULLISH) \
   \
   /* Basic opcodes. */ \
   CBC_OPCODE (CBC_EXT_PUSH_LITERAL_PUSH_NUMBER_0, CBC_HAS_LITERAL_ARG, 2, \
@@ -600,14 +604,14 @@
               VM_OC_GET_TEMPLATE_OBJECT | VM_OC_PUT_STACK) \
   CBC_OPCODE (CBC_EXT_LINE, CBC_NO_FLAG, 0, \
               VM_OC_LINE) \
-  CBC_OPCODE (CBC_EXT_ERROR, CBC_NO_FLAG, 0, \
-              VM_OC_ERROR) \
   CBC_OPCODE (CBC_EXT_THROW_REFERENCE_ERROR, CBC_NO_FLAG, 1, \
               VM_OC_THROW_REFERENCE_ERROR) \
   CBC_OPCODE (CBC_EXT_THROW_ASSIGN_CONST_ERROR, CBC_NO_FLAG, 0, \
               VM_OC_THROW_CONST_ERROR) \
   CBC_OPCODE (CBC_EXT_REQUIRE_OBJECT_COERCIBLE, CBC_NO_FLAG, 0, \
               VM_OC_REQUIRE_OBJECT_COERCIBLE) \
+  CBC_OPCODE (CBC_EXT_COPY_DATA_PROPERTIES, CBC_NO_FLAG, -1, \
+              VM_OC_COPY_DATA_PROPERTIES) \
   CBC_OPCODE (CBC_EXT_SET_FUNCTION_NAME, CBC_HAS_LITERAL_ARG, 0, \
               VM_OC_SET_FUNCTION_NAME | VM_OC_GET_LITERAL) \
   CBC_OPCODE (CBC_EXT_SET_CLASS_NAME, CBC_HAS_LITERAL_ARG, 0, \
@@ -674,6 +678,14 @@
               VM_OC_SUPER_REFERENCE | VM_OC_GET_STACK) \
   CBC_OPCODE (CBC_EXT_SUPER_PROP_LITERAL_ASSIGNMENT_REFERENCE, CBC_HAS_LITERAL_ARG, 2, \
               VM_OC_SUPER_REFERENCE | VM_OC_GET_LITERAL) \
+  CBC_OPCODE (CBC_EXT_OBJECT_LITERAL_SET_HOME_OBJECT, CBC_NO_FLAG, 0, \
+              VM_OC_SET_HOME_OBJECT) \
+  CBC_OPCODE (CBC_EXT_OBJECT_LITERAL_SET_HOME_OBJECT_COMPUTED, CBC_NO_FLAG, 0, \
+              VM_OC_SET_HOME_OBJECT) \
+  CBC_OPCODE (CBC_EXT_PUSH_OBJECT_SUPER_ENVIRONMENT, CBC_NO_FLAG, 1, \
+              VM_OC_OBJECT_LITERAL_HOME_ENV) \
+  CBC_OPCODE (CBC_EXT_POP_OBJECT_SUPER_ENVIRONMENT, CBC_NO_FLAG, -1, \
+              VM_OC_OBJECT_LITERAL_HOME_ENV) \
   CBC_OPCODE (CBC_EXT_RESOLVE_LEXICAL_THIS, CBC_NO_FLAG, 1, \
               VM_OC_RESOLVE_LEXICAL_THIS | VM_OC_PUT_STACK) \
   CBC_OPCODE (CBC_EXT_LOCAL_EVAL, CBC_HAS_BYTE_ARG, 0, \
@@ -844,7 +856,7 @@ typedef enum
   CBC_CODE_FLAGS_HAS_TAGGED_LITERALS = (1u << 9), /**< this function has tagged template literal list */
   CBC_CODE_FLAGS_LEXICAL_BLOCK_NEEDED = (1u << 10), /**< compiled code needs a lexical block */
 
-  /* Bits from bit 13 is reserved for function types (see CBC_FUNCTION_TYPE_SHIFT).
+  /* Bits from bit 12 is reserved for function types (see CBC_FUNCTION_TYPE_SHIFT).
    * Note: the last bits are used for type flags because < and >= operators can be used to
            check a range of types without decoding the actual type. */
 } cbc_code_flags_t;
@@ -865,14 +877,17 @@ typedef enum
   CBC_FUNCTION_ASYNC_GENERATOR, /**< async generator function */
 
   /* The following functions has no prototype (see CBC_FUNCTION_HAS_PROTOTYPE) */
-  CBC_FUNCTION_ARROW, /**< arrow function */
   CBC_FUNCTION_ACCESSOR, /**< property accessor function */
+
+  /* The following functions are arrow function (see CBC_FUNCTION_IS_ARROW) */
+  CBC_FUNCTION_ARROW, /**< arrow function */
+  CBC_FUNCTION_ASYNC_ARROW, /**< arrow function */
 } cbc_code_function_types_t;
 
 /**
  * Shift for getting / setting the function type of a byte code.
  */
-#define CBC_FUNCTION_TYPE_SHIFT 13
+#define CBC_FUNCTION_TYPE_SHIFT 12
 
 /**
  * Compute function type bits in code flags.
@@ -902,7 +917,13 @@ typedef enum
  * Checks whether the function has prototype property.
  */
 #define CBC_FUNCTION_HAS_PROTOTYPE(flags) \
-  ((flags) < (CBC_FUNCTION_ARROW << CBC_FUNCTION_TYPE_SHIFT))
+  ((flags) < (CBC_FUNCTION_ACCESSOR << CBC_FUNCTION_TYPE_SHIFT))
+
+/**
+ * Checks whether the function is an arrow function.
+ */
+#define CBC_FUNCTION_IS_ARROW(flags) \
+  ((flags) >= (CBC_FUNCTION_ARROW << CBC_FUNCTION_TYPE_SHIFT))
 
 /**
  * Any arguments object is needed

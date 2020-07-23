@@ -106,6 +106,9 @@ ecma_value_t
 opfunc_typeof (ecma_value_t left_value);
 
 void
+opfunc_set_data_property (ecma_object_t *object_p, ecma_string_t *prop_name_p, ecma_value_t value);
+
+void
 opfunc_set_accessor (bool is_getter, ecma_value_t object, ecma_string_t *accessor_name_p, ecma_value_t accessor);
 
 ecma_value_t
@@ -143,6 +146,9 @@ opfunc_async_create_and_await (vm_frame_ctx_t *frame_ctx_p, ecma_value_t value, 
 
 ecma_value_t
 opfunc_create_implicit_class_constructor (uint8_t opcode);
+
+void
+opfunc_set_home_object (ecma_object_t *func_p, ecma_object_t *parent_env_p);
 
 void
 opfunc_push_class_environment (vm_frame_ctx_t *frame_ctx_p,  ecma_value_t **vm_stack_top, ecma_value_t class_name);

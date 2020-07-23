@@ -121,6 +121,49 @@ opfunc_typeof (ecma_value_t left_value) /**< left value */
 } /* opfunc_typeof */
 
 /**
+ * Update data property for object literals.
+ */
+void
+opfunc_set_data_property (ecma_object_t *object_p, /**< object */
+                          ecma_string_t *prop_name_p, /**< data property name */
+                          ecma_value_t value) /**< new value */
+{
+  JERRY_ASSERT (!ecma_op_object_is_fast_array (object_p));
+
+  ecma_property_t *property_p = ecma_find_named_property (object_p, prop_name_p);
+  ecma_property_value_t *prop_value_p;
+
+  if (property_p == NULL)
+  {
+    prop_value_p = ecma_create_named_data_property (object_p,
+                                                    prop_name_p,
+                                                    ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE,
+                                                    NULL);
+  }
+  else
+  {
+    prop_value_p = ECMA_PROPERTY_VALUE_PTR (property_p);
+
+    if (ECMA_PROPERTY_GET_TYPE (*property_p) == ECMA_PROPERTY_TYPE_NAMEDACCESSOR)
+    {
+#if ENABLED (JERRY_CPOINTER_32_BIT)
+      ecma_getter_setter_pointers_t *getter_setter_pair_p;
+      getter_setter_pair_p = ECMA_GET_NON_NULL_POINTER (ecma_getter_setter_pointers_t,
+                                                        ECMA_PROPERTY_VALUE_PTR (property_p)->getter_setter_pair_cp);
+      jmem_pools_free (getter_setter_pair_p, sizeof (ecma_getter_setter_pointers_t));
+#endif /* ENABLED (JERRY_CPOINTER_32_BIT) */
+
+      ECMA_CHANGE_PROPERTY_TYPE (property_p);
+      *property_p = (uint8_t) (*property_p | ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE);
+      prop_value_p->value = ecma_copy_value_if_not_object (value);
+      return;
+    }
+  }
+
+  ecma_named_data_property_assign_value (object_p, prop_value_p, value);
+} /* opfunc_set_data_property */
+
+/**
  * Update getter or setter for object literals.
  */
 void
@@ -134,28 +177,22 @@ opfunc_set_accessor (bool is_getter, /**< is getter accessor */
   JERRY_ASSERT (!ecma_op_object_is_fast_array (object_p));
 
   ecma_property_t *property_p = ecma_find_named_property (object_p, accessor_name_p);
+  ecma_object_t *accessor_p = ecma_get_object_from_value (accessor);
 
-  if (property_p != NULL
-      && ECMA_PROPERTY_GET_TYPE (*property_p) != ECMA_PROPERTY_TYPE_NAMEDACCESSOR)
+  ecma_object_t *getter_func_p = NULL;
+  ecma_object_t *setter_func_p = NULL;
+
+  if (is_getter)
   {
-    ecma_delete_property (object_p, ECMA_PROPERTY_VALUE_PTR (property_p));
-    property_p = NULL;
+    getter_func_p = accessor_p;
+  }
+  else
+  {
+    setter_func_p = accessor_p;
   }
 
   if (property_p == NULL)
   {
-    ecma_object_t *getter_func_p = NULL;
-    ecma_object_t *setter_func_p = NULL;
-
-    if (is_getter)
-    {
-      getter_func_p = ecma_get_object_from_value (accessor);
-    }
-    else
-    {
-      setter_func_p = ecma_get_object_from_value (accessor);
-    }
-
     ecma_create_named_accessor_property (object_p,
                                          accessor_name_p,
                                          getter_func_p,
@@ -163,21 +200,40 @@ opfunc_set_accessor (bool is_getter, /**< is getter accessor */
                                          ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE,
                                          NULL);
   }
-  else if (is_getter)
-  {
-    ecma_object_t *getter_func_p = ecma_get_object_from_value (accessor);
-
-    ecma_set_named_accessor_property_getter (object_p,
-                                             ECMA_PROPERTY_VALUE_PTR (property_p),
-                                             getter_func_p);
-  }
   else
   {
-    ecma_object_t *setter_func_p = ecma_get_object_from_value (accessor);
+    ecma_property_value_t *prop_value_p = ECMA_PROPERTY_VALUE_PTR (property_p);
 
-    ecma_set_named_accessor_property_setter (object_p,
-                                             ECMA_PROPERTY_VALUE_PTR (property_p),
-                                             setter_func_p);
+    if (ECMA_PROPERTY_GET_TYPE (*property_p) == ECMA_PROPERTY_TYPE_NAMEDDATA)
+    {
+#if ENABLED (JERRY_CPOINTER_32_BIT)
+      ecma_getter_setter_pointers_t *getter_setter_pair_p;
+      getter_setter_pair_p = jmem_pools_alloc (sizeof (ecma_getter_setter_pointers_t));
+#endif /* ENABLED (JERRY_CPOINTER_32_BIT) */
+
+      ecma_free_value_if_not_object (prop_value_p->value);
+      ECMA_CHANGE_PROPERTY_TYPE (property_p);
+      *property_p = (uint8_t) (*property_p & ~ECMA_PROPERTY_FLAG_WRITABLE);
+
+#if ENABLED (JERRY_CPOINTER_32_BIT)
+      ECMA_SET_POINTER (getter_setter_pair_p->getter_cp, getter_func_p);
+      ECMA_SET_POINTER (getter_setter_pair_p->setter_cp, setter_func_p);
+      ECMA_SET_NON_NULL_POINTER (prop_value_p->getter_setter_pair_cp, getter_setter_pair_p);
+#else /* !ENABLED (JERRY_CPOINTER_32_BIT) */
+      ECMA_SET_POINTER (prop_value_p->getter_setter_pair.getter_cp, getter_func_p);
+      ECMA_SET_POINTER (prop_value_p->getter_setter_pair.setter_cp, setter_func_p);
+#endif /* ENABLED (JERRY_CPOINTER_32_BIT) */
+      return;
+    }
+
+    if (is_getter)
+    {
+      ecma_set_named_accessor_property_getter (object_p, prop_value_p, accessor_p);
+    }
+    else
+    {
+      ecma_set_named_accessor_property_setter (object_p, prop_value_p, accessor_p);
+    }
   }
 } /* opfunc_set_accessor */
 
@@ -206,7 +262,7 @@ vm_op_delete_prop (ecma_value_t object, /**< base object */
   }
   JERRY_ASSERT (check_coercible == ECMA_VALUE_EMPTY);
 
-  ecma_string_t *name_string_p = ecma_op_to_prop_name (property);
+  ecma_string_t *name_string_p = ecma_op_to_property_key (property);
 
   if (JERRY_UNLIKELY (name_string_p == NULL))
   {
@@ -857,9 +913,8 @@ opfunc_async_create_and_await (vm_frame_ctx_t *frame_ctx_p, /**< frame context *
                                uint16_t extra_flags) /**< extra flags */
 {
   JERRY_ASSERT (frame_ctx_p->block_result == ECMA_VALUE_UNDEFINED);
-  /* TODO: An CBC_FUNCTION_ASYNC_ARROW should be defined. */
   JERRY_ASSERT (CBC_FUNCTION_GET_TYPE (frame_ctx_p->bytecode_header_p->status_flags) == CBC_FUNCTION_ASYNC
-                || CBC_FUNCTION_GET_TYPE (frame_ctx_p->bytecode_header_p->status_flags) == CBC_FUNCTION_ARROW);
+                || CBC_FUNCTION_GET_TYPE (frame_ctx_p->bytecode_header_p->status_flags) == CBC_FUNCTION_ASYNC_ARROW);
 
   ecma_object_t *promise_p = ecma_builtin_get (ECMA_BUILTIN_ID_PROMISE);
   ecma_value_t result = ecma_promise_reject_or_resolve (ecma_make_object_value (promise_p), value, true);
@@ -903,7 +958,7 @@ static ecma_value_t
 ecma_op_implicit_constructor_handler_cb (const ecma_value_t function_obj, /**< the function itself */
                                          const ecma_value_t this_val, /**< this_arg of the function */
                                          const ecma_value_t args_p[], /**< argument list */
-                                         const ecma_length_t args_count) /**< argument number */
+                                         const uint32_t args_count) /**< argument number */
 {
   JERRY_UNUSED_4 (function_obj, this_val, args_p, args_count);
 
@@ -927,7 +982,7 @@ static ecma_value_t
 ecma_op_implicit_constructor_handler_heritage_cb (const ecma_value_t function_obj, /**< the function itself */
                                                   const ecma_value_t this_val, /**< this_arg of the function */
                                                   const ecma_value_t args_p[], /**< argument list */
-                                                  const ecma_length_t args_count) /**< argument number */
+                                                  const uint32_t args_count) /**< argument number */
 {
   JERRY_UNUSED_4 (function_obj, this_val, args_p, args_count);
 
@@ -1015,10 +1070,12 @@ opfunc_create_implicit_class_constructor (uint8_t opcode) /**< current cbc opcod
 /**
  * Set the [[HomeObject]] attribute of the given functon object
  */
-static inline void JERRY_ATTR_ALWAYS_INLINE
+inline void JERRY_ATTR_ALWAYS_INLINE
 opfunc_set_home_object (ecma_object_t *func_p, /**< function object */
                         ecma_object_t *parent_env_p) /**< parent environment */
 {
+  JERRY_ASSERT (ecma_is_lexical_environment (parent_env_p));
+
   if (ecma_get_object_type (func_p) == ECMA_OBJECT_TYPE_FUNCTION)
   {
     JERRY_ASSERT (!ecma_get_object_is_builtin (func_p));
@@ -1341,7 +1398,7 @@ opfunc_form_super_reference (ecma_value_t **vm_stack_top_p, /**< current vm stac
   }
 
   ecma_object_t *parent_p = ecma_get_object_from_value (parent);
-  ecma_string_t *prop_name_p = ecma_op_to_prop_name (prop_name);
+  ecma_string_t *prop_name_p = ecma_op_to_property_key (prop_name);
 
   if (prop_name_p == NULL)
   {
@@ -1391,7 +1448,7 @@ opfunc_assign_super_reference (ecma_value_t **vm_stack_top_p, /**< vm stack top 
   }
 
   ecma_object_t *base_obj_p = ecma_get_object_from_value (base_obj);
-  ecma_string_t *prop_name_p = ecma_op_to_prop_name (stack_top_p[-2]);
+  ecma_string_t *prop_name_p = ecma_op_to_property_key (stack_top_p[-2]);
 
   if (prop_name_p == NULL)
   {

@@ -161,6 +161,9 @@ typedef enum
   VM_OC_ERROR,                   /**< error while the vm_loop is suspended */
 
   VM_OC_JUMP,                    /**< jump */
+#if ENABLED (JERRY_ESNEXT)
+  VM_OC_BRANCH_IF_NULLISH,       /** branch if undefined or null */
+#endif /* ENABLED (JERRY_ESNEXT) */
   VM_OC_BRANCH_IF_STRICT_EQUAL,  /**< branch if strict equal */
 
   /* These four opcodes must be in this order. */
@@ -241,6 +244,7 @@ typedef enum
   VM_OC_COPY_TO_GLOBAL,          /**< copy value to global lex env */
   VM_OC_COPY_FROM_ARG,           /**< copy value from arg lex env */
   VM_OC_CLONE_CONTEXT,           /**< clone lexical environment with let/const declarations */
+  VM_OC_COPY_DATA_PROPERTIES,    /**< copy data properties of an object */
   VM_OC_SET_COMPUTED_PROPERTY,   /**< set computed property */
 
   VM_OC_FOR_OF_INIT,             /**< for-of init context */
@@ -258,6 +262,8 @@ typedef enum
   VM_OC_PUSH_SUPER_CONSTRUCTOR,  /**< getSuperConstructor operation */
   VM_OC_RESOLVE_LEXICAL_THIS,    /**< resolve this_binding from from the lexical environment */
   VM_OC_SUPER_REFERENCE,         /**< push super reference */
+  VM_OC_SET_HOME_OBJECT,         /**< set the [[HomeObject]] environment in an object literal */
+  VM_OC_OBJECT_LITERAL_HOME_ENV, /**< create/destroy [[HomeObject]] environment of an object literal */
   VM_OC_SET_FUNCTION_NAME,       /**< set function name property */
 
   VM_OC_PUSH_SPREAD_ELEMENT,     /**< push spread element */
@@ -293,6 +299,7 @@ typedef enum
 {
 #if !ENABLED (JERRY_ESNEXT)
   VM_OC_EXP = VM_OC_NONE,                     /**< exponentiation */
+  VM_OC_BRANCH_IF_NULLISH = VM_OC_NONE,       /** branch if undefined or null */
 #endif /* !ENABLED (JERRY_ESNEXT) */
 #if !ENABLED (JERRY_DEBUGGER)
   VM_OC_BREAKPOINT_ENABLED = VM_OC_NONE,      /**< enabled breakpoint for debugger is unused */
@@ -312,6 +319,7 @@ typedef enum
   VM_OC_COPY_TO_GLOBAL = VM_OC_NONE,          /**< copy value to global lex env */
   VM_OC_COPY_FROM_ARG = VM_OC_NONE,           /**< copy value from arg lex env */
   VM_OC_CLONE_CONTEXT = VM_OC_NONE,           /**< clone lexical environment with let/const declarations */
+  VM_OC_COPY_DATA_PROPERTIES = VM_OC_NONE,    /**< copy data properties of an object */
   VM_OC_SET_COMPUTED_PROPERTY = VM_OC_NONE,   /**< set computed property is unused */
 
   VM_OC_FOR_OF_INIT = VM_OC_NONE,             /**< for-of init context */
@@ -329,6 +337,8 @@ typedef enum
   VM_OC_PUSH_SUPER_CONSTRUCTOR = VM_OC_NONE,  /**< getSuperConstructor operation */
   VM_OC_RESOLVE_LEXICAL_THIS = VM_OC_NONE,    /**< resolve this_binding from from the lexical environment */
   VM_OC_SUPER_REFERENCE = VM_OC_NONE,         /**< push super reference */
+  VM_OC_SET_HOME_OBJECT = VM_OC_NONE,         /**< set the [[HomeObject]] internal property in an object literal */
+  VM_OC_OBJECT_LITERAL_HOME_ENV = VM_OC_NONE, /**< create/destroy [[HomeObject]] environment of an object literal */
   VM_OC_SET_FUNCTION_NAME = VM_OC_NONE,       /**< set function name property */
 
   VM_OC_PUSH_SPREAD_ELEMENT = VM_OC_NONE,     /**< push spread element */
@@ -448,7 +458,7 @@ ecma_value_t vm_run_module (const ecma_compiled_code_t *bytecode_p, ecma_object_
 #endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 
 ecma_value_t vm_run (const ecma_compiled_code_t *bytecode_header_p, ecma_value_t this_binding_value,
-                     ecma_object_t *lex_env_p, const ecma_value_t *arg_list_p, ecma_length_t arg_list_len);
+                     ecma_object_t *lex_env_p, const ecma_value_t *arg_list_p, uint32_t arg_list_len);
 ecma_value_t vm_execute (vm_frame_ctx_t *frame_ctx_p);
 
 bool vm_is_strict_mode (void);

@@ -307,46 +307,6 @@ parser_statement_length (uint8_t type) /**< type of statement */
 
   return statement_lengths[type - PARSER_STATEMENT_BLOCK];
 } /* parser_statement_length */
-
-/**
- * Initialize stack iterator.
- */
-static inline void
-parser_stack_iterator_init (parser_context_t *context_p, /**< context */
-                            parser_stack_iterator_t *iterator) /**< iterator */
-{
-  iterator->current_p = context_p->stack.first_p;
-  iterator->current_position = context_p->stack.last_position;
-} /* parser_stack_iterator_init */
-
-/**
- * Read the next byte from the stack.
- *
- * @return byte
- */
-static inline uint8_t
-parser_stack_iterator_read_uint8 (parser_stack_iterator_t *iterator) /**< iterator */
-{
-  JERRY_ASSERT (iterator->current_position > 0 && iterator->current_position <= PARSER_STACK_PAGE_SIZE);
-  return iterator->current_p->bytes[iterator->current_position - 1];
-} /* parser_stack_iterator_read_uint8 */
-
-/**
- * Change last byte of the stack.
- */
-static inline void
-parser_stack_change_last_uint8 (parser_context_t *context_p, /**< context */
-                                uint8_t new_value) /**< new value */
-{
-  parser_mem_page_t *page_p = context_p->stack.first_p;
-
-  JERRY_ASSERT (page_p != NULL
-                && context_p->stack_top_uint8 == page_p->bytes[context_p->stack.last_position - 1]);
-
-  page_p->bytes[context_p->stack.last_position - 1] = new_value;
-  context_p->stack_top_uint8 = new_value;
-} /* parser_stack_change_last_uint8 */
-
 /**
  * Parse expression enclosed in parens.
  */
@@ -1185,7 +1145,12 @@ parser_check_left_hand_side_expression (parser_context_t *context_p, /**< contex
   else
   {
     /* Invalid LeftHandSide expression. */
+#if ENABLED (JERRY_ESNEXT)
+    parser_raise_error (context_p, PARSER_ERR_INVALID_LHS_FOR_LOOP);
+#else /* !ENABLED (JERRY_ESNEXT) */
     parser_emit_cbc_ext (context_p, CBC_EXT_THROW_REFERENCE_ERROR);
+#endif /* ENABLED (JERRY_ESNEXT) */
+
     return CBC_ASSIGN;
   }
 

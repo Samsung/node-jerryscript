@@ -968,6 +968,18 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Duplicate __proto__ fields are not allowed in object literals.";
     }
+    case PARSER_ERR_INVALID_LHS_ASSIGNMENT:
+    {
+      return "Invalid left-hand side in assignment.";
+    }
+    case PARSER_ERR_INVALID_LHS_POSTFIX_OP:
+    {
+      return "Invalid left-hand side expression in postfix operation.";
+    }
+    case PARSER_ERR_INVALID_LHS_FOR_LOOP:
+    {
+      return "Invalid left-hand-side in for-loop.";
+    }
 #endif /* ENABLED (JERRY_ESNEXT) */
     case PARSER_ERR_DELETE_IDENT_NOT_ALLOWED:
     {
@@ -1193,6 +1205,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     case PARSER_ERR_INVALID_EXPONENTIATION:
     {
       return "Left operand of ** operator cannot be unary expression.";
+    }
+    case PARSER_ERR_INVALID_NULLISH_COALESCING:
+    {
+      return "Cannot chain nullish with logical AND or OR.";
     }
     case PARSER_ERR_FORMAL_PARAM_AFTER_REST_PARAMETER:
     {

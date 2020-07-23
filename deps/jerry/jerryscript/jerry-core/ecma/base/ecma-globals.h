@@ -288,7 +288,7 @@ typedef ecma_value_t (*ecma_vm_exec_stop_callback_t) (void *user_p);
 typedef ecma_value_t (*ecma_external_handler_t) (const ecma_value_t function_obj,
                                                  const ecma_value_t this_val,
                                                  const ecma_value_t args_p[],
-                                                 const ecma_length_t args_count);
+                                                 const uint32_t args_count);
 
 /**
  * Native free callback of an object.
@@ -356,6 +356,18 @@ typedef enum
   ECMA_LIST_CONVERT_FAST_ARRAYS = (1 << 5), /**< after listing the properties convert
                                              *   the fast access mode array back to normal array */
 } ecma_list_properties_options_t;
+
+/**
+ * Enumerable property name listing options.
+ */
+typedef enum
+{
+  ECMA_ENUMERABLE_PROPERTY_KEYS, /**< List only property names */
+  ECMA_ENUMERABLE_PROPERTY_VALUES, /**< List only property values */
+  ECMA_ENUMERABLE_PROPERTY_ENTRIES, /**< List both propery names and values */
+
+  ECMA_ENUMERABLE_PROPERTY__COUNT /**< Number of enumerable property listing types */
+} ecma_enumerable_property_names_options_t;
 
 /**
  * List enumerable properties and include the prototype chain.
@@ -426,6 +438,12 @@ typedef enum
  * Shift for property name part.
  */
 #define ECMA_PROPERTY_NAME_TYPE_SHIFT (ECMA_PROPERTY_FLAG_SHIFT + 4)
+
+/**
+ * Convert data property to accessor property or accessor property to data property
+ */
+#define ECMA_CHANGE_PROPERTY_TYPE(property_p) \
+  *(property_p) ^= ECMA_PROPERTY_TYPE_NAMEDACCESSOR ^ ECMA_PROPERTY_TYPE_NAMEDDATA;
 
 /**
  * Convert data property to internal property.
@@ -874,6 +892,7 @@ typedef struct
         uint32_t length; /**< length related property (e.g. length of ArrayBuffer) */
         ecma_value_t target; /**< [[ProxyTarget]] internal property */
         ecma_value_t head; /**< points to the async generator task queue head item */
+        ecma_value_t promise; /**< PromiseCapability[[Promise]] internal slot */
       } u;
     } class_prop;
 
@@ -1507,14 +1526,12 @@ typedef enum
 {
   ECMA_STRING_CONTAINER_HEAP_UTF8_STRING, /**< actual data is on the heap as an utf-8 (cesu8) string
                                            *   maximum size is 2^16. */
-  ECMA_STRING_CONTAINER_HEAP_LONG_UTF8_STRING, /**< actual data is on the heap as an utf-8 (cesu8) string
-                                                *   maximum size is 2^32. */
-  ECMA_STRING_CONTAINER_UINT32_IN_DESC, /**< actual data is UInt32-represeneted Number
-                                             stored locally in the string's descriptor */
+  ECMA_STRING_CONTAINER_LONG_OR_EXTERNAL_STRING, /**< the string is a long string or provided externally
+                                                  *   and only its attributes are stored. */
+  ECMA_STRING_CONTAINER_UINT32_IN_DESC, /**< string representation of an uint32 number */
   ECMA_STRING_CONTAINER_HEAP_ASCII_STRING, /**< actual data is on the heap as an ASCII string
                                             *   maximum size is 2^16. */
   ECMA_STRING_CONTAINER_MAGIC_STRING_EX, /**< the ecma-string is equal to one of external magic strings */
-
   ECMA_STRING_CONTAINER_SYMBOL, /**< the ecma-string is a symbol */
 
   ECMA_STRING_CONTAINER__MAX = ECMA_STRING_CONTAINER_SYMBOL /**< maximum value */
@@ -1593,42 +1610,52 @@ typedef struct
 } ecma_ascii_string_t;
 
 /**
- * ECMA long UTF8 string-value descriptor
- */
-typedef struct
-{
-  ecma_string_t header; /**< string header */
-  uint16_t size; /**< size of this utf-8 string in bytes */
-  uint16_t length; /**< length of this utf-8 string in bytes */
-} ecma_utf8_string_t;
-
-/**
  * ECMA UTF8 string-value descriptor
  */
 typedef struct
 {
   ecma_string_t header; /**< string header */
-  lit_utf8_size_t size; /**< size of this long utf-8 string in bytes */
-  lit_utf8_size_t length; /**< length of this long utf-8 string in bytes */
-} ecma_long_utf8_string_t;
+  uint16_t size; /**< size of this utf-8 string in bytes */
+  uint16_t length; /**< length of this utf-8 string in characters */
+} ecma_utf8_string_t;
+
+/**
+ * Long or external CESU8 string-value descriptor
+ */
+typedef struct
+{
+  ecma_string_t header; /**< string header */
+  const lit_utf8_byte_t *string_p; /**< string data */
+  lit_utf8_size_t size; /**< size of this external string in bytes */
+  lit_utf8_size_t length; /**< length of this external string in characters */
+} ecma_long_string_t;
+
+/**
+ * External UTF8 string-value descriptor
+ */
+typedef struct
+{
+  ecma_long_string_t header;
+  ecma_object_native_free_callback_t free_cb; /**< free callback */
+} ecma_external_string_t;
 
 /**
  * Get the start position of the string buffer of an ecma ASCII string
  */
 #define ECMA_ASCII_STRING_GET_BUFFER(string_p) \
-  ((lit_utf8_byte_t *) ((lit_utf8_byte_t *) (string_p) +  sizeof (ecma_ascii_string_t)))
+  ((lit_utf8_byte_t *) ((lit_utf8_byte_t *) (string_p) + sizeof (ecma_ascii_string_t)))
 
 /**
  * Get the start position of the string buffer of an ecma UTF8 string
  */
 #define ECMA_UTF8_STRING_GET_BUFFER(string_p) \
-  ((lit_utf8_byte_t *) ((lit_utf8_byte_t *) (string_p) +  sizeof (ecma_utf8_string_t)))
+  ((lit_utf8_byte_t *) ((lit_utf8_byte_t *) (string_p) + sizeof (ecma_utf8_string_t)))
 
 /**
- * Get the start position of the string buffer of an ecma long UTF8 string
+ * Get the start position of the string buffer of an ecma long CESU8 string
  */
-#define ECMA_LONG_UTF8_STRING_GET_BUFFER(string_p) \
-  ((lit_utf8_byte_t *) ((lit_utf8_byte_t *) (string_p) +  sizeof (ecma_long_utf8_string_t)))
+#define ECMA_LONG_STRING_BUFFER_START(string_p) \
+  ((lit_utf8_byte_t *) ((lit_utf8_byte_t *) (string_p) + sizeof (ecma_long_string_t)))
 
 /**
  * ECMA extended string-value descriptor
@@ -1832,8 +1859,8 @@ typedef struct
 typedef struct
 {
   ecma_extended_object_t extended_object; /**< extended object part */
-  ecma_length_t byte_offset; /**< the byteoffset of the above arraybuffer */
-  ecma_length_t array_length; /**< the array length */
+  uint32_t byte_offset; /**< the byteoffset of the above arraybuffer */
+  uint32_t array_length; /**< the array length */
 } ecma_extended_typedarray_object_t;
 
 /**
@@ -1848,7 +1875,7 @@ typedef struct
                               *    - This address must be used during indexed read/write operation. */
   ecma_typedarray_type_t id; /**< [[TypedArrayName]] internal slot */
   uint32_t length; /**< [[ByteLength]] internal slot */
-  ecma_length_t offset; /**< [[ByteOffset]] internal slot. */
+  uint32_t offset; /**< [[ByteOffset]] internal slot. */
   uint8_t shift; /**< the element size shift in the typedArray */
   uint8_t element_size; /**< element size based on [[TypedArrayName]] in Table 49 */
 } ecma_typedarray_info_t;
@@ -1926,6 +1953,39 @@ typedef struct
   ecma_value_t operation_value; /**< value argument of the operation */
   uint8_t operation_type; /**< type of operation (see ecma_async_generator_operation_type_t) */
 } ecma_async_generator_task_t;
+
+/**
+ * Definition of PromiseCapability Records
+ */
+typedef struct
+{
+  ecma_extended_object_t header; /**< object header, and [[Promise]] internal slot */
+  ecma_value_t resolve; /**< [[Resolve]] internal slot */
+  ecma_value_t reject; /**< [[Reject]] internal slot */
+} ecma_promise_capabality_t;
+
+/**
+ * Definition of GetCapabilitiesExecutor Functions
+ */
+typedef struct
+{
+  ecma_extended_object_t header; /**< object header */
+  ecma_value_t capability; /**< [[Capability]] internal slot */
+} ecma_promise_capability_executor_t;
+
+/**
+ * Definition of Promise.all Resolve Element Functions
+ */
+typedef struct
+{
+  ecma_extended_object_t header; /**< object header */
+  ecma_value_t remaining_elements; /**< [[Remaining elements]] internal slot */
+  ecma_value_t capability; /**< [[Capabilities]] internal slot */
+  ecma_value_t values; /**< [[Values]] internal slot */
+  uint32_t index; /**< [[Index]] and [[AlreadyCalled]] internal slot
+                   *   0 - if the element has been resolved
+                   *   real index + 1 in the [[Values]] list - otherwise */
+} ecma_promise_all_executor_t;
 
 #endif /* ENABLED (JERRY_ESNEXT) */
 

@@ -633,6 +633,24 @@ ecma_gc_mark (ecma_object_t *object_p) /**< object to mark from */
             ecma_gc_mark_executable_object (object_p);
             break;
           }
+          case LIT_INTERNAL_MAGIC_PROMISE_CAPABILITY:
+          {
+            ecma_promise_capabality_t *capability_p = (ecma_promise_capabality_t *) object_p;
+
+            if (ecma_is_value_object (capability_p->header.u.class_prop.u.promise))
+            {
+              ecma_gc_set_object_visited (ecma_get_object_from_value (capability_p->header.u.class_prop.u.promise));
+            }
+            if (ecma_is_value_object (capability_p->resolve))
+            {
+              ecma_gc_set_object_visited (ecma_get_object_from_value (capability_p->resolve));
+            }
+            if (ecma_is_value_object (capability_p->reject))
+            {
+              ecma_gc_set_object_visited (ecma_get_object_from_value (capability_p->reject));
+            }
+            break;
+          }
 #endif /* ENABLED (JERRY_ESNEXT) */
           default:
           {
@@ -733,7 +751,7 @@ ecma_gc_mark (ecma_object_t *object_p) /**< object to mark from */
 #if ENABLED (JERRY_ESNEXT)
           const ecma_compiled_code_t *byte_code_p = ecma_op_function_get_compiled_code (ext_func_p);
 
-          if (CBC_FUNCTION_GET_TYPE (byte_code_p->status_flags) == CBC_FUNCTION_ARROW)
+          if (CBC_FUNCTION_IS_ARROW (byte_code_p->status_flags))
           {
             ecma_arrow_function_t *arrow_func_p = (ecma_arrow_function_t *) object_p;
 
@@ -764,6 +782,18 @@ ecma_gc_mark (ecma_object_t *object_p) /**< object to mark from */
           {
             ecma_gc_set_object_visited (ecma_get_object_from_value (rev_proxy_p->proxy));
           }
+        }
+        else if (ext_func_p->u.external_handler_cb == ecma_op_get_capabilities_executor_cb)
+        {
+          ecma_promise_capability_executor_t *executor_p = (ecma_promise_capability_executor_t *) object_p;
+          ecma_gc_set_object_visited (ecma_get_object_from_value (executor_p->capability));
+        }
+        else if (ext_func_p->u.external_handler_cb == ecma_promise_all_handler_cb)
+        {
+          ecma_promise_all_executor_t *executor_p = (ecma_promise_all_executor_t *) object_p;
+          ecma_gc_set_object_visited (ecma_get_object_from_value (executor_p->capability));
+          ecma_gc_set_object_visited (ecma_get_object_from_value (executor_p->values));
+          ecma_gc_set_object_visited (ecma_get_object_from_value (executor_p->remaining_elements));
         }
         break;
       }
@@ -1124,6 +1154,14 @@ ecma_gc_free_object (ecma_object_t *object_p) /**< object to free */
       {
         ext_object_size = sizeof (ecma_revocable_proxy_object_t);
       }
+      else if (ext_func_p->u.external_handler_cb == ecma_op_get_capabilities_executor_cb)
+      {
+        ext_object_size = sizeof (ecma_promise_capability_executor_t);
+      }
+      else if (ext_func_p->u.external_handler_cb == ecma_promise_all_handler_cb)
+      {
+        ext_object_size = sizeof (ecma_promise_all_executor_t);
+      }
 #endif /* ENABLED (JERRY_ESNEXT) */
       break;
     }
@@ -1162,7 +1200,7 @@ ecma_gc_free_object (ecma_object_t *object_p) /**< object to free */
 #if ENABLED (JERRY_BUILTIN_TYPEDARRAY)
         case LIT_MAGIC_STRING_ARRAY_BUFFER_UL:
         {
-          ecma_length_t arraybuffer_length = ext_object_p->u.class_prop.u.length;
+          uint32_t arraybuffer_length = ext_object_p->u.class_prop.u.length;
 
           if (ECMA_ARRAYBUFFER_HAS_EXTERNAL_MEMORY (ext_object_p))
           {
@@ -1234,6 +1272,11 @@ ecma_gc_free_object (ecma_object_t *object_p) /**< object to free */
           ext_object_size = ecma_gc_free_executable_object (object_p);
           break;
         }
+        case LIT_INTERNAL_MAGIC_PROMISE_CAPABILITY:
+        {
+          ext_object_size = sizeof (ecma_promise_capabality_t);
+          break;
+        }
 #endif /* ENABLED (JERRY_ESNEXT) */
         default:
         {
@@ -1269,7 +1312,7 @@ ecma_gc_free_object (ecma_object_t *object_p) /**< object to free */
                                                                               ext_func_p->u.function.bytecode_cp));
 
 #if ENABLED (JERRY_ESNEXT)
-        if (CBC_FUNCTION_GET_TYPE (byte_code_p->status_flags) == CBC_FUNCTION_ARROW)
+        if (CBC_FUNCTION_IS_ARROW (byte_code_p->status_flags))
         {
           ecma_free_value_if_not_object (((ecma_arrow_function_t *) object_p)->this_binding);
           ecma_free_value_if_not_object (((ecma_arrow_function_t *) object_p)->new_target);
@@ -1297,14 +1340,14 @@ ecma_gc_free_object (ecma_object_t *object_p) /**< object to free */
         {
           JERRY_ASSERT (ext_object_p->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS);
 
-          ecma_length_t formal_params_number = ext_object_p->u.pseudo_array.u1.length;
-          ecma_value_t *arg_Literal_p = (ecma_value_t *) (ext_object_p + 1);
+          uint32_t formal_params_number = ext_object_p->u.pseudo_array.u1.length;
+          ecma_value_t *arg_literal_p = (ecma_value_t *) (ext_object_p + 1);
 
-          for (ecma_length_t i = 0; i < formal_params_number; i++)
+          for (uint32_t i = 0; i < formal_params_number; i++)
           {
-            if (arg_Literal_p[i] != ECMA_VALUE_EMPTY)
+            if (arg_literal_p[i] != ECMA_VALUE_EMPTY)
             {
-              ecma_string_t *name_p = ecma_get_string_from_value (arg_Literal_p[i]);
+              ecma_string_t *name_p = ecma_get_string_from_value (arg_literal_p[i]);
               ecma_deref_ecma_string (name_p);
             }
           }

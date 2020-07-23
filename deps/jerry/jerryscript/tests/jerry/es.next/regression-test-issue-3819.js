@@ -13,8 +13,8 @@
 // limitations under the License.
 
 try {
-  typeof (global.v2) = 123;
+  eval('typeof (global.v2) = 123');
   assert (false);
 } catch (e) {
-  assert (e instanceof ReferenceError);
+  assert (e instanceof SyntaxError);
 }

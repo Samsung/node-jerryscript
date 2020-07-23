@@ -2425,7 +2425,7 @@ MaybeLocal<String> v8::String::NewExternalOneByte(
       return Local<String>();
   }
 
-  jerry_value_t str = JerryString::FromBuffer((const char*)resource->data(), resource->length());
+  jerry_value_t str = jerry_create_external_string_sz((const jerry_char_t *)resource->data(), resource->length(), NULL);
 
   RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::TWO_BYTE));
 }

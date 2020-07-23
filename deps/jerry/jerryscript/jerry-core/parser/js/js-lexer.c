@@ -1753,7 +1753,24 @@ lexer_next_token (parser_context_t *context_p) /**< context */
                         LEXER_ASSIGN_BIT_XOR)
 
     LEXER_TYPE_A_TOKEN (LIT_CHAR_TILDE, LEXER_BIT_NOT);
-    LEXER_TYPE_A_TOKEN (LIT_CHAR_QUESTION, LEXER_QUESTION_MARK);
+    case (uint8_t) (LIT_CHAR_QUESTION):
+    {
+#if ENABLED (JERRY_ESNEXT)
+      if (length >= 2)
+      {
+        if (context_p->source_p[1] == (uint8_t) LIT_CHAR_QUESTION)
+        {
+          context_p->token.type = LEXER_NULLISH_COALESCING;
+          length = 2;
+          break;
+        }
+      }
+#endif /* ENABLED (JERRY_ESNEXT) */
+      context_p->token.type = LEXER_QUESTION_MARK;
+      length = 1;
+      break;
+    }
+
     LEXER_TYPE_A_TOKEN (LIT_CHAR_COLON, LEXER_COLON);
 
     case LIT_CHAR_SINGLE_QUOTE:
@@ -3059,6 +3076,22 @@ lexer_expect_object_literal_id (parser_context_t *context_p, /**< context */
 
         context_p->token.type = LEXER_MULTIPLY;
         lexer_consume_next_character (context_p);
+        return;
+      }
+      case LIT_CHAR_DOT:
+      {
+        if (ident_opts != LEXER_OBJ_IDENT_NO_OPTS
+            || context_p->source_p + 2 >= context_p->source_end_p
+            || context_p->source_p[1] != LIT_CHAR_DOT
+            || context_p->source_p[2] != LIT_CHAR_DOT)
+        {
+          break;
+        }
+
+        context_p->token.type = LEXER_THREE_DOTS;
+        context_p->token.flags &= (uint8_t) ~LEXER_NO_SKIP_SPACES;
+        PARSER_PLUS_EQUAL_LC (context_p->column, 3);
+        context_p->source_p += 3;
         return;
       }
 #endif /* ENABLED (JERRY_ESNEXT) */

@@ -167,7 +167,7 @@ ecma_builtin_string_prototype_char_at_helper (ecma_value_t this_arg, /**< this a
   }
 
   /* 4 */
-  const ecma_length_t len = ecma_string_get_length (original_string_p);
+  const lit_utf8_size_t len = ecma_string_get_length (original_string_p);
 
   /* 5 */
   // When index_num is NaN, then the first two comparisons are false
@@ -206,7 +206,7 @@ ecma_builtin_string_prototype_char_at_helper (ecma_value_t this_arg, /**< this a
 static ecma_value_t
 ecma_builtin_string_prototype_object_concat (ecma_string_t *this_string_p, /**< this argument */
                                              const ecma_value_t *argument_list_p, /**< arguments list */
-                                             ecma_length_t arguments_number) /**< number of arguments */
+                                             uint32_t arguments_number) /**< number of arguments */
 {
   ecma_stringbuilder_t builder = ecma_stringbuilder_create_from (this_string_p);
 
@@ -475,7 +475,7 @@ ecma_builtin_string_prototype_object_replace (ecma_value_t this_value, /**< this
     const lit_utf8_byte_t *const input_end_p = replace_ctx.string_p + replace_ctx.string_size;
     const lit_utf8_byte_t *const loop_end_p = input_end_p - search_size;
 
-    uint32_t pos = 0;
+    lit_utf8_size_t pos = 0;
     for (const lit_utf8_byte_t *curr_p = replace_ctx.string_p;
          curr_p <= loop_end_p;
          lit_utf8_incr (&curr_p), pos++)
@@ -655,24 +655,8 @@ ecma_builtin_string_prototype_object_search (ecma_value_t this_value, /**< this 
   ecma_deref_object (ecma_get_object_from_value (new_regexp));
 #else /* ENABLED (JERRY_ESNEXT) */
   ecma_object_t *regexp_obj_p = ecma_get_object_from_value (new_regexp);
-  ecma_value_t search_symbol = ecma_op_object_get_by_symbol_id (regexp_obj_p, LIT_GLOBAL_SYMBOL_SEARCH);
-  if (ECMA_IS_VALUE_ERROR (search_symbol))
-  {
-    goto cleanup_regexp;
-  }
-
-  if (!ecma_op_is_callable (search_symbol))
-  {
-    result = ecma_raise_type_error (ECMA_ERR_MSG ("@@search is not callable"));
-    goto cleanup_regexp;
-  }
-
-  ecma_object_t *search_method_p = ecma_get_object_from_value (search_symbol);
-  ecma_value_t arguments[] = { ecma_make_string_value (string_p) };
-  result = ecma_op_function_call (search_method_p, new_regexp, arguments, 1);
-  ecma_deref_object (search_method_p);
-
-cleanup_regexp:
+  ecma_value_t this_str_value = ecma_make_string_value (string_p);
+  result = ecma_op_invoke_by_symbol_id (new_regexp, LIT_GLOBAL_SYMBOL_SEARCH, &this_str_value, 1);
   ecma_deref_object (regexp_obj_p);
 #endif /* !ENABLED (JERRY_ESNEXT) */
 
@@ -697,10 +681,10 @@ ecma_builtin_string_prototype_object_slice (ecma_string_t *get_string_val, /**< 
                                             ecma_value_t arg1, /**< routine's first argument */
                                             ecma_value_t arg2) /**< routine's second argument */
 {
-  const ecma_length_t len = ecma_string_get_length (get_string_val);
+  const lit_utf8_size_t len = ecma_string_get_length (get_string_val);
 
   /* 4. 6. */
-  ecma_length_t start = 0, end = len;
+  lit_utf8_size_t start = 0, end = len;
 
   if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (arg1,
                                                                       len,
@@ -821,7 +805,7 @@ ecma_builtin_string_prototype_object_split (ecma_value_t this_value, /**< this a
   }
 
   ecma_object_t *array_p = ecma_get_object_from_value (result);
-  ecma_length_t array_length = 0;
+  lit_utf8_size_t array_length = 0;
 
   /* 15. */
   if (ecma_is_value_undefined (separator_value))
@@ -939,8 +923,8 @@ ecma_builtin_string_prototype_object_substring (ecma_string_t *original_string_p
                                                 ecma_value_t arg2) /**< routine's second argument */
 {
   /* 3 */
-  const ecma_length_t len = ecma_string_get_length (original_string_p);
-  ecma_length_t start = 0, end = len;
+  const lit_utf8_size_t len = ecma_string_get_length (original_string_p);
+  lit_utf8_size_t start = 0, end = len;
 
   /* 4 */
   ecma_number_t start_num;
@@ -1004,96 +988,42 @@ ecma_builtin_string_prototype_object_conversion_helper (ecma_string_t *input_str
                                                         bool lower_case) /**< convert to lower (true)
                                                                           *   or upper (false) case */
 {
-  ecma_value_t ret_value = ECMA_VALUE_EMPTY;
+  ecma_stringbuilder_t builder = ecma_stringbuilder_create ();
 
-  /* 3. */
   ECMA_STRING_TO_UTF8_STRING (input_string_p, input_start_p, input_start_size);
 
-  /*
-   * The URI encoding has two major phases: first we compute
-   * the length of the lower case string, then we encode it.
-   */
-
-  lit_utf8_size_t output_length = 0;
-  const lit_utf8_byte_t *input_str_curr_p = input_start_p;
+  const lit_utf8_byte_t *input_curr_p = input_start_p;
   const lit_utf8_byte_t *input_str_end_p = input_start_p + input_start_size;
 
-  while (input_str_curr_p < input_str_end_p)
+  while (input_curr_p < input_str_end_p)
   {
-    ecma_char_t character = lit_cesu8_read_next (&input_str_curr_p);
-    ecma_char_t character_buffer[LIT_MAXIMUM_OTHER_CASE_LENGTH];
-    ecma_length_t character_length;
-    lit_utf8_byte_t utf8_byte_buffer[LIT_CESU8_MAX_BYTES_IN_CODE_POINT];
+    lit_code_point_t cp = lit_cesu8_read_next (&input_curr_p);
+
+#if ENABLED (JERRY_ESNEXT)
+    if (lit_is_code_point_utf16_high_surrogate (cp))
+    {
+      const ecma_char_t next_ch = lit_cesu8_peek_next (input_curr_p);
+      if (lit_is_code_point_utf16_low_surrogate (next_ch))
+      {
+        cp = lit_convert_surrogate_pair_to_code_point ((ecma_char_t) cp, next_ch);
+        input_curr_p += LIT_UTF8_MAX_BYTES_IN_CODE_UNIT;
+      }
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
 
     if (lower_case)
     {
-      character_length = lit_char_to_lower_case (character,
-                                                 character_buffer,
-                                                 LIT_MAXIMUM_OTHER_CASE_LENGTH);
+      lit_char_to_lower_case (cp, &builder);
     }
     else
     {
-      character_length = lit_char_to_upper_case (character,
-                                                 character_buffer,
-                                                 LIT_MAXIMUM_OTHER_CASE_LENGTH);
-    }
-
-    JERRY_ASSERT (character_length >= 1 && character_length <= LIT_MAXIMUM_OTHER_CASE_LENGTH);
-
-    for (ecma_length_t i = 0; i < character_length; i++)
-    {
-      output_length += lit_code_unit_to_utf8 (character_buffer[i], utf8_byte_buffer);
+      lit_char_to_upper_case (cp, &builder);
     }
   }
 
-  /* Second phase. */
-
-  JMEM_DEFINE_LOCAL_ARRAY (output_start_p,
-                           output_length,
-                           lit_utf8_byte_t);
-
-  lit_utf8_byte_t *output_char_p = output_start_p;
-
-  /* Encoding the output. */
-  input_str_curr_p = input_start_p;
-
-  while (input_str_curr_p < input_str_end_p)
-  {
-    ecma_char_t character = lit_cesu8_read_next (&input_str_curr_p);
-    ecma_char_t character_buffer[LIT_MAXIMUM_OTHER_CASE_LENGTH];
-    ecma_length_t character_length;
-
-    if (lower_case)
-    {
-      character_length = lit_char_to_lower_case (character,
-                                                 character_buffer,
-                                                 LIT_MAXIMUM_OTHER_CASE_LENGTH);
-    }
-    else
-    {
-      character_length = lit_char_to_upper_case (character,
-                                                 character_buffer,
-                                                 LIT_MAXIMUM_OTHER_CASE_LENGTH);
-    }
-
-    JERRY_ASSERT (character_length >= 1 && character_length <= LIT_MAXIMUM_OTHER_CASE_LENGTH);
-
-    for (ecma_length_t i = 0; i < character_length; i++)
-    {
-      output_char_p += lit_code_unit_to_utf8 (character_buffer[i], output_char_p);
-    }
-  }
-
-  JERRY_ASSERT (output_start_p + output_length == output_char_p);
-
-  ecma_string_t *output_string_p = ecma_new_ecma_string_from_utf8 (output_start_p, output_length);
-
-  ret_value = ecma_make_string_value (output_string_p);
-
-  JMEM_FINALIZE_LOCAL_ARRAY (output_start_p);
   ECMA_FINALIZE_UTF8_STRING (input_start_p, input_start_size);
 
-  return ret_value;
+  return ecma_make_string_value (ecma_stringbuilder_finalize (&builder));
 } /* ecma_builtin_string_prototype_object_conversion_helper */
 
 /**
@@ -1200,9 +1130,9 @@ ecma_builtin_string_prototype_object_code_point_at (ecma_string_t *this_string_p
     return error;
   }
 
-  ecma_length_t size = ecma_string_get_length (this_string_p);
+  lit_utf8_size_t length = ecma_string_get_length (this_string_p);
 
-  if (pos_num < 0 || pos_num >= size)
+  if (pos_num < 0 || pos_num >= length)
   {
     return ECMA_VALUE_UNDEFINED;
   }
@@ -1213,7 +1143,7 @@ ecma_builtin_string_prototype_object_code_point_at (ecma_string_t *this_string_p
 
   if (first < LIT_UTF16_HIGH_SURROGATE_MIN
       || first > LIT_UTF16_HIGH_SURROGATE_MAX
-      || index + 1 == size)
+      || index + 1 == length)
   {
     return ecma_make_uint32_value (first);
   }
@@ -1271,7 +1201,7 @@ ecma_builtin_string_prototype_object_substr (ecma_string_t *this_string_p, /**< 
   }
 
   /* 4. */
-  ecma_length_t this_len = ecma_string_get_length (this_string_p);
+  lit_utf8_size_t this_len = ecma_string_get_length (this_string_p);
 
   /* 5. */
   uint32_t from = (uint32_t) ((start_num < 0) ? JERRY_MAX (this_len + start_num, 0) : start_num);
@@ -1328,7 +1258,7 @@ ecma_builtin_string_prototype_dispatch_routine (uint16_t builtin_routine_id, /**
                                                 ecma_value_t this_arg, /**< 'this' argument value */
                                                 const ecma_value_t arguments_list_p[], /**< list of arguments
                                                                                       *   passed to routine */
-                                                ecma_length_t arguments_number) /**< length of arguments' list */
+                                                uint32_t arguments_number) /**< length of arguments' list */
 {
   if (builtin_routine_id <= ECMA_STRING_PROTOTYPE_VALUE_OF)
   {

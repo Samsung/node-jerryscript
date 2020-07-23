@@ -35,7 +35,7 @@
 /**
  * Maximum precedence for right-to-left binary operation evaluation.
  */
-#define PARSER_RIGHT_TO_LEFT_ORDER_MAX_PRECEDENCE 6
+#define PARSER_RIGHT_TO_LEFT_ORDER_MAX_PRECEDENCE 7
 
 /**
  * Precedence for ternary operation.
@@ -45,12 +45,17 @@
 /**
  * Precedence for exponentiation operation.
  */
-#define PARSER_RIGHT_TO_LEFT_ORDER_EXPONENTIATION 15
+#define PARSER_RIGHT_TO_LEFT_ORDER_EXPONENTIATION 16
 
 /**
  * Value of grouping level increase and decrease.
  */
-#define PARSER_GROUPING_LEVEL_INCREASE 2
+#define PARSER_GROUPING_LEVEL_INCREASE 4
+
+/**
+ * Represents whether logical expression was emitted in the current group expression.
+ */
+#define PARSER_GROUPING_LOGICAL_FOUND (1 << 1)
 
 /**
  * Precedence of the binary tokens.
@@ -60,21 +65,56 @@
  */
 static const uint8_t parser_binary_precedence_table[] =
 {
-  3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+  3, /**< "=" */
+  3, /**< "+=" */
+  3, /**< "-=" */
+  3, /**< "*=" */
+  3, /**< "/=" */
+  3, /**< "=" */
+  3, /**< "<<=" */
+  3, /**< ">>=" */
+  3, /**< ">>>=" */
+  3, /**< "&=" */
+  3, /**< "|=" */
+  3, /**< "^=" */
 #if ENABLED (JERRY_ESNEXT)
-  3,
+  3, /**< "**=" */
 #endif /* ENABLED (JERRY_ESNEXT) */
-  4, 5, 6, 7, 8, 9, 10, 10, 10, 10,
-  11, 11, 11, 11, 11, 11, 12, 12, 12,
-  13, 13, 14, 14, 14,
+  4, /**< "?"*/
 #if ENABLED (JERRY_ESNEXT)
-  15,
+  5, /**< "??" */
+#endif /* ENABLED (JERRY_ESNEXT) */
+  6, /**< "||" */
+  7, /**< "&&" */
+  8, /**< "|" */
+  9, /**< "^" */
+  10, /**< "&" */
+  11, /**< "==" */
+  11, /**< "!=" */
+  11, /**< "===" */
+  11, /**< "!==" */
+  12, /**< "<" */
+  12, /**< ">" */
+  12, /**< "<=" */
+  12, /**< ">=" */
+  12, /**< in */
+  12, /**< instanceof */
+  13, /**< "<<" */
+  13, /**< ">>" */
+  13, /**< ">>>" */
+  14, /**< "+" */
+  14, /**< "-" */
+  15, /**< "*" */
+  15, /**< "/" */
+  15, /**< "%" */
+#if ENABLED (JERRY_ESNEXT)
+  16, /**< "**" */
 #endif /* ENABLED (JERRY_ESNEXT) */
 };
 
 #if ENABLED (JERRY_ESNEXT)
-JERRY_STATIC_ASSERT (sizeof (parser_binary_precedence_table) == 38,
-                     parser_binary_precedence_table_should_have_38_values_in_es2015);
+JERRY_STATIC_ASSERT (sizeof (parser_binary_precedence_table) == 39,
+                     parser_binary_precedence_table_should_have_39_values_in_es2015);
 #else /* !ENABLED (JERRY_ESNEXT) */
 JERRY_STATIC_ASSERT (sizeof (parser_binary_precedence_table) == 36,
                      parser_binary_precedence_table_should_have_36_values_in_es51);
@@ -267,9 +307,10 @@ parser_emit_unary_lvalue_opcode (parser_context_t *context_p, /**< context */
 
 #if ENABLED (JERRY_ESNEXT)
     parser_check_invalid_new_target (context_p, opcode);
-#endif /* ENABLED (JERRY_ESNEXT) */
-
+    parser_raise_error (context_p, PARSER_ERR_INVALID_LHS_POSTFIX_OP);
+#else /* ENABLED (JERRY_ESNEXT) */
     parser_emit_cbc_ext (context_p, CBC_EXT_THROW_REFERENCE_ERROR);
+#endif /* ENABLED (JERRY_ESNEXT) */
   }
 
   parser_emit_cbc (context_p, (uint16_t) opcode);
@@ -869,7 +910,8 @@ parser_parse_object_method (parser_context_t *context_p) /**< context */
 {
   context_p->source_p--;
   context_p->column--;
-  uint16_t function_literal_index = lexer_construct_function_object (context_p, PARSER_FUNCTION_CLOSURE);
+  uint16_t function_literal_index = lexer_construct_function_object (context_p, (PARSER_FUNCTION_CLOSURE
+                                                                                 | PARSER_ALLOW_SUPER));
 
   parser_emit_cbc_literal (context_p,
                            CBC_PUSH_LITERAL,
@@ -932,6 +974,15 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
 
 #if ENABLED (JERRY_ESNEXT)
   bool proto_seen = false;
+  bool has_super_env = false;
+
+  if (context_p->next_scanner_info_p->source_p == context_p->source_p)
+  {
+    JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_OBJECT_LITERAL_WITH_SUPER);
+    scanner_release_next (context_p, sizeof (scanner_info_t));
+    parser_emit_cbc_ext (context_p, CBC_EXT_PUSH_OBJECT_SUPER_ENVIRONMENT);
+    has_super_env = true;
+  }
 #endif /* ENABLED (JERRY_ESNEXT) */
 
   while (true)
@@ -971,6 +1022,10 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
 #endif /* !ENABLED (JERRY_ESNEXT) */
         }
 
+#if ENABLED (JERRY_ESNEXT)
+        status_flags |= PARSER_ALLOW_SUPER;
+#endif /* !ENABLED (JERRY_ESNEXT) */
+
         lexer_expect_object_literal_id (context_p, LEXER_OBJ_IDENT_ONLY_IDENTIFIERS);
 
         /* This assignment is a nop for computed getters/setters. */
@@ -1008,16 +1063,32 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
         {
           parser_emit_cbc_ext (context_p, is_getter ? CBC_EXT_SET_COMPUTED_GETTER_NAME
                                                     : CBC_EXT_SET_COMPUTED_SETTER_NAME);
+
+          if (has_super_env)
+          {
+            parser_emit_cbc_ext (context_p, CBC_EXT_OBJECT_LITERAL_SET_HOME_OBJECT_COMPUTED);
+          }
           parser_emit_cbc_ext (context_p, opcode);
           lexer_next_token (context_p);
           break;
         }
 
         parser_set_function_name (context_p, function_literal_index, literal_index, status_flags);
-#endif /* ENABLED (JERRY_ESNEXT) */
 
-        context_p->last_cbc_opcode = PARSER_TO_EXT_OPCODE (opcode);
-        context_p->last_cbc.value = function_literal_index;
+        if (has_super_env)
+        {
+          context_p->last_cbc_opcode = CBC_PUSH_TWO_LITERALS;
+          context_p->last_cbc.value = function_literal_index;
+          parser_emit_cbc_ext (context_p, CBC_EXT_OBJECT_LITERAL_SET_HOME_OBJECT_COMPUTED);
+          parser_emit_cbc_ext (context_p, is_getter ? CBC_EXT_SET_COMPUTED_GETTER
+                                                    : CBC_EXT_SET_COMPUTED_SETTER);
+        }
+        else
+#endif /* ENABLED (JERRY_ESNEXT) */
+        {
+          context_p->last_cbc_opcode = PARSER_TO_EXT_OPCODE (opcode);
+          context_p->last_cbc.value = function_literal_index;
+        }
 
         lexer_next_token (context_p);
         break;
@@ -1035,6 +1106,10 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
           if (parser_check_anonymous_function_declaration (context_p) < PARSER_NAMED_FUNCTION)
           {
             parser_emit_cbc_ext (context_p, CBC_EXT_SET_COMPUTED_FUNCTION_NAME);
+            if (has_super_env)
+            {
+              parser_emit_cbc_ext (context_p, CBC_EXT_OBJECT_LITERAL_SET_HOME_OBJECT_COMPUTED);
+            }
             parser_emit_cbc_ext (context_p, CBC_EXT_SET_COMPUTED_PROPERTY);
           }
           else
@@ -1068,6 +1143,13 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
         }
         break;
       }
+      case LEXER_THREE_DOTS:
+      {
+        lexer_next_token (context_p);
+        parser_parse_expression (context_p, PARSE_EXPR_NO_COMMA);
+        parser_emit_cbc_ext (context_p, CBC_EXT_COPY_DATA_PROPERTIES);
+        break;
+      }
       case LEXER_KEYW_ASYNC:
       case LEXER_MULTIPLY:
       {
@@ -1082,6 +1164,11 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
         if (context_p->token.type == LEXER_MULTIPLY)
         {
           status_flags |= PARSER_IS_GENERATOR_FUNCTION | PARSER_DISALLOW_AWAIT_YIELD;
+        }
+
+        if (has_super_env)
+        {
+          status_flags |= PARSER_ALLOW_SUPER;
         }
 
         lexer_expect_object_literal_id (context_p, LEXER_OBJ_IDENT_ONLY_IDENTIFIERS);
@@ -1107,6 +1194,10 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
         if (is_computed)
         {
           parser_emit_cbc_ext (context_p, CBC_EXT_SET_COMPUTED_FUNCTION_NAME);
+          if (has_super_env)
+          {
+            parser_emit_cbc_ext (context_p, CBC_EXT_OBJECT_LITERAL_SET_HOME_OBJECT_COMPUTED);
+          }
           parser_emit_cbc_ext (context_p, opcode);
           lexer_next_token (context_p);
           break;
@@ -1114,8 +1205,16 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
 
         parser_set_function_name (context_p, function_literal_index, literal_index, status_flags);
 
-        context_p->last_cbc_opcode = opcode;
-        context_p->last_cbc.value = literal_index;
+        if (has_super_env)
+        {
+          parser_emit_cbc_ext (context_p, CBC_EXT_OBJECT_LITERAL_SET_HOME_OBJECT);
+          parser_emit_cbc_literal (context_p, CBC_SET_PROPERTY, literal_index);
+        }
+        else
+        {
+          context_p->last_cbc_opcode = opcode;
+          context_p->last_cbc.value = literal_index;
+        }
 
         lexer_next_token (context_p);
         break;
@@ -1160,6 +1259,14 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
 
           JERRY_ASSERT (context_p->last_cbc_opcode == CBC_PUSH_LITERAL);
           parser_set_function_name (context_p, context_p->last_cbc.literal_index, literal_index, 0);
+
+          if (has_super_env)
+          {
+            parser_emit_cbc_ext (context_p, CBC_EXT_OBJECT_LITERAL_SET_HOME_OBJECT);
+            parser_emit_cbc_literal (context_p, CBC_SET_PROPERTY, literal_index);
+            break;
+          }
+
           context_p->last_cbc_opcode = CBC_SET_LITERAL_PROPERTY;
           context_p->last_cbc.value = literal_index;
           break;
@@ -1239,6 +1346,11 @@ parser_parse_object_literal (parser_context_t *context_p) /**< context */
   }
 
   parser_stack_pop_uint8 (context_p);
+#else /* ENABLED (JERRY_ESNEXT) */
+  if (has_super_env)
+  {
+    parser_emit_cbc_ext (context_p, CBC_EXT_POP_OBJECT_SUPER_ENVIRONMENT);
+  }
 #endif /* !ENABLED (JERRY_ESNEXT) */
 } /* parser_parse_object_literal */
 
@@ -1821,10 +1933,9 @@ parser_parse_unary_expression (parser_context_t *context_p, /**< context */
     case LEXER_LEFT_BRACE:
     {
 #if ENABLED (JERRY_ESNEXT)
-      if (context_p->next_scanner_info_p->source_p == context_p->source_p)
+      if (context_p->next_scanner_info_p->source_p == context_p->source_p
+          && context_p->next_scanner_info_p->type == SCANNER_TYPE_INITIALIZER)
       {
-        JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_INITIALIZER);
-
         if (parser_is_assignment_expr (context_p))
         {
           parser_parse_object_initializer (context_p, PARSER_PATTERN_NO_OPTS);
@@ -2567,12 +2678,13 @@ parser_append_binary_single_assignment_token (parser_context_t *context_p, /**< 
 #endif /* ENABLED (JERRY_ESNEXT) */
   else
   {
-    /* Invalid LeftHandSide expression. */
+    /* Invalid LeftHandSide expression. */ //3820, 3815
 #if ENABLED (JERRY_ESNEXT)
     parser_check_invalid_new_target (context_p, CBC_ASSIGN);
-#endif /* ENABLED (JERRY_ESNEXT) */
-
+    parser_raise_error (context_p, PARSER_ERR_INVALID_LHS_ASSIGNMENT);
+#else /* !ENABLED (JERRY_ESNEXT) */
     parser_emit_cbc_ext (context_p, CBC_EXT_THROW_REFERENCE_ERROR);
+#endif /* ENABLED (JERRY_ESNEXT) */
   }
 
   parser_stack_push_uint8 (context_p, assign_opcode);
@@ -2582,13 +2694,86 @@ parser_append_binary_single_assignment_token (parser_context_t *context_p, /**< 
 } /* parser_append_binary_single_assignment_token */
 
 /**
+ * Check for invalid logical operator and nullish chaining
+ */
+#if ENABLED (JERRY_ESNEXT)
+static void
+parser_check_invalid_logical_op (parser_context_t *context_p, /**< context */
+                                 size_t grouping_level) /**< grouping_level */
+{
+  parser_stack_iterator_t iterator;
+  parser_stack_iterator_init (context_p, &iterator);
+  bool logical_found = (grouping_level & PARSER_GROUPING_LOGICAL_FOUND) != 0;
+  bool nullish_found = false;
+
+  while (true)
+  {
+    uint8_t token = parser_stack_iterator_read_uint8 (&iterator);
+
+    if (token == LEXER_EXPRESSION_START
+        || token == LEXER_LEFT_PAREN
+        || !LEXER_IS_BINARY_OP_TOKEN (token))
+    {
+      return;
+    }
+
+    parser_stack_iterator_skip (&iterator, sizeof (uint8_t));
+
+    if (token == LEXER_ASSIGN)
+    {
+      cbc_opcode_t opcode = (cbc_opcode_t) parser_stack_iterator_read_uint8 (&iterator);
+
+      if (cbc_flags[opcode] & CBC_HAS_LITERAL_ARG)
+      {
+        parser_stack_iterator_skip (&iterator, sizeof (uint16_t));
+      }
+      token = parser_stack_iterator_read_uint8 (&iterator);
+
+      if (token == LEXER_ASSIGN_GROUP_EXPR)
+      {
+        parser_stack_iterator_skip (&iterator, sizeof (uint8_t));
+      }
+      if (token == LEXER_ASSIGN_CONST)
+      {
+        parser_stack_iterator_skip (&iterator, sizeof (uint8_t));
+      }
+    }
+    else if (token == LEXER_LOGICAL_OR || token == LEXER_LOGICAL_AND)
+    {
+      if (nullish_found)
+      {
+        parser_raise_error (context_p, PARSER_ERR_INVALID_NULLISH_COALESCING);
+      }
+
+      parser_stack_iterator_skip (&iterator, sizeof (parser_branch_t));
+      logical_found = true;
+    }
+    else if (token == LEXER_NULLISH_COALESCING)
+    {
+      if (logical_found)
+      {
+        parser_raise_error (context_p, PARSER_ERR_INVALID_NULLISH_COALESCING);
+      }
+
+      parser_stack_iterator_skip (&iterator, sizeof (parser_branch_t));
+      nullish_found = true;
+    }
+  }
+} /* parser_check_invalid_logical_op */
+
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+/**
  * Append a binary token.
  */
 static void
-parser_append_binary_token (parser_context_t *context_p) /**< context */
+parser_append_binary_token (parser_context_t *context_p, /**< context */
+                            size_t grouping_level) /**< grouping_level */
 {
   JERRY_ASSERT (LEXER_IS_BINARY_OP_TOKEN (context_p->token.type));
-
+#if !ENABLED (JERRY_ESNEXT)
+  JERRY_UNUSED (grouping_level);
+#endif /* !ENABLED (JERRY_ESNEXT) */
   parser_push_result (context_p);
 
   if (context_p->token.type == LEXER_ASSIGN)
@@ -2622,9 +2807,11 @@ parser_append_binary_token (parser_context_t *context_p) /**< context */
       /* Invalid LeftHandSide expression. */
 #if ENABLED (JERRY_ESNEXT)
       parser_check_invalid_new_target (context_p, CBC_ASSIGN);
-#endif /* ENABLED (JERRY_ESNEXT) */
-
+      parser_raise_error (context_p, PARSER_ERR_INVALID_LHS_ASSIGNMENT);
+#else /* !ENABLED (JERRY_ES2015) */
       parser_emit_cbc_ext (context_p, CBC_EXT_THROW_REFERENCE_ERROR);
+#endif /* ENABLED (JERRY_ES2015) */
+
       parser_emit_cbc (context_p, CBC_PUSH_PROP_REFERENCE);
     }
   }
@@ -2641,7 +2828,25 @@ parser_append_binary_token (parser_context_t *context_p) /**< context */
 
     parser_emit_cbc_forward_branch (context_p, opcode, &branch);
     parser_stack_push (context_p, &branch, sizeof (parser_branch_t));
+    parser_stack_push_uint8 (context_p, context_p->token.type);
+#if ENABLED (JERRY_ESNEXT)
+    parser_check_invalid_logical_op (context_p, grouping_level);
+#endif /* ENABLED (JERRY_ESNEXT) */
+    return;
   }
+#if ENABLED (JERRY_ESNEXT)
+  else if (context_p->token.type == LEXER_NULLISH_COALESCING)
+  {
+    parser_branch_t branch;
+
+    uint16_t opcode = PARSER_TO_EXT_OPCODE (CBC_EXT_BRANCH_IF_NULLISH);
+    parser_emit_cbc_forward_branch (context_p, opcode, &branch);
+    parser_stack_push (context_p, &branch, sizeof (parser_branch_t));
+    parser_stack_push_uint8 (context_p, context_p->token.type);
+    parser_check_invalid_logical_op (context_p, grouping_level);
+    return;
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   parser_stack_push_uint8 (context_p, context_p->token.type);
 } /* parser_append_binary_token */
@@ -2651,8 +2856,12 @@ parser_append_binary_token (parser_context_t *context_p) /**< context */
  */
 static void
 parser_process_binary_opcodes (parser_context_t *context_p, /**< context */
-                               uint8_t min_prec_treshold) /**< minimal precedence of tokens */
+                               uint8_t min_prec_treshold, /**< minimal precedence of tokens */
+                               size_t *grouping_level_p) /**< grouping level */
 {
+#if !ENABLED (JERRY_ESNEXT)
+  JERRY_UNUSED (grouping_level_p);
+#endif /* !ENABLED (JERRY_ESNEXT) */
   while (true)
   {
     uint8_t token = context_p->stack_top_uint8;
@@ -2769,8 +2978,22 @@ parser_process_binary_opcodes (parser_context_t *context_p, /**< context */
       parser_branch_t branch;
       parser_stack_pop (context_p, &branch, sizeof (parser_branch_t));
       parser_set_branch_to_current_position (context_p, &branch);
+#if ENABLED (JERRY_ESNEXT)
+      JERRY_ASSERT (grouping_level_p != NULL);
+      *grouping_level_p |= PARSER_GROUPING_LOGICAL_FOUND;
+#endif /* ENABLED (JERRY_ESNEXT) */
       continue;
     }
+#if ENABLED (JERRY_ESNEXT)
+    else if (token == LEXER_NULLISH_COALESCING)
+    {
+      parser_branch_t branch;
+      parser_stack_pop (context_p, &branch, sizeof (parser_branch_t));
+      parser_set_branch_to_current_position (context_p, &branch);
+      continue;
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
     else
     {
       opcode = LEXER_BINARY_OP_TOKEN_TO_OPCODE (token);
@@ -2980,7 +3203,7 @@ parser_pattern_form_assignment (parser_context_t *context_p, /**< context */
     parser_set_branch_to_current_position (context_p, &skip_init);
   }
 
-  parser_process_binary_opcodes (context_p, 0);
+  parser_process_binary_opcodes (context_p, 0, NULL);
 
   JERRY_ASSERT (context_p->stack_top_uint8 == LEXER_EXPRESSION_START);
   parser_stack_pop_uint8 (context_p);
@@ -3359,7 +3582,7 @@ parser_process_ternary_expression (parser_context_t *context_p) /**< context */
    * the result may come from the first branch. */
   parser_flush_cbc (context_p);
 
-  parser_process_binary_opcodes (context_p, 0);
+  parser_process_binary_opcodes (context_p, 0, NULL);
 } /* parser_process_ternary_expression */
 
 /**
@@ -3403,6 +3626,12 @@ parser_process_group_expression (parser_context_t *context_p, /**< context */
     parser_push_result (context_p);
     parser_flush_cbc (context_p);
   }
+#if ENABLED (JERRY_ESNEXT)
+  else
+  {
+    *grouping_level_p &= (size_t) ~(PARSER_GROUPING_LOGICAL_FOUND);
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   parser_stack_pop_uint8 (context_p);
   lexer_next_token (context_p);
@@ -3413,12 +3642,12 @@ parser_process_group_expression (parser_context_t *context_p, /**< context */
   if (JERRY_UNLIKELY (context_p->token.type == LEXER_ASSIGN
                       && PARSER_IS_PUSH_LITERALS_WITH_THIS (context_p->last_cbc_opcode)
                       && context_p->last_cbc.literal_type == LEXER_IDENT_LITERAL
-                      && parser_is_assignment_expr (context_p)))
+                      && parser_is_assignment_expr (context_p)
+                      && *grouping_level_p != PARSE_EXPR_LEFT_HAND_SIDE))
   {
     parser_stack_push_uint8 (context_p, LEXER_ASSIGN_GROUP_EXPR);
   }
 #endif /* ENABLED (JERRY_ESNEXT) */
-
 } /* parser_process_group_expression */
 
 /**
@@ -3481,7 +3710,7 @@ parser_parse_expression (parser_context_t *context_p, /**< context */
   {
     if (parser_parse_unary_expression (context_p, &grouping_level))
     {
-      parser_process_binary_opcodes (context_p, 0);
+      parser_process_binary_opcodes (context_p, 0, &grouping_level);
       break;
     }
 
@@ -3518,9 +3747,8 @@ process_unary_expression:
 #endif /* ENABLED (JERRY_ESNEXT) */
         }
 
-        parser_process_binary_opcodes (context_p, min_prec_treshold);
+        parser_process_binary_opcodes (context_p, min_prec_treshold, &grouping_level);
       }
-
       if (context_p->token.type == LEXER_RIGHT_PAREN
           && (context_p->stack_top_uint8 == LEXER_LEFT_PAREN
               || context_p->stack_top_uint8 == LEXER_COMMA_SEP_LIST))
@@ -3548,7 +3776,7 @@ process_unary_expression:
     }
     else if (LEXER_IS_BINARY_OP_TOKEN (context_p->token.type))
     {
-      parser_append_binary_token (context_p);
+      parser_append_binary_token (context_p, grouping_level);
       lexer_next_token (context_p);
       continue;
     }
