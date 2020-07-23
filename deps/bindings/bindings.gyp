@@ -1,6 +1,13 @@
 {
   'variables': {
-    'deps_path%': '..'
+    'deps_path%': '..',
+    'host_platform%': 'none',
+    'platform_libs%': '',
+    'conditions': [
+      ['host_platform=="tizen"', {
+        'platform_libs': 'dlog'
+      }],
+    ],
   },
   'targets': [
     {
@@ -8,7 +15,7 @@
       'type': '<(library)',
       'dependencies': [ '<(deps_path)/uv/uv.gyp:libuv' ],
       'cflags': [
-        '<!@(pkg-config --cflags glib-2.0)',
+        '<!@(pkg-config --cflags glib-2.0 <(platform_libs))',
       ],
       'include_dirs': [
         'src',
@@ -21,10 +28,10 @@
           'ENABLE_NODE_BINDINGS'
         ],
         'cflags': [
-          '<!@(pkg-config --cflags glib-2.0)',
+          '<!@(pkg-config --cflags glib-2.0 <(platform_libs))',
         ],
         'libraries': [
-          '<!@(pkg-config --libs glib-2.0)',
+          '<!@(pkg-config --libs glib-2.0 <(platform_libs))',
         ],
         'include_dirs': [
           'src',
