@@ -55,6 +55,9 @@
 
         'v8jerry/v8jerry_allocator.cpp',
         'v8jerry/v8jerry_allocator.hpp',
+        'v8jerry/v8jerry_backing_store.cpp',
+        'v8jerry/v8jerry_backing_store.hpp',
+        'v8jerry/v8jerry_allocator.hpp',
         'v8jerry/v8jerry_callback.cpp',
         'v8jerry/v8jerry_callback.hpp',
         'v8jerry/v8jerry_flags.cpp',

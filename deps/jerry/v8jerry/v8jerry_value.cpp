@@ -43,6 +43,24 @@ static jerry_object_native_info_t JerryV8WeakReferenceInfo = {
     .free_cb = JerryV8WeakCallback,
 };
 
+static void JerryV8BackingStoreCallback(void* data) {
+    if (data == NULL) {
+        return;
+    }
+
+    JerryBackingStore* backingStore = static_cast<JerryBackingStore*>(data);
+
+    if (backingStore->deleter() != NULL) {
+        backingStore->deleter()(backingStore->data(), backingStore->byteLength(), backingStore->deleterData());
+    }
+
+    delete backingStore;
+};
+
+static jerry_object_native_info_t JerryV8BackingStoreInfo = {
+    .free_cb = JerryV8BackingStoreCallback,
+};
+
 bool JerryValue::SetProperty(JerryValue* key, JerryValue* value) {
     // TODO: NULL check assert for key, value
     jerry_value_t result = jerry_set_property(m_value, key->value(), value->value());
@@ -147,6 +165,34 @@ JerryValue* JerryValue::NewObject(void) {
     jerry_set_object_native_pointer(object, ctx, &JerryV8ObjectContextTypeInfo);
 
     return new JerryValue(object);
+}
+
+/* static */
+JerryValue* JerryValue::NewArrayBuffer(JerryBackingStore *backingStore) {
+    jerry_value_t buffer = jerry_create_arraybuffer_external(backingStore->byteLength(), (uint8_t*)backingStore->data(), NULL);
+
+    jerry_set_object_native_pointer(buffer, backingStore, &JerryV8BackingStoreInfo);
+
+    return new JerryValue(buffer);
+}
+
+/* static */
+JerryValue* JerryValue::NewTypedArray(JerryValue* array_buffer,
+                                      size_t byte_offset, size_t length, jerry_typedarray_type_t type) {
+    return new JerryValue(jerry_create_typedarray_for_arraybuffer_sz(type, array_buffer->value(), (jerry_length_t) byte_offset, (jerry_length_t) length));
+}
+
+JerryBackingStore* JerryValue::GetBackingStore(void) const {
+    void *native_p;
+    bool has_data = jerry_get_object_native_pointer(m_value, &native_p, &JerryV8BackingStoreInfo);
+    if (!has_data) {
+        // FOR JS created Arraybuffers
+        JerryBackingStore *backingStore = new JerryBackingStore (jerry_get_arraybuffer_pointer(m_value), jerry_get_arraybuffer_byte_length(m_value));
+        jerry_set_object_native_pointer(m_value, backingStore, &JerryV8BackingStoreInfo);
+        return backingStore;
+    }
+
+    return reinterpret_cast<JerryBackingStore*>(native_p);
 }
 
 /* static */
@@ -347,7 +393,9 @@ void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8
 }
 
 void* JerryValue::ClearWeak() {
-    assert(IsWeakReferenced() == true);
+    if(!IsWeakReferenced()) {
+        return NULL;
+    }
 
     JerryV8WeakReferenceData* weak_data;
     jerry_get_object_native_pointer (m_value, reinterpret_cast<void**>(&weak_data), &JerryV8WeakReferenceInfo);

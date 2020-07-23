@@ -50,7 +50,6 @@ private:
 
         values[v8::PropertyCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(data->external)); /* data; */
         values[v8::PropertyCallbackInfo<T>::kThisIndex] = new JerryValue(jerry_acquire_value(this_val));
-        values[v8::PropertyCallbackInfo<T>::kArgsLength] = 0; // TODO
 
         // HandleScope will do the cleanup for us at a later stage
         JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kHolderIndex]);

@@ -10,6 +10,7 @@
 #include "jerryscript.h"
 #include "jerryscript-port-default.h"
 
+#include "v8jerry_allocator.hpp"
 #include "v8jerry_value.hpp"
 #include "v8jerry_utils.hpp"
 
@@ -33,6 +34,7 @@ public:
 
     const JerryPolyfill& HelperMapNew(void) const { return *m_fn_map_new; }
     const JerryPolyfill& HelperMapSet(void) const { return *m_fn_map_set; }
+    const JerryPolyfill& HelperSetAdd(void) const { return *m_fn_set_add; }
     const JerryPolyfill& HelperObjectAssign(void) const { return *m_fn_object_assign; }
     const JerryPolyfill& HelperIsMap(void) const { return *m_fn_is_map; }
     const JerryPolyfill& HelperIsSet(void) const { return *m_fn_is_set; }
@@ -146,6 +148,7 @@ private:
     JerryPolyfill* m_fn_is_map;
     JerryPolyfill* m_fn_is_set;
     JerryPolyfill* m_fn_map_set;
+    JerryPolyfill* m_fn_set_add;
     JerryPolyfill* m_fn_object_assign;
     JerryPolyfill* m_fn_conversion_failer;
     JerryPolyfill* m_fn_get_own_prop;

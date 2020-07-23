@@ -130,6 +130,10 @@ JerryObjectTemplate* JerryFunctionTemplate::PrototypeTemplate(void) {
     return m_prototype_template;
 }
 
+void JerryFunctionTemplate::Inherit(JerryObjectTemplate* parent) {
+    m_prototype_template = parent;
+}
+
 JerryObjectTemplate* JerryFunctionTemplate::InstanceTemplate(void) {
     if (!m_instance_template) {
         m_instance_template = new JerryObjectTemplate();

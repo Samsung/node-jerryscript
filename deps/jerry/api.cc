@@ -15,6 +15,7 @@
 
 /* Jerry <-> V8 binding classes */
 #include "v8jerry_allocator.hpp"
+#include "v8jerry_backing_store.hpp"
 #include "v8jerry_callback.hpp"
 #include "v8jerry_handlescope.hpp"
 #include "v8jerry_flags.hpp"
@@ -162,31 +163,88 @@ void ResourceConstraints::ConfigureDefaults(uint64_t physical_memory,
 }
 
 i::Address* V8::GlobalizeReference(i::Isolate* isolate, i::Address* obj) {
-  UNIMPLEMENTED(1042);
-  return NULL;
+  V8_CALL_TRACE();
+  JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(obj);
+
+  JerryHandle* result;
+  switch (jhandle->type()) {
+      case JerryHandle::GlobalValue:
+      case JerryHandle::Value: result = reinterpret_cast<JerryValue*>(jhandle)->CopyToGlobal(); break;
+      case JerryHandle::ObjectTemplate:
+      case JerryHandle::FunctionTemplate: result = jhandle; break;
+      default:
+          assert(false && "Unkown Handle type detected");
+  }
+
+
+  return reinterpret_cast<i::Address*>(result);
 }
 
 void V8::MoveGlobalReference(internal::Address** from, internal::Address** to) {
-  UNIMPLEMENTED(1076);
+  V8_CALL_TRACE();
+  // JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(*from);
+
+  // JerryHandle* result;
+  // switch (jhandle->type()) {
+  //     case JerryHandle::GlobalValue:
+  //     case JerryHandle::Value: {
+  //       result = reinterpret_cast<JerryValue*>(jhandle)->Move(reinterpret_cast<JerryValue*>(to)); break;
+  //       break;
+  //     }
+  //     case JerryHandle::ObjectTemplate:
+  //     case JerryHandle::FunctionTemplate: result = jhandle; break;
+  //     default:
+  //         assert(false && "Unkown Handle type detected");
+  // }
 }
 
 void V8::MakeWeak(i::Address* location, void* parameter,
                   WeakCallbackInfo<void>::Callback weak_callback,
                   WeakCallbackType type) {
-  UNIMPLEMENTED(1090);
+  V8_CALL_TRACE();
+  JerryValue* object = reinterpret_cast<JerryValue*> (location);
+  assert(object->IsWeakReferenced() == false);
+
+  if (type == WeakCallbackType::kInternalFields) {
+      void** wrapper = new void*[kInternalFieldsInWeakCallback + 1];
+      for (int i = 0; i < kInternalFieldsInWeakCallback; i++) {
+          wrapper[i] = object->GetInternalField<void*>(i);
+      }
+      wrapper[kInternalFieldsInWeakCallback] = parameter;
+      parameter = (void*) wrapper;
+  }
+
+  object->MakeWeak(weak_callback, type, parameter);
 }
 
 void V8::MakeWeak(i::Address** location_addr) {
-  UNIMPLEMENTED(1096);
+  V8_CALL_TRACE();
+  JerryValue* object = reinterpret_cast<JerryValue*> (*location_addr);
+  assert(object->IsWeakReferenced() == false);
+  JerryIsolate::GetCurrent()->AddAsWeak(object);
 }
 
 void* V8::ClearWeak(i::Address* location) {
-  UNIMPLEMENTED(1100);
-  return NULL;
+  V8_CALL_TRACE();
+  JerryValue* object = reinterpret_cast<JerryValue*> (location);
+
+  return object->ClearWeak();
 }
 
 void V8::DisposeGlobal(i::Address* location) {
-  UNIMPLEMENTED(1108);
+  JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(location);
+
+  if (JerryHandle::IsValueType(jhandle)) {
+      JerryValue* object = reinterpret_cast<JerryValue*> (location);
+
+      if (object->IsWeakReferenced()) {
+          object->RunWeakCleanup();
+          JerryIsolate::GetCurrent()->RemoveAsWeak(object);
+          //object->ClearWeak();
+      }
+
+      delete object;
+  }
 }
 
 Value* V8::Eternalize(Isolate* v8_isolate, Value* value) {
@@ -337,20 +395,47 @@ void Template::SetAccessorProperty(v8::Local<v8::Name> name,
 }
 
 Local<ObjectTemplate> FunctionTemplate::PrototypeTemplate() {
-  UNIMPLEMENTED(1420);
-  return Local<ObjectTemplate>();
+  V8_CALL_TRACE();
+  JerryFunctionTemplate* func = reinterpret_cast<JerryFunctionTemplate*>(this);
+  JerryObjectTemplate* obj_template = func->PrototypeTemplate();
+  RETURN_HANDLE(ObjectTemplate, Isolate::GetCurrent(), obj_template);
 }
 
 void FunctionTemplate::Inherit(v8::Local<FunctionTemplate> value) {
-  UNIMPLEMENTED(1452);
+  V8_CALL_TRACE();
+  JerryFunctionTemplate* func = reinterpret_cast<JerryFunctionTemplate*>(this);
+  JerryFunctionTemplate* parent = reinterpret_cast<JerryFunctionTemplate*>(*value);
+  func->Inherit(parent->PrototypeTemplate());
+}
+
+void FunctionTemplate::SetCallHandler(FunctionCallback callback,
+                                      v8::Local<Value> data,
+                                      SideEffectType side_effect_type,
+                                      const CFunction* not_available_in_node_v14_yet) {
+  V8_CALL_TRACE();
+  JerryFunctionTemplate* func = reinterpret_cast<JerryFunctionTemplate*>(this);
+  func->SetCallback(callback);
+  if (!data.IsEmpty()) {
+      JerryValue* value = reinterpret_cast<JerryValue*>(*data);
+      jerry_value_t jvalue = jerry_acquire_value(value->value());
+
+      func->SetExternalData(jvalue);
+  }
 }
 
 Local<FunctionTemplate> FunctionTemplate::New(
     Isolate* isolate, FunctionCallback callback, v8::Local<Value> data,
     v8::Local<Signature> signature, int length, ConstructorBehavior behavior,
     SideEffectType side_effect_type, const CFunction*) {
-  UNIMPLEMENTED(1499);
-  return Local<FunctionTemplate>();
+  V8_CALL_TRACE();
+  // TODO: handle the other args
+  JerryFunctionTemplate* func = new JerryFunctionTemplate();
+  reinterpret_cast<FunctionTemplate*>(func)->SetCallHandler(callback, data);
+  if (!signature.IsEmpty()) {
+      func->SetSignature(reinterpret_cast<JerryHandle*>(*signature));
+  }
+
+  RETURN_HANDLE(FunctionTemplate, isolate, func);
 }
 
 Local<Signature> Signature::New(Isolate* isolate,
@@ -360,18 +445,32 @@ Local<Signature> Signature::New(Isolate* isolate,
 }
 
 Local<ObjectTemplate> FunctionTemplate::InstanceTemplate() {
-  UNIMPLEMENTED(1604);
-  return Local<ObjectTemplate>();
+  V8_CALL_TRACE();
+  JerryFunctionTemplate* func = reinterpret_cast<JerryFunctionTemplate*>(this);
+  JerryObjectTemplate* obj_template = func->InstanceTemplate();
+  RETURN_HANDLE(ObjectTemplate, Isolate::GetCurrent(), obj_template);
 }
 
 void FunctionTemplate::SetClassName(Local<String> name) {
-  UNIMPLEMENTED(1632);
+  V8_CALL_TRACE();
+  JerryFunctionTemplate* tmplt = reinterpret_cast<JerryFunctionTemplate*>(this);
+  // Trigger creation of the prototype object if it was not done yet:
+  (void)tmplt->PrototypeTemplate();
+  // TODO: This should be used as the constructor's name. Skip this for now.
 }
 
 Local<ObjectTemplate> ObjectTemplate::New(
     Isolate* isolate, v8::Local<FunctionTemplate> constructor) {
-  UNIMPLEMENTED(1666);
-  return Local<ObjectTemplate>();
+  V8_CALL_TRACE();
+  JerryObjectTemplate* obj_template = new JerryObjectTemplate();
+
+  if (!constructor.IsEmpty()) {
+      // TODO: check if this is correct
+      JerryFunctionTemplate* function_template = reinterpret_cast<JerryFunctionTemplate*>(*constructor);
+      obj_template->SetConstructor(function_template);
+  }
+
+  RETURN_HANDLE(ObjectTemplate, isolate, obj_template);
 }
 
 void ObjectTemplate::SetAccessor(v8::Local<String> name,
@@ -382,7 +481,16 @@ void ObjectTemplate::SetAccessor(v8::Local<String> name,
                                  v8::Local<AccessorSignature> signature,
                                  SideEffectType getter_side_effect_type,
                                  SideEffectType setter_side_effect_type) {
-  UNIMPLEMENTED(1781);
+    V8_CALL_TRACE();
+    JerryObjectTemplate* tmplt = reinterpret_cast<JerryObjectTemplate*>(this);
+
+    JerryValue* jname = reinterpret_cast<JerryValue*>(*name)->Copy();
+    JerryValue* jdata = NULL;
+    if (!data.IsEmpty()) {
+        jdata = reinterpret_cast<JerryValue*>(*data)->Copy();
+    }
+
+    tmplt->SetAccessor(jname, getter, setter, jdata, settings, attribute);
 }
 
 void ObjectTemplate::SetAccessor(v8::Local<Name> name,
@@ -393,21 +501,34 @@ void ObjectTemplate::SetAccessor(v8::Local<Name> name,
                                  v8::Local<AccessorSignature> signature,
                                  SideEffectType getter_side_effect_type,
                                  SideEffectType setter_side_effect_type) {
-  UNIMPLEMENTED(1794);
+  V8_CALL_TRACE();
+  JerryObjectTemplate* tmplt = reinterpret_cast<JerryObjectTemplate*>(this);
+
+  JerryValue* jname = reinterpret_cast<JerryValue*>(*name)->Copy();
+  JerryValue* jdata = NULL;
+  if (!data.IsEmpty()) {
+      jdata = reinterpret_cast<JerryValue*>(*data)->Copy();
+  }
+
+  tmplt->SetAccessor(jname, getter, setter, jdata, settings, attribute);
 }
 
 void ObjectTemplate::SetHandler(
     const NamedPropertyHandlerConfiguration& config) {
-  UNIMPLEMENTED(1887);
+  V8_CALL_TRACE();
+  // [[TODO]] interceptor!!
 }
 
 void ObjectTemplate::SetHandler(
     const IndexedPropertyHandlerConfiguration& config) {
-  UNIMPLEMENTED(1969);
+  V8_CALL_TRACE();
+  // [[TODO]] interceptor!!
 }
 
 void ObjectTemplate::SetInternalFieldCount(int value) {
-  UNIMPLEMENTED(2004);
+  V8_CALL_TRACE();
+  JerryObjectTemplate* tmplt = reinterpret_cast<JerryObjectTemplate*>(this);
+  tmplt->SetInteralFieldCount(value);
 }
 
 ScriptCompiler::CachedData::CachedData(const uint8_t* data_, int length_,
@@ -679,57 +800,87 @@ MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source,
 }
 
 v8::TryCatch::TryCatch(v8::Isolate* isolate)
-    : isolate_(NULL),
+    : isolate_(reinterpret_cast<v8::internal::Isolate*>(isolate)),
       next_(NULL),
       is_verbose_(false),
       can_continue_(true),
       capture_message_(true),
       rethrow_(false),
       has_terminated_(false) {
-  UNIMPLEMENTED(2712);
+  V8_CALL_TRACE();
+
+  JerryIsolate::fromV8(isolate_)->PushTryCatch(this);
 }
 
 v8::TryCatch::~TryCatch() {
-  UNIMPLEMENTED(2727);
+    V8_CALL_TRACE();
+    // TODO: remove from isolate stack
+    JerryIsolate* iso = JerryIsolate::fromV8(isolate_);
+    iso->PopTryCatch(this);
+
+    if (!rethrow_ && HasCaught()) {
+        if (is_verbose_) {
+            JerryValue error(jerry_acquire_value(iso->GetRawError()->value()));
+            iso->ClearError();
+            Local<Value> exception(reinterpret_cast<Value*>(&error));
+
+            // Replace "stack" property on exception as V8 creates a stack string and not an array.
+            iso->UpdateErrorStackProp(error);
+
+            Local<v8::Message> message;
+            iso->ReportMessage(message, exception);
+        } else {
+            // By not clearing the error "effectively" the parent TryCatch would inherit everything.
+            iso->ClearError();
+        }
+    }
 }
 
 bool v8::TryCatch::HasCaught() const {
-  UNIMPLEMENTED(2761);
-  return false;
+  V8_CALL_TRACE();
+  // TODO: return error from isolate/context
+  return JerryIsolate::fromV8(isolate_)->HasError();
 }
 
 bool v8::TryCatch::CanContinue() const {
-  UNIMPLEMENTED(2766);
-  return false;
+  V8_CALL_TRACE();
+  return can_continue_;
 }
 
 bool v8::TryCatch::HasTerminated() const {
-  UNIMPLEMENTED(2768);
-  return false;
+  V8_CALL_TRACE();;
+  return has_terminated_;
 }
 
 v8::Local<v8::Value> v8::TryCatch::ReThrow() {
-  UNIMPLEMENTED(2770);
-  return v8::Local<Value>();
+  V8_CALL_TRACE();
+  rethrow_ = true;
+
+  // TODO: push error to "try catch" stack above?
+  // TODO: return what?
+  return Local<Value>();
 }
 
 v8::Local<Value> v8::TryCatch::Exception() const {
-  UNIMPLEMENTED(2776);
-  return v8::Local<Value>();
+  V8_CALL_TRACE();
+  // TODO: return the current error object
+  return Local<Value>(reinterpret_cast<Value*>(JerryIsolate::fromV8(isolate_)->GetRawError()));
 }
 
 v8::Local<v8::Message> v8::TryCatch::Message() const {
-  UNIMPLEMENTED(2809);
-  return v8::Local<v8::Message>();
+  V8_CALL_TRACE();
+  // TODO: return the current error message
+  return Local<v8::Message>();
 }
 
 void v8::TryCatch::SetVerbose(bool value) {
-  UNIMPLEMENTED(2835);
+  V8_CALL_TRACE();
+  is_verbose_ = value;
 }
 
 bool v8::TryCatch::IsVerbose() const {
-  UNIMPLEMENTED(2837);
-  return false;
+  V8_CALL_TRACE();
+    return is_verbose_;
 }
 
 Local<String> Message::Get() const {
@@ -1240,51 +1391,55 @@ void v8::Proxy::CheckCast(Value* that) {
 }
 
 v8::BackingStore::~BackingStore() {
-  UNIMPLEMENTED(3761);
+  V8_CALL_TRACE();
 }
 
 void* v8::BackingStore::Data() const {
-  UNIMPLEMENTED(3766);
-  return NULL;
+  V8_CALL_TRACE();
+  const JerryBackingStore *backingStore = JerryBackingStore::fromV8(this);
+  return backingStore->data();
 }
 
 size_t v8::BackingStore::ByteLength() const {
-  UNIMPLEMENTED(3770);
-  return 0;
+  V8_CALL_TRACE();
+  const JerryBackingStore *backingStore = JerryBackingStore::fromV8(this);
+  return backingStore->byteLength();
 }
 
 std::shared_ptr<v8::BackingStore> v8::ArrayBuffer::GetBackingStore() {
-  UNIMPLEMENTED(3794);
-  return NULL;
+  V8_CALL_TRACE();
+  JerryBackingStore* backingStore = reinterpret_cast<JerryValue*>(this)->GetBackingStore();
+  return JerryBackingStore::toShared(backingStore);
 }
 
 std::shared_ptr<v8::BackingStore> v8::SharedArrayBuffer::GetBackingStore() {
-  UNIMPLEMENTED(3806);
-  return NULL;
+  V8_CALL_TRACE();
+  JerryBackingStore* backingStore = reinterpret_cast<JerryValue*>(this)->GetBackingStore();
+  return JerryBackingStore::toShared(backingStore);
 }
 
 void v8::ArrayBuffer::CheckCast(Value* that) {
-  UNIMPLEMENTED(3817);
+  V8_CALL_TRACE();;
 }
 
 void v8::ArrayBufferView::CheckCast(Value* that) {
-  UNIMPLEMENTED(3824);
+  V8_CALL_TRACE();
 }
 
 void v8::TypedArray::CheckCast(Value* that) {
-  UNIMPLEMENTED(3832);
+  V8_CALL_TRACE();
 }
 
 void v8::DataView::CheckCast(Value* that) {
-  UNIMPLEMENTED(3851);
+  V8_CALL_TRACE();
 }
 
 void v8::SharedArrayBuffer::CheckCast(Value* that) {
-  UNIMPLEMENTED(3857);
+  V8_CALL_TRACE();
 }
 
 void v8::Date::CheckCast(v8::Value* that) {
-  UNIMPLEMENTED(3864);
+  V8_CALL_TRACE();
 }
 
 Maybe<double> Value::NumberValue(Local<Context> context) const {
@@ -1839,25 +1994,29 @@ MaybeLocal<v8::Value> Function::Call(Local<Context> context,
 }
 
 void Function::SetName(v8::Local<v8::String> name) {
-  UNIMPLEMENTED(4934);
+  V8_CALL_TRACE();
+  // TODO: how to set the "name" of a function (in JS the function.name is readonly)
 }
 
 Local<Value> Function::GetDebugName() const {
-  UNIMPLEMENTED(4970);
+  V8_CALL_TRACE();
+  // TODO: only used by node_perf.cc
   return Local<Value>();
 }
 
 Local<v8::Value> Function::GetBoundFunction() const {
-  UNIMPLEMENTED(5058);
-  return Local<v8::Value>();
+  V8_CALL_TRACE();
+  // TODO: only used by node_perf.cc
+  return Local<Value>();;
 }
 
 int Name::GetIdentityHash() {
-  UNIMPLEMENTED(5069);
+  V8_CALL_TRACE();
   return 0;
 }
 
 int String::Length() const {
+  V8_CALL_TRACE();
   return reinterpret_cast<const JerryValue*>(this)->GetStringLength();
 }
 
@@ -1868,20 +2027,56 @@ int String::Utf8Length(Isolate* isolate) const {
 
 int String::WriteUtf8(Isolate* v8_isolate, char* buffer, int capacity,
                       int* nchars_ref, int options) const {
-  UNIMPLEMENTED(5351);
-  return 0;
+  V8_CALL_TRACE();
+  const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
+
+  jerry_size_t bytes = jerry_string_to_utf8_char_buffer (jvalue->value(), (jerry_char_t *)buffer, capacity);
+
+  if ((options & String::NO_NULL_TERMINATION) == 0) {
+      buffer[bytes] = '\0';
+  }
+
+  return (int)bytes;
 }
 
 int String::WriteOneByte(Isolate* isolate, uint8_t* buffer, int start,
                          int length, int options) const {
-  UNIMPLEMENTED(5389);
-  return 0;
+  V8_CALL_TRACE();
+  const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
+
+  jerry_size_t str_length = jerry_get_string_length(jvalue->value());
+
+  if ((length == -1) || ((jerry_size_t)(start + length) > str_length)) {
+      length = str_length - start;
+  }
+
+  jerry_size_t bytes = jerry_substring_to_char_buffer (jvalue->value(), start, start + length, (jerry_char_t *)buffer, length);
+
+  if ((options & String::NO_NULL_TERMINATION) == 0) {
+      buffer[bytes] = '\0';
+  }
+
+  return (int)bytes;
 }
 
 int String::Write(Isolate* isolate, uint16_t* buffer, int start, int length,
                   int options) const {
-  UNIMPLEMENTED(5395);
-  return 0;
+  V8_CALL_TRACE();
+  const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
+
+  jerry_size_t str_length = jerry_get_utf8_string_length(jvalue->value());
+
+  if ((length == -1) || ((jerry_size_t)(start + length) > str_length)) {
+      length = str_length - start;
+  }
+
+  jerry_size_t bytes = jerry_substring_to_utf8_char_buffer (jvalue->value(), start, start + length, (jerry_char_t *)buffer, length);
+
+  if ((options & String::NO_NULL_TERMINATION) == 0) {
+      buffer[bytes] = '\0';
+  }
+
+  return (int)bytes;
 }
 
 bool v8::String::IsExternal() const {
@@ -2120,13 +2315,26 @@ MaybeLocal<v8::Object> ObjectTemplate::NewInstance(Local<Context> context) {
 }
 
 MaybeLocal<v8::Function> FunctionTemplate::GetFunction(Local<Context> context) {
-  UNIMPLEMENTED(6177);
-  return MaybeLocal<v8::Function>();
+  V8_CALL_TRACE();
+  JerryFunctionTemplate* tmplt = reinterpret_cast<JerryFunctionTemplate*>(this);
+  JerryValue *func = tmplt->GetFunction()->Copy();
+
+  RETURN_HANDLE(Function, Isolate::GetCurrent(), func);
 }
 
 bool FunctionTemplate::HasInstance(v8::Local<v8::Value> value) {
-  UNIMPLEMENTED(6214);
-  return false;
+  V8_CALL_TRACE();
+  JerryValue* object = reinterpret_cast<JerryValue*>(*value);
+
+  if (!value->IsObject() || value->IsFunction()) {
+      return false;
+  }
+
+  JerryV8FunctionHandlerData* data = JerryGetFunctionHandlerData(object->value());
+  // TODO: the prototype chain should be traversed
+
+  // TODO: do a better check not just a simple address check
+  return data->function_template == reinterpret_cast<JerryFunctionTemplate*>(this);
 }
 
 Local<External> v8::External::New(Isolate* isolate, void* value) {
@@ -2243,72 +2451,136 @@ double v8::Date::ValueOf() const {
 }
 
 Local<v8::Array> v8::Array::New(Isolate* isolate, int length) {
-  UNIMPLEMENTED(6753);
-  return Local<v8::Array>();
+  V8_CALL_TRACE();
+  if (length < 0) {
+      length = 0;
+  }
+
+  jerry_value_t array_value = jerry_create_array(length);
+  RETURN_HANDLE(Array, isolate, new JerryValue(array_value));
 }
 
 Local<v8::Array> v8::Array::New(Isolate* isolate, Local<Value>* elements,
                                 size_t length) {
-  UNIMPLEMENTED(6753);
-  return Local<v8::Array>();
+  V8_CALL_TRACE();
+
+  jerry_value_t array_value = jerry_create_array(length);
+
+  uint32_t length_limit = std::min<uint32_t>(UINT32_MAX, length);
+  for (size_t i = 0; i < length_limit; i++) {
+    JerryValue* arg = reinterpret_cast<JerryValue*>(*elements[i]);
+    jerry_value_t result = jerry_set_property_by_index(array_value, i, arg->value());
+  }
+
+  RETURN_HANDLE(Array, isolate, new JerryValue(array_value));
 }
 
 uint32_t v8::Array::Length() const {
-  UNIMPLEMENTED(6783);
-  return 0;
+  V8_CALL_TRACE();
+  const JerryValue* array = reinterpret_cast<const JerryValue*>(this);
+
+  return jerry_get_array_length(array->value());
 }
 
 Local<v8::Map> v8::Map::New(Isolate* isolate) {
-  UNIMPLEMENTED(6793);
-  return Local<v8::Map>();
+  V8_CALL_TRACE();
+  jerry_value_t map = jerry_create_container (JERRY_CONTAINER_TYPE_MAP, NULL, 0);
+  RETURN_HANDLE(Map, isolate, new JerryValue(map));
 }
 
 MaybeLocal<Map> Map::Set(Local<Context> context, Local<Value> key,
                          Local<Value> value) {
-  UNIMPLEMENTED(6827);
-  return MaybeLocal<Map>();
+  V8_CALL_TRACE();
+  JerryValue* jmap = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+  JerryValue* jvalue = reinterpret_cast<JerryValue*>(*value);
+
+  jerry_value_t args[] = { jmap->value(), jkey->value(), jvalue->value() };
+  jerry_value_t result = JerryIsolate::fromV8(context->GetIsolate())->HelperMapSet().Call(jerry_create_undefined(), args, 3);
+  jerry_release_value(result);
+
+  return Local<Map>(this);
 }
 
 Local<v8::Set> v8::Set::New(Isolate* isolate) {
-  UNIMPLEMENTED(6925);
-  return Local<Set>();
+  jerry_value_t set = jerry_create_container (JERRY_CONTAINER_TYPE_SET, NULL, 0);
+  RETURN_HANDLE(Set, isolate, new JerryValue(set));
 }
 
 MaybeLocal<Set> Set::Add(Local<Context> context, Local<Value> key) {
-  UNIMPLEMENTED(6946);
-  return MaybeLocal<Set>();
+  V8_CALL_TRACE();
+  JerryValue* jset = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+
+  jerry_value_t args[] = { jset->value(), jkey->value(), };
+  jerry_value_t result = JerryIsolate::fromV8(context->GetIsolate())->HelperSetAdd().Call(jerry_create_undefined(), args, 3);
+  jerry_release_value(result);
+
+  return Local<Set>(this);
 }
 
 MaybeLocal<Promise::Resolver> Promise::Resolver::New(Local<Context> context) {
-  UNIMPLEMENTED(7027);
-  return MaybeLocal<Promise::Resolver>();
+  V8_CALL_TRACE();
+  JerryValue* jpromise = JerryValue::NewPromise();
+
+  RETURN_HANDLE(Promise::Resolver, context->GetIsolate(), jpromise);
 }
 
 Local<Promise> Promise::Resolver::GetPromise() {
-  UNIMPLEMENTED(7036);
-  return Local<Promise>();
+  V8_CALL_TRACE();
+  // TODO: maybe wrap the promise object into a resolver?
+  RETURN_HANDLE(Promise, JerryIsolate::toV8(JerryIsolate::GetCurrent()), reinterpret_cast<JerryValue*>(this));
 }
 
 Maybe<bool> Promise::Resolver::Resolve(Local<Context> context,
                                        Local<Value> value) {
-  UNIMPLEMENTED(7041);
-  return Just(true);
+  V8_CALL_TRACE();
+  JerryValue* jpromise = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jdata = reinterpret_cast<JerryValue*>(*value);
+  jerry_value_t result = jerry_resolve_or_reject_promise(jpromise->value(), jdata->value(), true);
+
+  if (jerry_value_is_error(result)) {
+      return Just(false);
+  } else {
+      return Just(true);
+  }
 }
 
 Maybe<bool> Promise::Resolver::Reject(Local<Context> context,
                                       Local<Value> value) {
-  UNIMPLEMENTED(7059);
-  return Just(true);
+  V8_CALL_TRACE();
+  JerryValue* jpromise = reinterpret_cast<JerryValue*>(this);
+  JerryValue* jdata = reinterpret_cast<JerryValue*>(*value);
+  jerry_value_t result = jerry_resolve_or_reject_promise(jpromise->value(), jdata->value(), false);
+
+  if (jerry_value_is_error(result)) {
+      return Just(false);
+  } else {
+      return Just(true);
+  }
 }
 
 Local<Value> Promise::Result() {
-  UNIMPLEMENTED(7133);
-  return Local<Value>();
+  V8_CALL_TRACE();
+  JerryValue* jvalue = reinterpret_cast<JerryValue*>(this);
+
+  JerryValue* jresult = JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), jerry_get_promise_result(jvalue->value()));
+  RETURN_HANDLE(Value, reinterpret_cast<Isolate*>(JerryIsolate::GetCurrent()), jresult);
 }
 
 Promise::PromiseState Promise::State() {
-  UNIMPLEMENTED(7144);
-  return kPending;
+  V8_CALL_TRACE();
+  JerryValue* jvalue = reinterpret_cast<JerryValue*>(this);
+
+  switch(jerry_get_promise_state(jvalue->value())) {
+      case JERRY_PROMISE_STATE_PENDING: return Promise::kPending;
+      case JERRY_PROMISE_STATE_FULFILLED: return Promise::kFulfilled;
+      case JERRY_PROMISE_STATE_REJECTED: return Promise::kRejected;
+      default: break;
+  }
+
+  assert(false);
+  return Promise::kPending;
 }
 
 Local<Value> Proxy::GetTarget() {
@@ -2360,79 +2632,155 @@ bool v8::ArrayBuffer::IsDetachable() const {
   return false;
 }
 
+/* ArrayBuffer & Allocator */
+
 Local<ArrayBuffer> v8::ArrayBuffer::New(Isolate* isolate, size_t byte_length) {
-  UNIMPLEMENTED(7439);
-  return Local<ArrayBuffer>();
+  V8_CALL_TRACE();
+  JerryBackingStore *backingStore = new JerryBackingStore(byte_length);
+
+  RETURN_HANDLE(ArrayBuffer, isolate, JerryValue::NewArrayBuffer(backingStore));
 }
 
 Local<ArrayBuffer> v8::ArrayBuffer::New(
     Isolate* isolate, std::shared_ptr<BackingStore> backing_store) {
-  UNIMPLEMENTED(7478);
-  return Local<ArrayBuffer>();
+  V8_CALL_TRACE();
+
+  RETURN_HANDLE(ArrayBuffer, isolate, JerryValue::NewArrayBuffer(JerryBackingStore::fromV8(backing_store.get())));
 }
 
 std::unique_ptr<v8::BackingStore> v8::ArrayBuffer::NewBackingStore(
     Isolate* isolate, size_t byte_length) {
-  UNIMPLEMENTED(7495);
-  return NULL;
+  V8_CALL_TRACE();
+  JerryBackingStore* backingStore = new JerryBackingStore(byte_length);
+  return JerryBackingStore::toUnique(backingStore);
 }
 
 std::unique_ptr<v8::BackingStore> v8::ArrayBuffer::NewBackingStore(
     void* data, size_t byte_length, BackingStoreDeleterCallback deleter,
     void* deleter_data) {
-  UNIMPLEMENTED(7512);
-  return NULL;
+  V8_CALL_TRACE();
+  JerryBackingStore* backingStore = new JerryBackingStore(data, byte_length, deleter, deleter_data);
+  return JerryBackingStore::toUnique(backingStore);
 }
 
 Local<ArrayBuffer> v8::ArrayBufferView::Buffer() {
-  UNIMPLEMENTED(7523);
-  return Local<ArrayBuffer>();
+  V8_CALL_TRACE();
+  JerryValue* jarray = reinterpret_cast<JerryValue*> (this);
+
+  jerry_value_t buffer;
+
+  if (jarray->IsTypedArray()) {
+      buffer = jerry_get_typedarray_buffer (jarray->value(), NULL, NULL);
+  } else if (jarray->IsDataView()) {
+      buffer = jerry_get_dataview_buffer (jarray->value(), NULL, NULL);
+  } else {
+      abort();
+  }
+
+  RETURN_HANDLE(ArrayBuffer, Isolate::GetCurrent(), new JerryValue(buffer));
 }
 
 size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
   UNIMPLEMENTED(7539);
   return 0;
+
+  const JerryValue* jarray = reinterpret_cast<const JerryValue*> (this);
+  jerry_value_t buffer;
+
+  if (jarray->IsTypedArray()) {
+      buffer = jerry_get_typedarray_buffer (jarray->value(), NULL, NULL);
+  } else if (jarray->IsDataView()) {
+      buffer = jerry_get_dataview_buffer (jarray->value(), NULL, NULL);
+  } else {
+      abort();
+  }
+
+  return jerry_arraybuffer_read (buffer, 0, (uint8_t*)dest, byte_length);
 }
 
 bool v8::ArrayBufferView::HasBuffer() const {
-  UNIMPLEMENTED(7560);
-  return false;
+  V8_CALL_TRACE();
+  const JerryValue* jarray = reinterpret_cast<const JerryValue*> (this);
+  return jarray->IsTypedArray() || jarray->IsDataView();
 }
 
 size_t v8::ArrayBufferView::ByteOffset() {
-  UNIMPLEMENTED(7567);
-  return 0;
+  V8_CALL_TRACE();
+    JerryValue* jarray = reinterpret_cast<JerryValue*> (this);
+
+    jerry_value_t buffer;
+    jerry_length_t byteOffset = 0;
+
+    if (jarray->IsTypedArray()) {
+        buffer = jerry_get_typedarray_buffer (jarray->value(), &byteOffset, NULL);
+    } else if (jarray->IsDataView()) {
+        buffer = jerry_get_dataview_buffer (jarray->value(), &byteOffset, NULL);
+    } else {
+        abort();
+    }
+
+    jerry_release_value(buffer);
+    return byteOffset;
 }
 
 size_t v8::ArrayBufferView::ByteLength() {
-  UNIMPLEMENTED(7572);
-  return 0;
+  V8_CALL_TRACE();
+    JerryValue* jarray = reinterpret_cast<JerryValue*> (this);
+
+    jerry_value_t buffer;
+    jerry_length_t byteLength = 0;
+
+    if (jarray->IsTypedArray()) {
+        buffer = jerry_get_typedarray_buffer (jarray->value(), NULL, &byteLength);
+    } else if (jarray->IsDataView()) {
+        buffer = jerry_get_dataview_buffer (jarray->value(), NULL, &byteLength);
+    } else {
+       abort();
+    }
+
+    jerry_release_value(buffer);
+
+    return byteLength;
 }
 
 void v8::ArrayBuffer::Detach() {
-  UNIMPLEMENTED(7424);
+  V8_CALL_TRACE();
+  const JerryValue* jbuffer = reinterpret_cast<const JerryValue*> (this);
+  jerry_detach_arraybuffer (jbuffer->value());
 }
 
 size_t v8::ArrayBuffer::ByteLength() const {
-  UNIMPLEMENTED(7434);
-  return 0;
+  V8_CALL_TRACE();
+  const JerryValue* jbuffer = reinterpret_cast<const JerryValue*> (this);
+
+  return (size_t) jerry_get_arraybuffer_byte_length (jbuffer->value());
 }
 
 size_t v8::TypedArray::Length() {
-  UNIMPLEMENTED(7577);
-  return 0;
+  V8_CALL_TRACE();
+    return (size_t) jerry_get_typedarray_length (reinterpret_cast<JerryValue*> (this)->value());
 }
 
 Local<DataView> DataView::New(Local<ArrayBuffer> array_buffer,
                               size_t byte_offset, size_t byte_length) {
-  UNIMPLEMENTED(7628);
-  return Local<DataView>();
+  V8_CALL_TRACE();
+  JerryValue* abuffer = reinterpret_cast<JerryValue*> (*array_buffer);
+
+  jerry_value_t dataview = jerry_create_dataview(abuffer->value(), byte_offset, byte_length);
+
+  RETURN_HANDLE(DataView, JerryIsolate::toV8(JerryIsolate::GetCurrent()), new JerryValue(dataview));
 }
 
 Local<SharedArrayBuffer> v8::SharedArrayBuffer::New(
     Isolate* isolate, std::shared_ptr<BackingStore> backing_store) {
-  UNIMPLEMENTED(7799);
-  return Local<SharedArrayBuffer>();
+  V8_CALL_TRACE();
+  JerryBackingStore *backingStore = JerryBackingStore::fromV8(backing_store.get());
+
+  jerry_value_t arrayBuffer = jerry_create_arraybuffer_external (backingStore->byteLength(), (uint8_t*)backingStore->data(), NULL);
+  jerry_value_t dataview = jerry_create_dataview(arrayBuffer, 0, backingStore->byteLength());
+  jerry_release_value(arrayBuffer);
+
+  RETURN_HANDLE(SharedArrayBuffer, JerryIsolate::toV8(JerryIsolate::GetCurrent()), new JerryValue(dataview));
 }
 
 Local<Symbol> v8::Symbol::New(Isolate* isolate, Local<String> name) {
@@ -2665,20 +3013,20 @@ Isolate::DisallowJavascriptExecutionScope::DisallowJavascriptExecutionScope(
     Isolate* isolate,
     Isolate::DisallowJavascriptExecutionScope::OnFailure on_failure)
     : on_failure_(on_failure) {
-  UNIMPLEMENTED(8353);
+  V8_CALL_TRACE();
 }
 
 Isolate::DisallowJavascriptExecutionScope::~DisallowJavascriptExecutionScope() {
-  UNIMPLEMENTED(8377);
+ V8_CALL_TRACE();
 }
 
 Isolate::AllowJavascriptExecutionScope::AllowJavascriptExecutionScope(
     Isolate* isolate) {
-  UNIMPLEMENTED(8393);
+  V8_CALL_TRACE();
 }
 
 Isolate::AllowJavascriptExecutionScope::~AllowJavascriptExecutionScope() {
-  UNIMPLEMENTED(8404);
+  V8_CALL_TRACE();
 }
 
 i::Address* Isolate::GetDataFromSnapshotOnce(size_t index) {
@@ -2853,24 +3201,28 @@ String::Value::~Value() {
   reinterpret_cast<JerryIsolate*>(Isolate::GetCurrent())->RemoveUTF16String(str_);
 }
 
-v8::Local<Value> Exception::RangeError(v8::Local<v8::String> raw_message) {
-  UNIMPLEMENTED(9190);
-  return v8::Local<Value>();
-}
 
-v8::Local<Value> Exception::TypeError(v8::Local<v8::String> raw_message) {
-  UNIMPLEMENTED(9193);
-  return v8::Local<Value>();
-}
+/* Exception & Error */
+#define EXCEPTION_ERROR(error_class, error_type) \
+    Local<Value> Exception::error_class(Local<String> raw_message) { \
+        V8_CALL_TRACE(); \
+        JerryValue* jstr = reinterpret_cast<JerryValue*>(*raw_message); \
+        jerry_size_t req_sz = jerry_get_utf8_string_size(jstr->value()); \
+        jerry_char_t str_buf_p[req_sz]; \
+        jerry_string_to_utf8_char_buffer(jstr->value(), str_buf_p, req_sz); \
+        jerry_value_t error_value = jerry_create_error_sz (error_type, str_buf_p, req_sz); \
+        jerry_value_t error_object = jerry_get_value_from_error (error_value, true); \
+        RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(error_object)); \
+    }
 
-v8::Local<Value> Exception::Error(v8::Local<v8::String> raw_message) {
-  UNIMPLEMENTED(9194);
-  return v8::Local<Value>();
-}
+EXCEPTION_ERROR(Error, JERRY_ERROR_COMMON);
+EXCEPTION_ERROR(RangeError, JERRY_ERROR_RANGE);
+EXCEPTION_ERROR(TypeError, JERRY_ERROR_TYPE);
 
 Local<Message> Exception::CreateMessage(Isolate* isolate,
                                         Local<Value> exception) {
-  UNIMPLEMENTED(9198);
+  V8_CALL_TRACE();
+  // TODO?
   return Local<Message>();
 }
 
@@ -2884,18 +3236,18 @@ void CpuProfiler::UseDetailedSourcePositionsForProfiling(Isolate* isolate) {
 }
 
 void HeapSnapshot::Delete() {
-  UNIMPLEMENTED(10604);
+  V8_CALL_TRACE();
 }
 
 void HeapSnapshot::Serialize(OutputStream* stream,
                              HeapSnapshot::SerializationFormat format) const {
-  UNIMPLEMENTED(10636);
+  V8_CALL_TRACE();
 }
 
 const HeapSnapshot* HeapProfiler::TakeHeapSnapshot(
     ActivityControl* control, ObjectNameResolver* resolver,
     bool treat_global_objects_as_roots) {
-  UNIMPLEMENTED(10679);
+  V8_CALL_TRACE();
   return NULL;
 }
 
@@ -2905,12 +3257,12 @@ void HeapProfiler::StartTrackingHeapObjects(bool track_allocations) {
 
 void HeapProfiler::AddBuildEmbedderGraphCallback(
     BuildEmbedderGraphCallback callback, void* data) {
-  UNIMPLEMENTED(10721);
+  V8_CALL_TRACE();
 }
 
 void HeapProfiler::RemoveBuildEmbedderGraphCallback(
     BuildEmbedderGraphCallback callback, void* data) {
-  UNIMPLEMENTED(10727);
+  V8_CALL_TRACE();
 }
 
 }

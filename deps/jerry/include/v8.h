@@ -341,10 +341,18 @@ class Local {
   friend class ArrayBuffer;
   friend class ArrayBufferView;
   friend class Uint8Array;
+  friend class Int8Array;
+  friend class Uint8ClampedArray;
+  friend class Uint16Array;
+  friend class Int16Array;
   friend class Uint32Array;
+  friend class Int32Array;
   friend class BigUint64Array;
+  friend class Float32Array;
   friend class Float64Array;
+  friend class DataView;
   friend class Map;
+  friend class Set;
   friend class Integer;
   friend class Number;
   friend class Value;
@@ -353,6 +361,7 @@ class Local {
   friend class Function;
   friend class External;
   friend class Exception;
+  friend class SharedArrayBuffer;
   friend class Signature;
   friend class TryCatch;
   friend class Context;
@@ -11015,7 +11024,9 @@ void ReturnValue<T>::Set(const Local<S> handle) {
   if (V8_UNLIKELY(handle.IsEmpty())) {
     *value_ = GetDefaultValue();
   } else {
-    *value_ = *reinterpret_cast<internal::Address*>(*handle);
+    // [[V8_API_CHANGE]]
+    // *value_ = *reinterpret_cast<internal::Address*>(*handle);
+    *value_ = reinterpret_cast<internal::Address>(*handle);
   }
 }
 
@@ -11118,31 +11129,43 @@ FunctionCallbackInfo<T>::FunctionCallbackInfo(internal::Address* implicit_args,
 template<typename T>
 Local<Value> FunctionCallbackInfo<T>::operator[](int i) const {
   if (i < 0 || length_ <= i) return Local<Value>(*Undefined(GetIsolate()));
-  return Local<Value>(reinterpret_cast<Value*>(values_ - i));
+  // [[V8_API_CHANGE]]
+  // return Local<Value>(reinterpret_cast<Value*>(values_ - i));
+  return Local<Value>(*reinterpret_cast<Value**>(values_ - i));
 }
 
 
 template<typename T>
 Local<Object> FunctionCallbackInfo<T>::This() const {
-  return Local<Object>(reinterpret_cast<Object*>(values_ + 1));
+  // [[V8_API_CHANGE]]
+  // return Local<Object>(reinterpret_cast<Object*>(values_ + 1));
+  return Local<Object>(*reinterpret_cast<Object**>(values_ + 1));
 }
 
 
 template<typename T>
 Local<Object> FunctionCallbackInfo<T>::Holder() const {
+  // [[V8_API_CHANGE]]
+  // return Local<Object>(reinterpret_cast<Object*>(
+  //     &implicit_args_[kHolderIndex]));
   return Local<Object>(reinterpret_cast<Object*>(
-      &implicit_args_[kHolderIndex]));
+      implicit_args_[kHolderIndex]));
 }
 
 template <typename T>
 Local<Value> FunctionCallbackInfo<T>::NewTarget() const {
+  // [[V8_API_CHANGE]]
+  // return Local<Value>(
+  //     reinterpret_cast<Value*>(&implicit_args_[kNewTargetIndex]));
   return Local<Value>(
-      reinterpret_cast<Value*>(&implicit_args_[kNewTargetIndex]));
+      reinterpret_cast<Value*>(implicit_args_[kNewTargetIndex]));
 }
 
 template <typename T>
 Local<Value> FunctionCallbackInfo<T>::Data() const {
-  return Local<Value>(reinterpret_cast<Value*>(&implicit_args_[kDataIndex]));
+  // [[V8_API_CHANGE]]
+  // return Local<Value>(reinterpret_cast<Value*>(&implicit_args_[kDataIndex]));
+  return Local<Value>(reinterpret_cast<Value*>(implicit_args_[kDataIndex]));
 }
 
 
@@ -11793,19 +11816,25 @@ Isolate* PropertyCallbackInfo<T>::GetIsolate() const {
 
 template<typename T>
 Local<Value> PropertyCallbackInfo<T>::Data() const {
-  return Local<Value>(reinterpret_cast<Value*>(&args_[kDataIndex]));
+  // [[V8API_CHANGE]]
+  // return Local<Value>(reinterpret_cast<Value*>(&args_[kDataIndex]));
+  return Local<Value>(reinterpret_cast<Value*>(args_[kDataIndex]));
 }
 
 
 template<typename T>
 Local<Object> PropertyCallbackInfo<T>::This() const {
-  return Local<Object>(reinterpret_cast<Object*>(&args_[kThisIndex]));
+  // [[V8API_CHANGE]]
+  // return Local<Object>(reinterpret_cast<Object*>(&args_[kThisIndex]));
+  return Local<Object>(reinterpret_cast<Object*>(args_[kThisIndex]));
 }
 
 
 template<typename T>
 Local<Object> PropertyCallbackInfo<T>::Holder() const {
-  return Local<Object>(reinterpret_cast<Object*>(&args_[kHolderIndex]));
+  // [[V8API_CHANGE]]
+  // return Local<Object>(reinterpret_cast<Object*>(&args_[kHolderIndex]));
+  return Local<Object>(reinterpret_cast<Object*>(args_[kHolderIndex]));
 }
 
 

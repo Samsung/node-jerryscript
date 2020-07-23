@@ -4,7 +4,39 @@
 
 #include <signal.h>
 
+#include "v8jerry_isolate.hpp"
+#include "v8jerry_value.hpp"
+
+// /* Remove the comments to enable trace macros */
+#define USE_TRACE
+
+#if defined(USE_TRACE)
+#include <iostream>
+#include <sstream>
+
+#define V8_CALL_TRACE() do { _LogTrace(__LINE__, __FILE__, __PRETTY_FUNCTION__); } while (0)
+
+static void _LogTrace(int line, std::string file_name, std::string func_name) {
+    size_t last_separator_pos = file_name.find_last_of("/");
+
+    std::ostringstream stream;
+    stream << "[Trace]: " << file_name.substr(last_separator_pos + 1) << "(" << line << ") : ";
+    stream << func_name << std::endl;
+
+    std::cerr << stream.str();
+}
+
+#else
+#define V8_CALL_TRACE()
+#endif
+
 #define UNIMPLEMENTED(line) abort()
+
+#define RETURN_HANDLE(T, ISOLATE, HANDLE) \
+do {                                                                    \
+    JerryHandle *__handle = HANDLE;                                    \
+    return v8::Local<T>::New(ISOLATE, reinterpret_cast<T*>(__handle)); \
+} while (0)
 
 namespace i = v8::internal;
 
@@ -164,44 +196,51 @@ bool v8::Value::IsBigUint64Array() const {
 
 Local<Int8Array> Int8Array::New(Local<ArrayBuffer> array_buffer,
                                 size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<Int8Array>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(Int8Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_INT8));
 }
 
 Local<Uint8Array> Uint8Array::New(Local<ArrayBuffer> array_buffer,
                                   size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<Uint8Array>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(Uint8Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_UINT8));
 }
 
 Local<Uint8ClampedArray> Uint8ClampedArray::New(Local<ArrayBuffer> array_buffer,
                                                 size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<Uint8ClampedArray>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(Uint8ClampedArray, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_UINT8CLAMPED));
 }
 
 Local<Int16Array> Int16Array::New(Local<ArrayBuffer> array_buffer,
                                   size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<Int16Array>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(Int16Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_INT16));
 }
 
 Local<Uint16Array> Uint16Array::New(Local<ArrayBuffer> array_buffer,
                                     size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<Uint16Array>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(Uint16Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_UINT16));
 }
 
 Local<Int32Array> Int32Array::New(Local<ArrayBuffer> array_buffer,
                                   size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<Int32Array>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(Int32Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_INT32));
 }
 
 Local<Uint32Array> Uint32Array::New(Local<ArrayBuffer> array_buffer,
                                     size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<Uint32Array>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(Uint32Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_UINT32));
 }
 
 Local<BigInt64Array> BigInt64Array::New(Local<ArrayBuffer> array_buffer,
@@ -218,14 +257,16 @@ Local<BigUint64Array> BigUint64Array::New(Local<ArrayBuffer> array_buffer,
 
 Local<Float32Array> Float32Array::New(Local<ArrayBuffer> array_buffer,
                                       size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<Float32Array>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(Float32Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_FLOAT32));
 }
 
 Local<Float64Array> Float64Array::New(Local<ArrayBuffer> array_buffer,
                                       size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<Float64Array>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(Float64Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_FLOAT64));
 }
 
 Local<v8::Symbol> Symbol::GetIterator(Isolate* isolate) {

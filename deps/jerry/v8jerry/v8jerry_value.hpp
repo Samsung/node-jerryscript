@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "v8.h"
+#include "v8jerry_backing_store.hpp"
 #include "v8jerry_utils.hpp"
 
 #include "jerryscript.h"
@@ -183,6 +184,9 @@ public:
 
     static JerryValue* NewPromise(void);
     static JerryValue* NewObject(void);
+    static JerryValue* NewArrayBuffer(JerryBackingStore *backingStore);
+    static JerryValue* NewTypedArray(JerryValue* array_buffer,
+                                     size_t byte_offset, size_t length, jerry_typedarray_type_t type);
     static JerryValue* NewExternal(void* ptr);
 
     static JerryValue* NewContextObject(JerryIsolate* iso);
@@ -195,9 +199,11 @@ public:
     void* ContextGetEmbedderData(int index);
 
 
+    JerryBackingStore* GetBackingStore(void) const;
     void* GetExternalData(void) const;
     bool IsExternal() const;
 
+    JerryValue* Move(JerryValue* to) { jerry_release_value(m_value); m_value = jerry_acquire_value(to->value()); }
     JerryValue* Copy() const { return new JerryValue(jerry_acquire_value(m_value)); }
     JerryValue* CopyToGlobal() const { return new JerryValue(jerry_acquire_value(m_value), true); }
 
