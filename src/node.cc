@@ -4331,8 +4331,10 @@ int Start(int argc, char** argv) {
 
   CHECK_GT(argc, 0);
 
+#if !defined(HOST_TIZEN)
   // Hack around with the argv pointer. Used for process.title = "blah".
   argv = uv_setup_args(argc, argv);
+#endif
 
   // This needs to run *before* V8::Initialize().  The const_cast is not
   // optional, in case you're wondering.
