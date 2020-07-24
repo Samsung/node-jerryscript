@@ -10,7 +10,6 @@
       'dependencies': [
         'deps/jerryscript.gyp:jerrysource',
         'deps/jerryscript.gyp:jerry',
-        'deps/tizen-device-api/tizen_device_api.gyp:device_api',
       ],
       'include_dirs+': [
         'deps/v8-headers',
