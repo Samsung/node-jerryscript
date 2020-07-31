@@ -55,6 +55,7 @@ enum
   ECMA_REGEXP_PROTOTYPE_ROUTINE_GET_MULTILINE,
   ECMA_REGEXP_PROTOTYPE_ROUTINE_GET_STICKY,
   ECMA_REGEXP_PROTOTYPE_ROUTINE_GET_UNICODE,
+  ECMA_REGEXP_PROTOTYPE_ROUTINE_GET_DOT_ALL,
 #endif /* ENABLED (JERRY_ESNEXT) */
 #if ENABLED (JERRY_BUILTIN_ANNEXB)
   ECMA_REGEXP_PROTOTYPE_ROUTINE_COMPILE,
@@ -107,11 +108,12 @@ ecma_builtin_regexp_prototype_flags_helper (ecma_extended_object_t *re_obj_p, /*
     RE_FLAG_IGNORE_CASE,
     RE_FLAG_MULTILINE,
     RE_FLAG_STICKY,
-    RE_FLAG_UNICODE
+    RE_FLAG_UNICODE,
+    RE_FLAG_DOTALL,
   };
 
   uint16_t offset = (uint16_t) (builtin_routine_id - ECMA_REGEXP_PROTOTYPE_ROUTINE_GET_GLOBAL);
-  return ecma_make_boolean_value (flags & re_flags[offset]);
+  return ecma_make_boolean_value ((flags & re_flags[offset]) != 0);
 } /* ecma_builtin_regexp_prototype_flags_helper */
 
 /**
@@ -133,6 +135,7 @@ ecma_builtin_regexp_prototype_get_flags (ecma_object_t *object_p) /**< this obje
     LIT_MAGIC_STRING_GLOBAL,
     LIT_MAGIC_STRING_IGNORECASE_UL,
     LIT_MAGIC_STRING_MULTILINE,
+    LIT_MAGIC_STRING_DOTALL,
     LIT_MAGIC_STRING_UNICODE,
     LIT_MAGIC_STRING_STICKY
   };
@@ -142,6 +145,7 @@ ecma_builtin_regexp_prototype_get_flags (ecma_object_t *object_p) /**< this obje
     LIT_CHAR_LOWERCASE_G,
     LIT_CHAR_LOWERCASE_I,
     LIT_CHAR_LOWERCASE_M,
+    LIT_CHAR_LOWERCASE_S,
     LIT_CHAR_LOWERCASE_U,
     LIT_CHAR_LOWERCASE_Y
   };
@@ -297,6 +301,7 @@ ecma_builtin_regexp_prototype_compile (ecma_value_t this_arg, /**< this */
   }
 
   JERRY_ASSERT (ecma_is_value_true (status));
+  ecma_value_t ret_value;
 
   if (ecma_object_is_regexp_object (pattern_arg))
   {
@@ -310,13 +315,13 @@ ecma_builtin_regexp_prototype_compile (ecma_value_t this_arg, /**< this */
                                                                 pattern_obj_p->u.class_prop.u.value);
 
     ecma_ref_object (this_obj_p);
-    /* ecma_op_create_regexp_from_bytecode will never throw an error while re-initalizing the regexp object, so we
-     * can deref the old bytecode without leaving a dangling pointer. */
+    ret_value = ecma_op_create_regexp_from_bytecode (this_obj_p, bc_p);
+
     ecma_bytecode_deref ((ecma_compiled_code_t *) old_bc_p);
-    return ecma_op_create_regexp_from_bytecode (this_obj_p, bc_p);
+    return ret_value;
   }
 
-  ecma_value_t ret_value = ecma_op_create_regexp_from_pattern (this_obj_p, pattern_arg, flags_arg);
+  ret_value = ecma_op_create_regexp_from_pattern (this_obj_p, pattern_arg, flags_arg);
 
   if (!ECMA_IS_VALUE_ERROR (ret_value))
   {
@@ -607,6 +612,7 @@ ecma_builtin_regexp_prototype_dispatch_routine (uint16_t builtin_routine_id, /**
     case ECMA_REGEXP_PROTOTYPE_ROUTINE_GET_MULTILINE:
     case ECMA_REGEXP_PROTOTYPE_ROUTINE_GET_STICKY:
     case ECMA_REGEXP_PROTOTYPE_ROUTINE_GET_UNICODE:
+    case ECMA_REGEXP_PROTOTYPE_ROUTINE_GET_DOT_ALL:
     {
       ecma_extended_object_t *re_obj_p = (ecma_extended_object_t *) obj_p;
 

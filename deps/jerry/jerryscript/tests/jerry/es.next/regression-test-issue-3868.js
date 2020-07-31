@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-var a = new Proxy({}, {});
+var a = new Proxy({ a : 4, b :4}, {});
+var reached = false;
 
-try {
-  for (var $ in a);
-  assert(false);
-} catch (e) {
-  assert(e instanceof TypeError);
+for (var $ in a)
+{
+  reached = true;
 }
+
+assert (reached === true);

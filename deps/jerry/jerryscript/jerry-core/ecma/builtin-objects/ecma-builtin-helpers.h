@@ -44,14 +44,14 @@ typedef enum
 ecma_value_t
 ecma_builtin_helper_object_to_string (const ecma_value_t this_arg);
 ecma_string_t *
-ecma_builtin_helper_get_to_locale_string_at_index (ecma_object_t *obj_p, uint32_t index);
+ecma_builtin_helper_get_to_locale_string_at_index (ecma_object_t *obj_p, ecma_length_t index);
 ecma_value_t
-ecma_builtin_helper_object_get_properties (ecma_object_t *obj_p, uint32_t opts);
+ecma_builtin_helper_array_concat_value (ecma_object_t *obj_p, ecma_length_t *length_p, ecma_value_t value);
 ecma_value_t
-ecma_builtin_helper_array_concat_value (ecma_object_t *obj_p, uint32_t *length_p, ecma_value_t value);
-uint32_t
-ecma_builtin_helper_array_index_normalize (ecma_value_t arg, uint32_t length, uint32_t *number_p);
-uint32_t
+ecma_builtin_helper_uint32_index_normalize (ecma_value_t arg, uint32_t length, uint32_t *number_p);
+ecma_value_t
+ecma_builtin_helper_array_index_normalize (ecma_value_t arg, ecma_length_t length, ecma_length_t *number_p);
+ecma_value_t
 ecma_builtin_helper_string_index_normalize (ecma_number_t index, uint32_t length, bool nan_to_zero);
 ecma_value_t
 ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_str_p, ecma_value_t arg1,
@@ -63,8 +63,8 @@ ecma_value_t
 ecma_builtin_helper_def_prop (ecma_object_t *obj_p, ecma_string_t *name_p, ecma_value_t value, uint32_t opts);
 
 ecma_value_t
-ecma_builtin_helper_def_prop_by_index (ecma_object_t *obj_p, uint32_t index, ecma_value_t value, uint32_t opts);
-
+ecma_builtin_helper_def_prop_by_index (ecma_object_t *obj_p, ecma_length_t index, ecma_value_t value,
+                                       uint32_t opts);
 /**
  * Context for replace substitutions
  */
@@ -216,7 +216,6 @@ ecma_value_t ecma_builtin_json_parse_buffer (const lit_utf8_byte_t * str_start_p
                                              lit_utf8_size_t string_size);
 ecma_value_t ecma_builtin_json_stringify_no_opts (const ecma_value_t value);
 bool ecma_json_has_object_in_stack (ecma_json_occurence_stack_item_t *stack_p, ecma_object_t *object_p);
-bool ecma_has_string_value_in_collection (ecma_collection_t *collection_p, ecma_string_t *string_p);
 
 ecma_value_t
 ecma_builtin_helper_json_create_non_formatted_json (lit_utf8_byte_t left_bracket, lit_utf8_byte_t right_bracket,

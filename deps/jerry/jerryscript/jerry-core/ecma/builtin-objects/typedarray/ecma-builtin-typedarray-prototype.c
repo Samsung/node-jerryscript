@@ -330,39 +330,6 @@ ecma_builtin_typedarray_prototype_for_each (ecma_value_t this_arg, /**< this arg
 } /* ecma_builtin_typedarray_prototype_for_each */
 
 /**
- * Helper function for typedArray.prototype object's {'keys', 'values', 'entries', '@@iterator'}
- * routines common parts.
- *
- * See also:
- *          ECMA-262 v6, 22.2.3.15
- *          ECMA-262 v6, 22.2.3.29
- *          ECMA-262 v6, 22.2.3.6
- *          ECMA-262 v6, 22.1.3.30
- *
- * Note:
- *      Returned value must be freed with ecma_free_value.
- *
- * @return iterator result object, if success
- *         error - otherwise
- */
-static ecma_value_t
-ecma_builtin_typedarray_iterators_helper (ecma_value_t this_arg, /**< this argument */
-                                          uint8_t type) /**< any combination of ecma_iterator_type_t bits */
-{
-  if (!ecma_is_typedarray (this_arg))
-  {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Argument 'this' is not a TypedArray."));
-  }
-
-  ecma_object_t *prototype_obj_p = ecma_builtin_get (ECMA_BUILTIN_ID_ARRAY_ITERATOR_PROTOTYPE);
-
-  return ecma_op_create_iterator_object (this_arg,
-                                         prototype_obj_p,
-                                         ECMA_PSEUDO_ARRAY_ITERATOR,
-                                         type);
-} /* ecma_builtin_typedarray_iterators_helper */
-
-/**
  * The %TypedArray%.prototype object's 'keys' routine
  *
  * See also:
@@ -375,24 +342,8 @@ ecma_builtin_typedarray_iterators_helper (ecma_value_t this_arg, /**< this argum
 static ecma_value_t
 ecma_builtin_typedarray_prototype_keys (ecma_value_t this_arg) /**< this argument */
 {
-  return ecma_builtin_typedarray_iterators_helper (this_arg, ECMA_ITERATOR_KEYS);
+  return ecma_typedarray_iterators_helper (this_arg, ECMA_ITERATOR_KEYS);
 } /* ecma_builtin_typedarray_prototype_keys */
-
-/**
- * The %TypedArray%.prototype object's 'values' and @@iterator routines
- *
- * See also:
- *          ES2015, 22.2.3.29
- *          ES2015, 22.1.3.30
- *
- * @return ecma value
- *         Returned value must be freed with ecma_free_value.
- */
-static ecma_value_t
-ecma_builtin_typedarray_prototype_values (ecma_value_t this_arg) /**< this argument */
-{
-  return ecma_builtin_typedarray_iterators_helper (this_arg, ECMA_ITERATOR_VALUES);
-} /* ecma_builtin_typedarray_prototype_values */
 
 /**
  * The %TypedArray%.prototype object's 'entries' routine
@@ -407,7 +358,7 @@ ecma_builtin_typedarray_prototype_values (ecma_value_t this_arg) /**< this argum
 static ecma_value_t
 ecma_builtin_typedarray_prototype_entries (ecma_value_t this_arg) /**< this argument */
 {
-  return ecma_builtin_typedarray_iterators_helper (this_arg, ECMA_ITERATOR_KEYS_VALUES);
+  return ecma_typedarray_iterators_helper (this_arg, ECMA_ITERATOR_ENTRIES);
 } /* ecma_builtin_typedarray_prototype_entries */
 
 /**
@@ -963,20 +914,22 @@ ecma_builtin_typedarray_prototype_set (ecma_value_t this_arg, /**< this argument
   /* 18.~ 19. */
   ecma_object_t *source_obj_p = ecma_get_object_from_value (source_obj);
 
-  uint32_t source_length_uint32;
+  ecma_length_t source_length;
 
-  if (ECMA_IS_VALUE_ERROR (ecma_op_object_get_length (source_obj_p, &source_length_uint32)))
+  if (ECMA_IS_VALUE_ERROR (ecma_op_object_get_length (source_obj_p, &source_length)))
   {
     ecma_deref_object (source_obj_p);
     return ECMA_VALUE_ERROR;
   }
 
   /* 20. if srcLength + targetOffset > targetLength, throw a RangeError */
-  if ((int64_t) source_length_uint32 + target_offset_uint32 > target_info.length)
+  if ((int64_t) source_length + target_offset_uint32 > target_info.length)
   {
     ecma_deref_object (source_obj_p);
     return ecma_raise_range_error (ECMA_ERR_MSG ("Invalid range of index"));
   }
+  JERRY_ASSERT (source_length <= UINT32_MAX);
+  uint32_t source_length_uint32 = (uint32_t) source_length;
 
   /* 21.~ 25. */
   uint32_t target_byte_index = target_offset_uint32 * target_info.element_size;
@@ -986,7 +939,7 @@ ecma_builtin_typedarray_prototype_set (ecma_value_t this_arg, /**< this argument
 
   while (k < source_length_uint32)
   {
-    ecma_value_t elem = ecma_op_object_get_by_uint32_index (source_obj_p, k);
+    ecma_value_t elem = ecma_op_object_get_by_index (source_obj_p, k);
 
     if (ECMA_IS_VALUE_ERROR (elem))
     {
@@ -1030,7 +983,7 @@ static ecma_string_t *
 ecma_op_typedarray_get_to_string_at_index (ecma_object_t *obj_p, /**< this object */
                                            uint32_t index) /**< array index */
 {
-  ecma_value_t index_value = ecma_op_object_get_by_uint32_index (obj_p, index);
+  ecma_value_t index_value = ecma_op_object_get_by_index (obj_p, index);
 
   if (ECMA_IS_VALUE_ERROR (index_value))
   {
@@ -1180,56 +1133,6 @@ cleanup:
 } /* ecma_builtin_typedarray_prototype_join */
 
 /**
- * The TypedArray.prototype object's 'toString' routine basen on
- * the Array.porottype object's 'toString'
- *
- * See also:
- *          ECMA-262 v5, 15.4.4.2
- *
- * @return ecma value
- *         Returned value must be freed with ecma_free_value.
- */
-static ecma_value_t
-ecma_builtin_typedarray_prototype_object_to_string (ecma_value_t this_arg) /**< this argument */
-{
-  ecma_value_t ret_value = ECMA_VALUE_EMPTY;
-
-  /* 1. */
-  ecma_value_t obj_this_value = ecma_op_to_object (this_arg);
-  if (ECMA_IS_VALUE_ERROR (obj_this_value))
-  {
-    return obj_this_value;
-  }
-  ecma_object_t *obj_p = ecma_get_object_from_value (obj_this_value);
-
-  /* 2. */
-  ecma_value_t join_value = ecma_op_object_get_by_magic_id (obj_p, LIT_MAGIC_STRING_JOIN);
-  if (ECMA_IS_VALUE_ERROR (join_value))
-  {
-    ecma_free_value (obj_this_value);
-    return join_value;
-  }
-
-  if (!ecma_op_is_callable (join_value))
-  {
-    /* 3. */
-    ret_value = ecma_builtin_helper_object_to_string (this_arg);
-  }
-  else
-  {
-    /* 4. */
-    ecma_object_t *join_func_obj_p = ecma_get_object_from_value (join_value);
-
-    ret_value = ecma_op_function_call (join_func_obj_p, this_arg, NULL, 0);
-  }
-
-  ecma_free_value (join_value);
-  ecma_free_value (obj_this_value);
-
-  return ret_value;
-} /* ecma_builtin_typedarray_prototype_object_to_string */
-
-/**
  * The %TypedArray%.prototype object's 'subarray' routine.
  *
  * See also:
@@ -1258,9 +1161,9 @@ ecma_builtin_typedarray_prototype_subarray (ecma_value_t this_arg, /**< this arg
   uint32_t begin_index_uint32 = 0, end_index_uint32 = 0;
 
   /* 7. relativeBegin */
-  if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (begin,
-                                                                      info.length,
-                                                                      &begin_index_uint32)))
+  if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (begin,
+                                                                       info.length,
+                                                                       &begin_index_uint32)))
   {
     return ECMA_VALUE_ERROR;
   }
@@ -1272,9 +1175,9 @@ ecma_builtin_typedarray_prototype_subarray (ecma_value_t this_arg, /**< this arg
   else
   {
     /* 10. relativeEnd */
-    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (end,
-                                                                        info.length,
-                                                                        &end_index_uint32)))
+    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (end,
+                                                                         info.length,
+                                                                         &end_index_uint32)))
     {
       return ECMA_VALUE_ERROR;
     }
@@ -1343,9 +1246,9 @@ ecma_builtin_typedarray_prototype_fill (ecma_value_t this_arg, /**< this argumen
 
   uint32_t begin_index_uint32 = 0, end_index_uint32 = 0;
 
-  if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (begin,
-                                                                      info.length,
-                                                                      &begin_index_uint32)))
+  if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (begin,
+                                                                       info.length,
+                                                                       &begin_index_uint32)))
   {
     return ECMA_VALUE_ERROR;
   }
@@ -1356,9 +1259,9 @@ ecma_builtin_typedarray_prototype_fill (ecma_value_t this_arg, /**< this argumen
   }
   else
   {
-    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (end,
-                                                                        info.length,
-                                                                        &end_index_uint32)))
+    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (end,
+                                                                         info.length,
+                                                                         &end_index_uint32)))
     {
       return ECMA_VALUE_ERROR;
     }
@@ -1871,27 +1774,27 @@ ecma_builtin_typedarray_prototype_copy_within (ecma_value_t this_arg, /**< this 
 
   if (args_number > 0)
   {
-    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (args[0],
-                                                                        info.length,
-                                                                        &relative_target)))
+    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (args[0],
+                                                                         info.length,
+                                                                         &relative_target)))
     {
       return ECMA_VALUE_ERROR;
     }
 
     if (args_number > 1)
     {
-      if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (args[1],
-                                                                          info.length,
-                                                                          &relative_start)))
+      if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (args[1],
+                                                                           info.length,
+                                                                           &relative_start)))
       {
         return ECMA_VALUE_ERROR;
       }
 
       if (args_number > 2 && args[2] != ECMA_VALUE_UNDEFINED)
       {
-        if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (args[2],
-                                                                            info.length,
-                                                                            &relative_end)))
+        if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (args[2],
+                                                                             info.length,
+                                                                             &relative_end)))
         {
           return ECMA_VALUE_ERROR;
         }
@@ -1949,18 +1852,18 @@ ecma_builtin_typedarray_prototype_slice (ecma_value_t this_arg, /**< this argume
 
   if (args_number > 0)
   {
-    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (args[0],
-                                                                        info.length,
-                                                                        &relative_start)))
+    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (args[0],
+                                                                         info.length,
+                                                                         &relative_start)))
     {
       return ECMA_VALUE_ERROR;
     }
 
     if (args_number > 1
         && args[1] != ECMA_VALUE_UNDEFINED
-        && ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (args[1],
-                                                                           info.length,
-                                                                           &relative_end)))
+        && ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (args[1],
+                                                                            info.length,
+                                                                            &relative_end)))
     {
       return ECMA_VALUE_ERROR;
     }
@@ -2123,6 +2026,67 @@ ecma_builtin_typedarray_prototype_to_locale_string (ecma_value_t this_arg) /**< 
 
   return ecma_make_string_value (ecma_stringbuilder_finalize (&builder));
 } /* ecma_builtin_typedarray_prototype_to_locale_string */
+
+/**
+ * The %TypedArray%.prototype object's 'includes' routine
+ *
+ * See also:
+ *          ECMA-262 v11, 22.2.3.13.
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value.
+ */
+static ecma_value_t
+ecma_builtin_typedarray_prototype_includes (ecma_value_t this_arg, /**< this argument */
+                                            const ecma_value_t args[], /**< arguments list */
+                                            uint32_t args_number) /**< number of arguments */
+{
+  if (!ecma_is_typedarray (this_arg))
+  {
+    return ecma_raise_type_error (ECMA_ERR_MSG ("Argument 'this' is not a TypedArray."));
+  }
+
+  ecma_object_t *typedarray_p = ecma_get_object_from_value (this_arg);
+  ecma_typedarray_info_t info = ecma_typedarray_get_info (typedarray_p);
+  uint32_t limit = info.length * info.element_size;
+
+  if (args_number == 0
+      || !ecma_is_value_number (args[0])
+      || info.length == 0)
+  {
+    return ECMA_VALUE_FALSE;
+  }
+
+  uint32_t from_index = 0;
+
+  if (args_number > 1)
+  {
+    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (args[1], info.length, &from_index)))
+    {
+      return ECMA_VALUE_ERROR;
+    }
+  }
+
+  ecma_number_t search_num = ecma_get_number_from_value (args[0]);
+
+  ecma_typedarray_getter_fn_t getter_cb = ecma_get_typedarray_getter_fn (info.id);
+
+  uint32_t search_pos = (uint32_t) from_index * info.element_size;
+
+  while (search_pos < limit)
+  {
+    ecma_number_t element_num = getter_cb (info.buffer_p + search_pos);
+
+    if (search_num == element_num)
+    {
+      return ECMA_VALUE_TRUE;
+    }
+
+    search_pos += info.element_size;
+  }
+
+  return ECMA_VALUE_FALSE;
+} /* ecma_builtin_typedarray_prototype_includes */
 
 /**
  * @}

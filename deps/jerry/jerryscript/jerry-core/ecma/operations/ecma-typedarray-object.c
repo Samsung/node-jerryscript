@@ -894,14 +894,22 @@ ecma_op_typedarray_from (ecma_value_t items_val, /**< the source array-like obje
   ecma_object_t *arraylike_object_p = ecma_get_object_from_value (arraylike_object_val);
 
   /* 12 */
-  uint32_t len;
-  ecma_value_t len_value = ecma_op_object_get_length (arraylike_object_p, &len);
+  ecma_length_t length_index;
+  ecma_value_t len_value = ecma_op_object_get_length (arraylike_object_p, &length_index);
 
   if (ECMA_IS_VALUE_ERROR (len_value))
   {
     ecma_deref_object (arraylike_object_p);
     return len_value;
   }
+
+  if (length_index >= UINT32_MAX)
+  {
+    ecma_deref_object (arraylike_object_p);
+    return ecma_raise_range_error (ECMA_ERR_MSG ("Invalid TypedArray length"));
+  }
+
+  uint32_t len = (uint32_t) length_index;
 
   /* 14 */
   ecma_value_t new_typedarray = ecma_typedarray_create_object_with_length (len,
@@ -924,7 +932,7 @@ ecma_op_typedarray_from (ecma_value_t items_val, /**< the source array-like obje
   /* 17 */
   for (uint32_t index = 0; index < len; index++)
   {
-    ecma_value_t current_value = ecma_op_object_find_by_uint32_index (arraylike_object_p, index);
+    ecma_value_t current_value = ecma_op_object_find_by_index (arraylike_object_p, index);
 
     if (ECMA_IS_VALUE_ERROR (current_value))
     {
@@ -1142,8 +1150,9 @@ ecma_op_create_typedarray (const ecma_value_t *arguments_list_p, /**< the arg li
         return ECMA_VALUE_ERROR;
       }
 
-      if (ecma_number_is_negative (offset))
+      if (ecma_number_is_negative (offset) || fmod (offset, (1 << element_size_shift)) != 0)
       {
+        /* ES2015 22.2.1.5: 9 - 10. */
         ret = ecma_raise_range_error (ECMA_ERR_MSG ("Invalid offset."));
       }
       else if (ecma_arraybuffer_is_detached (arraybuffer_p))
@@ -1172,7 +1181,7 @@ ecma_op_create_typedarray (const ecma_value_t *arguments_list_p, /**< the arg li
         }
         else
         {
-          uint32_t new_length;
+          ecma_length_t new_length;
           if (ECMA_IS_VALUE_ERROR (ecma_op_to_length (arg3, &new_length)))
           {
             return ECMA_VALUE_ERROR;
@@ -1222,6 +1231,39 @@ ecma_op_create_typedarray (const ecma_value_t *arguments_list_p, /**< the arg li
 } /* ecma_op_create_typedarray */
 
 /**
+ * Helper function for typedArray.prototype object's {'keys', 'values', 'entries', '@@iterator'}
+ * routines common parts.
+ *
+ * See also:
+ *          ECMA-262 v6, 22.2.3.15
+ *          ECMA-262 v6, 22.2.3.29
+ *          ECMA-262 v6, 22.2.3.6
+ *          ECMA-262 v6, 22.1.3.30
+ *
+ * Note:
+ *      Returned value must be freed with ecma_free_value.
+ *
+ * @return iterator result object, if success
+ *         error - otherwise
+ */
+ecma_value_t
+ecma_typedarray_iterators_helper (ecma_value_t this_arg, /**< this argument */
+                                  ecma_iterator_kind_t kind) /**< iterator kind */
+{
+  if (!ecma_is_typedarray (this_arg))
+  {
+    return ecma_raise_type_error (ECMA_ERR_MSG ("Argument 'this' is not a TypedArray."));
+  }
+
+  ecma_object_t *prototype_obj_p = ecma_builtin_get (ECMA_BUILTIN_ID_ARRAY_ITERATOR_PROTOTYPE);
+
+  return ecma_op_create_iterator_object (this_arg,
+                                         prototype_obj_p,
+                                         ECMA_PSEUDO_ARRAY_ITERATOR,
+                                         kind);
+} /* ecma_typedarray_iterators_helper */
+
+/**
  * Check if the object is typedarray
  *
  * @return true - if object is a TypedArray object
@@ -1267,7 +1309,8 @@ ecma_is_typedarray (ecma_value_t value) /**< the target need to be checked */
  */
 void
 ecma_op_typedarray_list_lazy_property_names (ecma_object_t *obj_p, /**< a TypedArray object */
-                                             ecma_collection_t *main_collection_p) /**< 'main' collection */
+                                             ecma_collection_t *prop_names_p, /**< prop name collection */
+                                             ecma_property_counter_t *prop_counter_p)  /**< prop counter */
 {
   JERRY_ASSERT (ecma_object_is_typedarray (obj_p));
 
@@ -1276,9 +1319,10 @@ ecma_op_typedarray_list_lazy_property_names (ecma_object_t *obj_p, /**< a TypedA
   for (uint32_t i = 0; i < array_length; i++)
   {
     ecma_string_t *name_p = ecma_new_ecma_string_from_uint32 (i);
-
-    ecma_collection_push_back (main_collection_p, ecma_make_string_value (name_p));
+    ecma_collection_push_back (prop_names_p, ecma_make_string_value (name_p));
   }
+
+  prop_counter_p->array_index_named_props += array_length;
 } /* ecma_op_typedarray_list_lazy_property_names */
 
 /**

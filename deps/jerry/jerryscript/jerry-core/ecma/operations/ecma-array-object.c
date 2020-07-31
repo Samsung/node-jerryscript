@@ -511,61 +511,35 @@ ecma_fast_array_set_length (ecma_object_t *object_p, /**< fast access mode array
  * @return collection of strings - property names
  */
 ecma_collection_t *
-ecma_fast_array_get_property_names (ecma_object_t *object_p, /**< fast access mode array object */
-                                    uint32_t opts) /**< any combination of ecma_list_properties_options_t values */
+ecma_fast_array_object_own_property_keys (ecma_object_t *object_p) /**< fast access mode array object */
 {
   JERRY_ASSERT (ecma_op_object_is_fast_array (object_p));
 
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
   ecma_collection_t *ret_p = ecma_new_collection ();
-
-#if ENABLED (JERRY_ESNEXT)
-  if (opts & ECMA_LIST_SYMBOLS_ONLY)
-  {
-    return ret_p;
-  }
-#endif /* ENABLED (JERRY_ESNEXT) */
-
   uint32_t length = ext_obj_p->u.array.length;
 
-  bool append_length = (!(opts & ECMA_LIST_ENUMERABLE) && !(opts & ECMA_LIST_ARRAY_INDICES));
-
-  if (length == 0)
+  if (length != 0)
   {
-    if (append_length)
+    ecma_value_t *values_p = ECMA_GET_NON_NULL_POINTER (ecma_value_t, object_p->u1.property_list_cp);
+
+    for (uint32_t i = 0; i < length; i++)
     {
-      ecma_collection_push_back (ret_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+      if (ecma_is_value_array_hole (values_p[i]))
+      {
+        continue;
+      }
+
+      ecma_string_t *index_str_p = ecma_new_ecma_string_from_uint32 (i);
+
+      ecma_collection_push_back (ret_p, ecma_make_string_value (index_str_p));
     }
-
-    return ret_p;
   }
 
-  ecma_value_t *values_p = ECMA_GET_NON_NULL_POINTER (ecma_value_t, object_p->u1.property_list_cp);
-
-  for (uint32_t i = 0; i < length; i++)
-  {
-    if (ecma_is_value_array_hole (values_p[i]))
-    {
-      continue;
-    }
-
-    ecma_string_t *index_str_p = ecma_new_ecma_string_from_uint32 (i);
-
-    ecma_collection_push_back (ret_p, ecma_make_string_value (index_str_p));
-  }
-
-  if (append_length)
-  {
-    ecma_collection_push_back (ret_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
-  }
-
-  if (opts & ECMA_LIST_CONVERT_FAST_ARRAYS)
-  {
-    ecma_fast_array_convert_to_normal (object_p);
-  }
+  ecma_collection_push_back (ret_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
 
   return ret_p;
-} /* ecma_fast_array_get_property_names */
+} /* ecma_fast_array_object_own_property_keys */
 
 /**
  * Array object creation operation.
@@ -678,7 +652,7 @@ ecma_op_create_array_object (const ecma_value_t *arguments_list_p, /**< list of 
 ecma_value_t
 ecma_op_array_species_create (ecma_object_t *original_array_p, /**< The object from whom the new array object
                                                                 *   is being created */
-                              uint32_t length) /**< length of the array */
+                              ecma_length_t length) /**< length of the array */
 {
   ecma_value_t constructor = ECMA_VALUE_UNDEFINED;
   ecma_value_t original_array = ecma_make_object_value (original_array_p);
@@ -724,7 +698,7 @@ ecma_op_array_species_create (ecma_object_t *original_array_p, /**< The object f
 
   if (ecma_is_value_undefined (constructor))
   {
-    ecma_value_t length_val = ecma_make_uint32_value (length);
+    ecma_value_t length_val = ecma_make_length_value (length);
     ecma_value_t new_array = ecma_op_create_array_object (&length_val, 1, true);
     ecma_free_value (length_val);
 
@@ -737,7 +711,7 @@ ecma_op_array_species_create (ecma_object_t *original_array_p, /**< The object f
     return ecma_raise_type_error (ECMA_ERR_MSG ("Invalid species constructor"));
   }
 
-  ecma_value_t len_val = ecma_make_uint32_value (length);
+  ecma_value_t len_val = ecma_make_length_value (length);
   ecma_object_t *ctor_object_p = ecma_get_object_from_value (constructor);
   ecma_value_t ret_val = ecma_op_function_construct (ctor_object_p,
                                                      ctor_object_p,
@@ -768,14 +742,14 @@ ecma_op_array_species_create (ecma_object_t *original_array_p, /**< The object f
  */
 ecma_value_t
 ecma_op_create_array_iterator (ecma_object_t *obj_p, /**< array object */
-                               ecma_array_iterator_type_t type) /**< array iterator type */
+                               ecma_iterator_kind_t kind) /**< array iterator kind */
 {
   ecma_object_t *prototype_obj_p = ecma_builtin_get (ECMA_BUILTIN_ID_ARRAY_ITERATOR_PROTOTYPE);
 
   return ecma_op_create_iterator_object (ecma_make_object_value (obj_p),
                                          prototype_obj_p,
                                          ECMA_PSEUDO_ARRAY_ITERATOR,
-                                         (uint8_t) type);
+                                         kind);
 } /* ecma_op_create_array_iterator */
 #endif /* ENABLED (JERRY_ESNEXT) */
 
@@ -1197,28 +1171,48 @@ ecma_array_get_length (ecma_object_t *array_p) /**< array object */
 } /* ecma_array_get_length */
 
 /**
- * List names of a String object's lazy instantiated properties
+ * The Array.prototype and %TypedArray%.prototype objects' 'toString' routine.
  *
- * @return string values collection
+ * See also:
+ *          ECMA-262 v5, 15.4.4.2
+ *          ECMA-262 v6, 22.1.3.7
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value.
  */
-void
-ecma_op_array_list_lazy_property_names (ecma_object_t *obj_p, /**< a String object */
-                                        uint32_t opts, /**< listing options using flags
-                                                        *   from ecma_list_properties_options_t */
-                                        ecma_collection_t *main_collection_p, /**< 'main'  collection */
-                                        ecma_collection_t *non_enum_collection_p) /**< skipped
-                                                                                   *   'non-enumerable'
-                                                                                   *   collection */
+ecma_value_t
+ecma_array_object_to_string (ecma_value_t this_arg) /**< this argument */
 {
-  JERRY_ASSERT (ecma_get_object_type (obj_p) == ECMA_OBJECT_TYPE_ARRAY);
+  JERRY_ASSERT (ecma_is_value_object (this_arg));
 
-  ecma_collection_t *for_non_enumerable_p = (opts & ECMA_LIST_ENUMERABLE) ? non_enum_collection_p : main_collection_p;
+  ecma_value_t ret_value = ECMA_VALUE_EMPTY;
 
-  if ((opts & ECMA_LIST_ARRAY_INDICES) == 0)
+  ecma_object_t *obj_p = ecma_get_object_from_value (this_arg);
+
+  /* 2. */
+  ecma_value_t join_value = ecma_op_object_get_by_magic_id (obj_p, LIT_MAGIC_STRING_JOIN);
+  if (ECMA_IS_VALUE_ERROR (join_value))
   {
-    ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+    return join_value;
   }
-} /* ecma_op_array_list_lazy_property_names */
+
+  if (!ecma_op_is_callable (join_value))
+  {
+    /* 3. */
+    ret_value = ecma_builtin_helper_object_to_string (this_arg);
+  }
+  else
+  {
+    /* 4. */
+    ecma_object_t *join_func_obj_p = ecma_get_object_from_value (join_value);
+
+    ret_value = ecma_op_function_call (join_func_obj_p, this_arg, NULL, 0);
+  }
+
+  ecma_free_value (join_value);
+
+  return ret_value;
+} /* ecma_array_object_to_string */
 
 /**
  * @}

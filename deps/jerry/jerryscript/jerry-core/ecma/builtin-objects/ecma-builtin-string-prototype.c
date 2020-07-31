@@ -80,6 +80,8 @@ enum
 
   ECMA_STRING_PROTOTYPE_REPEAT,
   ECMA_STRING_PROTOTYPE_CODE_POINT_AT,
+  ECMA_STRING_PROTOTYPE_PAD_START,
+  ECMA_STRING_PROTOTYPE_PAD_END,
   /* Note: These 5 routines MUST be in this order */
   ECMA_STRING_PROTOTYPE_LAST_INDEX_OF,
   ECMA_STRING_PROTOTYPE_INDEX_OF,
@@ -686,9 +688,9 @@ ecma_builtin_string_prototype_object_slice (ecma_string_t *get_string_val, /**< 
   /* 4. 6. */
   lit_utf8_size_t start = 0, end = len;
 
-  if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (arg1,
-                                                                      len,
-                                                                      &start)))
+  if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (arg1,
+                                                                       len,
+                                                                       &start)))
   {
     return ECMA_VALUE_ERROR;
   }
@@ -700,9 +702,9 @@ ecma_builtin_string_prototype_object_slice (ecma_string_t *get_string_val, /**< 
   }
   else
   {
-    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_array_index_normalize (arg2,
-                                                                        len,
-                                                                        &end)))
+    if (ECMA_IS_VALUE_ERROR (ecma_builtin_helper_uint32_index_normalize (arg2,
+                                                                         len,
+                                                                         &end)))
     {
       return ECMA_VALUE_ERROR;
     }
@@ -776,7 +778,8 @@ ecma_builtin_string_prototype_object_split (ecma_value_t this_value, /**< this a
   }
 
   /* 8. */
-  uint32_t limit = UINT32_MAX;
+  uint32_t limit = UINT32_MAX - 1;
+
   if (!ecma_is_value_undefined (limit_value))
   {
     /* ECMA-262 v11, 21.1.3.20 6 */
@@ -1000,7 +1003,8 @@ ecma_builtin_string_prototype_object_conversion_helper (ecma_string_t *input_str
     lit_code_point_t cp = lit_cesu8_read_next (&input_curr_p);
 
 #if ENABLED (JERRY_ESNEXT)
-    if (lit_is_code_point_utf16_high_surrogate (cp))
+    if (lit_is_code_point_utf16_high_surrogate (cp)
+        && input_curr_p < input_str_end_p)
     {
       const ecma_char_t next_ch = lit_cesu8_peek_next (input_curr_p);
       if (lit_is_code_point_utf16_low_surrogate (next_ch))
@@ -1241,7 +1245,7 @@ ecma_builtin_string_prototype_object_iterator (ecma_value_t to_string) /**< this
   return ecma_op_create_iterator_object (ecma_copy_value (to_string),
                                          ecma_builtin_get (ECMA_BUILTIN_ID_STRING_ITERATOR_PROTOTYPE),
                                          ECMA_PSEUDO_STRING_ITERATOR,
-                                         0);
+                                         ECMA_ITERATOR_VALUES);
 } /* ecma_builtin_string_prototype_object_iterator */
 
 #endif /* ENABLED (JERRY_ESNEXT) */
@@ -1386,6 +1390,12 @@ ecma_builtin_string_prototype_dispatch_routine (uint16_t builtin_routine_id, /**
     case ECMA_STRING_PROTOTYPE_ITERATOR:
     {
       ret_value = ecma_builtin_string_prototype_object_iterator (to_string_val);
+      break;
+    }
+    case ECMA_STRING_PROTOTYPE_PAD_END:
+    case ECMA_STRING_PROTOTYPE_PAD_START:
+    {
+      ret_value = ecma_string_pad (to_string_val, arg1, arg2, builtin_routine_id == ECMA_STRING_PROTOTYPE_PAD_START);
       break;
     }
 #endif /* ENABLED (JERRY_ESNEXT) */

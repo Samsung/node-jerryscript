@@ -19,6 +19,7 @@
 #include "ecma-function-object.h"
 #include "ecma-gc.h"
 #include "ecma-helpers.h"
+#include "ecma-promise-object.h"
 #include "lit-char-helpers.h"
 #include "ecma-lex-env.h"
 #include "ecma-objects.h"
@@ -1335,10 +1336,6 @@ ecma_op_function_construct (ecma_object_t *func_obj_p, /**< Function object */
     return ecma_raise_type_error (message_p);
   }
 
-  /* 6. */
-  ecma_object_t *old_new_target_p = JERRY_CONTEXT (current_new_target);
-  JERRY_CONTEXT (current_new_target) = new_target_p;
-
   /* 5. */
   if (!ECMA_GET_THIRD_BIT_FROM_POINTER_TAG (ext_func_obj_p->u.function.scope_cp))
   {
@@ -1361,6 +1358,10 @@ ecma_op_function_construct (ecma_object_t *func_obj_p, /**< Function object */
   {
     this_arg = ECMA_VALUE_UNDEFINED;
   }
+
+  /* 6. */
+  ecma_object_t *old_new_target_p = JERRY_CONTEXT (current_new_target);
+  JERRY_CONTEXT (current_new_target) = new_target_p;
 #endif /* ENABLED (JERRY_ESNEXT) */
 
   ecma_value_t ret_value = ecma_op_function_call_simple (func_obj_p, this_arg, arguments_list_p, arguments_list_len);
@@ -1616,6 +1617,30 @@ ecma_op_external_function_try_to_lazy_instantiate_property (ecma_object_t *objec
     return ecma_op_lazy_instantiate_prototype_object (object_p);
   }
 
+#if ENABLED (JERRY_ESNEXT)
+  if (ecma_compare_ecma_string_to_magic_id (property_name_p, LIT_MAGIC_STRING_LENGTH))
+  {
+    ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
+    ecma_external_handler_t handler = ext_obj_p->u.external_handler_cb;
+
+    if (handler == ecma_promise_then_finally_cb
+        || handler == ecma_promise_catch_finally_cb
+        || handler == ecma_promise_resolve_handler
+        || handler == ecma_promise_reject_handler
+        || handler == ecma_promise_all_handler_cb
+        || handler == ecma_op_get_capabilities_executor_cb)
+    {
+      ecma_property_t *value_prop_p;
+      ecma_property_value_t *value_p = ecma_create_named_data_property (object_p,
+                                                                        property_name_p,
+                                                                        ECMA_PROPERTY_FLAG_CONFIGURABLE,
+                                                                        &value_prop_p);
+      value_p->value = ecma_make_uint32_value (handler == ecma_op_get_capabilities_executor_cb ? 2 : 1);
+      return value_prop_p;
+    }
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
   return NULL;
 } /* ecma_op_external_function_try_to_lazy_instantiate_property */
 
@@ -1638,7 +1663,7 @@ ecma_op_bound_function_try_to_lazy_instantiate_property (ecma_object_t *object_p
   {
     ecma_bound_function_t *bound_func_p = (ecma_bound_function_t *) object_p;
     ecma_value_t args_len_or_this = bound_func_p->header.u.bound_function.args_len_or_this;
-    ecma_integer_value_t length = 0;
+    ecma_number_t length = 0;
     ecma_integer_value_t args_length = 1;
     uint8_t length_attributes;
 
@@ -1654,7 +1679,7 @@ ecma_op_bound_function_try_to_lazy_instantiate_property (ecma_object_t *object_p
     }
 
     length_attributes = ECMA_PROPERTY_FLAG_CONFIGURABLE;
-    length = bound_func_p->target_length - (args_length - 1);
+    length = ecma_get_number_from_value (bound_func_p->target_length) - (args_length - 1);
 
     /* Set tag bit to represent initialized 'length' property */
     ECMA_SET_FIRST_BIT_TO_POINTER_TAG (bound_func_p->header.u.bound_function.target_function);
@@ -1688,7 +1713,7 @@ ecma_op_bound_function_try_to_lazy_instantiate_property (ecma_object_t *object_p
                                                                                length_attributes,
                                                                                &len_prop_p);
 
-    len_prop_value_p->value = ecma_make_integer_value (length);
+    len_prop_value_p->value = ecma_make_number_value (length);
     return len_prop_p;
   }
 
@@ -1722,27 +1747,21 @@ ecma_op_bound_function_try_to_lazy_instantiate_property (ecma_object_t *object_p
  */
 void
 ecma_op_function_list_lazy_property_names (ecma_object_t *object_p, /**< functionobject */
-                                           uint32_t opts, /**< listing options using flags
-                                                           *   from ecma_list_properties_options_t */
-                                           ecma_collection_t *main_collection_p, /**< 'main' collection */
-                                           ecma_collection_t *non_enum_collection_p) /**< skipped
-                                                                                      *   'non-enumerable'
-                                                                                      *   collection */
+                                           ecma_collection_t *prop_names_p, /**< prop name collection */
+                                           ecma_property_counter_t *prop_counter_p)  /**< prop counter */
 {
-  JERRY_UNUSED (main_collection_p);
-
-  ecma_collection_t *for_non_enumerable_p = (opts & ECMA_LIST_ENUMERABLE) ? non_enum_collection_p : main_collection_p;
-
 #if ENABLED (JERRY_ESNEXT)
   ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) object_p;
   if (!ECMA_GET_FIRST_BIT_FROM_POINTER_TAG (ext_func_p->u.function.scope_cp))
   {
     /* Unintialized 'length' property is non-enumerable (ECMA-262 v6, 19.2.4.1) */
-    ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+    ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+    prop_counter_p->string_named_props++;
   }
 #else /* !ENABLED (JERRY_ESNEXT) */
   /* 'length' property is non-enumerable (ECMA-262 v5, 13.2.5) */
-  ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+  ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+  prop_counter_p->string_named_props++;
 #endif /* ENABLED (JERRY_ESNEXT) */
 
   const ecma_compiled_code_t *bytecode_data_p;
@@ -1756,7 +1775,8 @@ ecma_op_function_list_lazy_property_names (ecma_object_t *object_p, /**< functio
 #endif /* ENABLED (JERRY_ESNEXT) */
 
   /* 'prototype' property is non-enumerable (ECMA-262 v5, 13.2.18) */
-  ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_PROTOTYPE));
+  ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_PROTOTYPE));
+  prop_counter_p->string_named_props++;
 
 #if ENABLED (JERRY_ESNEXT)
   bool append_caller_and_arguments = !(bytecode_data_p->status_flags & CBC_CODE_FLAGS_STRICT_MODE);
@@ -1767,10 +1787,12 @@ ecma_op_function_list_lazy_property_names (ecma_object_t *object_p, /**< functio
   if (append_caller_and_arguments)
   {
     /* 'caller' property is non-enumerable (ECMA-262 v5, 13.2.5) */
-    ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_CALLER));
+    ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_CALLER));
 
     /* 'arguments' property is non-enumerable (ECMA-262 v5, 13.2.5) */
-    ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_ARGUMENTS));
+    ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_ARGUMENTS));
+
+    prop_counter_p->string_named_props += 2;
   }
 } /* ecma_op_function_list_lazy_property_names */
 
@@ -1783,16 +1805,9 @@ ecma_op_function_list_lazy_property_names (ecma_object_t *object_p, /**< functio
  */
 void
 ecma_op_external_function_list_lazy_property_names (ecma_object_t *object_p, /**< function object */
-                                                    uint32_t opts, /**< listing options using flags
-                                                                    *   from ecma_list_properties_options_t */
-                                                    ecma_collection_t *main_collection_p, /**< 'main' collection */
-                                                    ecma_collection_t *non_enum_collection_p) /**< skipped
-                                                                                               *   collection */
+                                                    ecma_collection_t *prop_names_p, /**< prop name collection */
+                                                    ecma_property_counter_t *prop_counter_p)  /**< prop counter */
 {
-  JERRY_UNUSED (main_collection_p);
-
-  ecma_collection_t *for_non_enumerable_p = (opts & ECMA_LIST_ENUMERABLE) ? non_enum_collection_p : main_collection_p;
-
 #if !ENABLED (JERRY_ESNEXT)
   JERRY_UNUSED (object_p);
 #else /* ENABLED (JERRY_ESNEXT) */
@@ -1800,7 +1815,8 @@ ecma_op_external_function_list_lazy_property_names (ecma_object_t *object_p, /**
 #endif /* !ENABLED (JERRY_ESNEXT) */
   {
     /* 'prototype' property is non-enumerable (ECMA-262 v5, 13.2.18) */
-    ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_PROTOTYPE));
+    ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_PROTOTYPE));
+    prop_counter_p->string_named_props++;
   }
 } /* ecma_op_external_function_list_lazy_property_names */
 
@@ -1813,35 +1829,31 @@ ecma_op_external_function_list_lazy_property_names (ecma_object_t *object_p, /**
  */
 void
 ecma_op_bound_function_list_lazy_property_names (ecma_object_t *object_p, /**< bound function object*/
-                                                 uint32_t opts, /**< listing options using flags
-                                                                 *   from ecma_list_properties_options_t */
-                                                 ecma_collection_t *main_collection_p, /**< 'main' collection */
-                                                 ecma_collection_t *non_enum_collection_p) /**< skipped
-                                                                                            *   'non-enumerable'
-                                                                                            *   collection */
+                                                 ecma_collection_t *prop_names_p, /**< prop name collection */
+                                                 ecma_property_counter_t *prop_counter_p)  /**< prop counter */
 {
-  JERRY_UNUSED (main_collection_p);
-
-  ecma_collection_t *for_non_enumerable_p = (opts & ECMA_LIST_ENUMERABLE) ? non_enum_collection_p : main_collection_p;
-
 #if ENABLED (JERRY_ESNEXT)
   /* Unintialized 'length' property is non-enumerable (ECMA-262 v6, 19.2.4.1) */
   ecma_bound_function_t *bound_func_p = (ecma_bound_function_t *) object_p;
   if (!ECMA_GET_FIRST_BIT_FROM_POINTER_TAG (bound_func_p->header.u.bound_function.target_function))
   {
-    ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+    ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+    prop_counter_p->string_named_props++;
   }
 #else /* !ENABLED (JERRY_ESNEXT) */
   JERRY_UNUSED (object_p);
   /* 'length' property is non-enumerable (ECMA-262 v5, 13.2.5) */
-  ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+  ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+  prop_counter_p->string_named_props++;
 #endif /* ENABLED (JERRY_ESNEXT) */
 
   /* 'caller' property is non-enumerable (ECMA-262 v5, 13.2.5) */
-  ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_CALLER));
+  ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_CALLER));
 
   /* 'arguments' property is non-enumerable (ECMA-262 v5, 13.2.5) */
-  ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_ARGUMENTS));
+  ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_ARGUMENTS));
+
+  prop_counter_p->string_named_props += 2;
 } /* ecma_op_bound_function_list_lazy_property_names */
 
 /**

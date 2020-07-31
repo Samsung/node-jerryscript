@@ -795,6 +795,23 @@ ecma_gc_mark (ecma_object_t *object_p) /**< object to mark from */
           ecma_gc_set_object_visited (ecma_get_object_from_value (executor_p->values));
           ecma_gc_set_object_visited (ecma_get_object_from_value (executor_p->remaining_elements));
         }
+        else if (ext_func_p->u.external_handler_cb == ecma_promise_then_finally_cb
+                 || ext_func_p->u.external_handler_cb == ecma_promise_catch_finally_cb)
+        {
+          ecma_promise_finally_function_t *finally_obj_p = (ecma_promise_finally_function_t *) object_p;
+          ecma_gc_set_object_visited (ecma_get_object_from_value (finally_obj_p->constructor));
+          ecma_gc_set_object_visited (ecma_get_object_from_value (finally_obj_p->on_finally));
+        }
+        else if (ext_func_p->u.external_handler_cb == ecma_value_thunk_helper_cb
+                 || ext_func_p->u.external_handler_cb == ecma_value_thunk_thrower_cb)
+        {
+          ecma_promise_value_thunk_t *thunk_obj_p = (ecma_promise_value_thunk_t *) object_p;
+
+          if (ecma_is_value_object (thunk_obj_p->value))
+          {
+            ecma_gc_set_object_visited (ecma_get_object_from_value (thunk_obj_p->value));
+          }
+        }
         break;
       }
 #endif /* ENABLED (JERRY_ESNEXT) */
@@ -1162,6 +1179,20 @@ ecma_gc_free_object (ecma_object_t *object_p) /**< object to free */
       {
         ext_object_size = sizeof (ecma_promise_all_executor_t);
       }
+      else if (ext_func_p->u.external_handler_cb == ecma_promise_then_finally_cb
+               || ext_func_p->u.external_handler_cb == ecma_promise_catch_finally_cb)
+      {
+        ext_object_size = sizeof (ecma_promise_finally_function_t);
+      }
+      else if (ext_func_p->u.external_handler_cb == ecma_value_thunk_helper_cb
+               || ext_func_p->u.external_handler_cb == ecma_value_thunk_thrower_cb)
+      {
+        ecma_promise_value_thunk_t *thunk_obj_p = (ecma_promise_value_thunk_t *) object_p;
+
+        ecma_free_value_if_not_object (thunk_obj_p->value);
+
+        ext_object_size = sizeof (ecma_promise_value_thunk_t);
+      }
 #endif /* ENABLED (JERRY_ESNEXT) */
       break;
     }
@@ -1171,11 +1202,14 @@ ecma_gc_free_object (ecma_object_t *object_p) /**< object to free */
 
       switch (ext_object_p->u.class_prop.class_id)
       {
+        case LIT_MAGIC_STRING_STRING_UL:
+        case LIT_MAGIC_STRING_NUMBER_UL:
 #if ENABLED (JERRY_ESNEXT)
         case LIT_MAGIC_STRING_SYMBOL_UL:
 #endif /* ENABLED (JERRY_ESNEXT) */
-        case LIT_MAGIC_STRING_STRING_UL:
-        case LIT_MAGIC_STRING_NUMBER_UL:
+#if ENABLED (JERRY_BUILTIN_BIGINT)
+        case LIT_MAGIC_STRING_BIGINT_UL:
+#endif /* ENABLED (JERRY_BUILTIN_BIGINT) */
         {
           ecma_free_value (ext_object_p->u.class_prop.u.value);
           break;
@@ -1394,6 +1428,10 @@ ecma_gc_free_object (ecma_object_t *object_p) /**< object to free */
       ecma_bound_function_t *bound_func_p = (ecma_bound_function_t *) object_p;
 
       ecma_value_t args_len_or_this = bound_func_p->header.u.bound_function.args_len_or_this;
+
+#if ENABLED (JERRY_ESNEXT)
+      ecma_free_value (bound_func_p->target_length);
+#endif /* ENABLED (JERRY_ESNEXT) */
 
       if (!ecma_is_value_integer_number (args_len_or_this))
       {

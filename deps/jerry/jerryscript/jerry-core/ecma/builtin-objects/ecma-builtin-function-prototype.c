@@ -114,7 +114,7 @@ ecma_builtin_function_prototype_object_apply (ecma_object_t *func_obj_p, /**< th
   ecma_object_t *obj_p = ecma_get_object_from_value (arg2);
 
   /* 4-5. */
-  uint32_t length;
+  ecma_length_t length;
   ecma_value_t len_value = ecma_op_object_get_length (obj_p, &length);
 
   if (ECMA_IS_VALUE_ERROR (len_value))
@@ -130,12 +130,12 @@ ecma_builtin_function_prototype_object_apply (ecma_object_t *func_obj_p, /**< th
   /* 6. */
   ecma_value_t ret_value = ECMA_VALUE_EMPTY;
   JMEM_DEFINE_LOCAL_ARRAY (arguments_list_p, length, ecma_value_t);
-  uint32_t index = 0;
+  ecma_length_t index = 0;
 
   /* 7. */
   for (index = 0; index < length; index++)
   {
-    ecma_value_t get_value = ecma_op_object_get_by_uint32_index (obj_p, index);
+    ecma_value_t get_value = ecma_op_object_get_by_index (obj_p, index);
 
     if (ECMA_IS_VALUE_ERROR (get_value))
     {
@@ -152,7 +152,7 @@ ecma_builtin_function_prototype_object_apply (ecma_object_t *func_obj_p, /**< th
     ret_value = ecma_op_function_call (func_obj_p,
                                        arg1,
                                        arguments_list_p,
-                                       length);
+                                       (uint32_t) length);
   }
 
   for (uint32_t remove_index = 0; remove_index < index; remove_index++)
@@ -302,7 +302,7 @@ ecma_builtin_function_prototype_object_bind (ecma_object_t *this_arg_obj_p , /**
     ecma_deref_object (prototype_obj_p);
   }
 
-  ecma_integer_value_t len = 0;
+  ecma_value_t target_length = ecma_make_integer_value (0);
   ecma_string_t *len_string = ecma_get_magic_string (LIT_MAGIC_STRING_LENGTH);
   ecma_property_descriptor_t prop_desc;
   ecma_value_t status = ecma_op_object_get_own_property_descriptor (this_arg_obj_p,
@@ -333,12 +333,12 @@ ecma_builtin_function_prototype_object_bind (ecma_object_t *this_arg_obj_p , /**
     {
       ecma_number_t len_num;
       ecma_op_to_integer (len_value, &len_num);
-      len = (ecma_integer_value_t) len_num;
+      target_length = ecma_make_number_value (len_num);
     }
     ecma_free_value (len_value);
   }
 
-  bound_func_p->target_length = len;
+  bound_func_p->target_length = target_length;
 
   /* 12. */
   ecma_value_t name_value = ecma_op_object_get_by_magic_id (this_arg_obj_p, LIT_MAGIC_STRING_NAME);

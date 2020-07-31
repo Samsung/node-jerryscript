@@ -90,7 +90,7 @@ uint32_t
 ecma_delete_fast_array_properties (ecma_object_t *object_p, uint32_t new_length);
 
 ecma_collection_t *
-ecma_fast_array_get_property_names (ecma_object_t *object_p, uint32_t opts);
+ecma_fast_array_object_own_property_keys (ecma_object_t *object_p);
 
 void
 ecma_fast_array_convert_to_normal (ecma_object_t *object_p);
@@ -102,11 +102,11 @@ ecma_op_create_array_object (const ecma_value_t *arguments_list_p, uint32_t argu
 #if ENABLED (JERRY_ESNEXT)
 ecma_value_t
 ecma_op_array_species_create (ecma_object_t *original_array_p,
-                              uint32_t length);
+                              ecma_length_t length);
 
 ecma_value_t
 ecma_op_create_array_iterator (ecma_object_t *obj_p,
-                               ecma_array_iterator_type_t type);
+                               ecma_iterator_kind_t kind);
 #endif /* ENABLED (JERRY_ESNEXT) */
 
 ecma_value_t
@@ -118,11 +118,8 @@ ecma_op_array_object_define_own_property (ecma_object_t *object_p, ecma_string_t
 
 uint32_t ecma_array_get_length (ecma_object_t *array_p);
 
-void
-ecma_op_array_list_lazy_property_names (ecma_object_t *obj_p,
-                                        uint32_t opts,
-                                        ecma_collection_t *main_collection_p,
-                                        ecma_collection_t *non_enum_collection_p);
+ecma_value_t
+ecma_array_object_to_string (ecma_value_t this_arg);
 
 /**
  * @}

@@ -652,9 +652,9 @@ jerry_value_is_abort (const jerry_value_t value) /**< api value */
     return false;
   }
 
-  ecma_error_reference_t *error_ref_p = ecma_get_error_reference_from_value (value);
+  ecma_extended_primitive_t *error_ref_p = ecma_get_extended_primitive_from_value (value);
 
-  return (error_ref_p->refs_and_flags & ECMA_ERROR_REF_ABORT) != 0;
+  return ECMA_EXTENDED_PRIMITIVE_GET_TYPE (error_ref_p) == ECMA_EXTENDED_PRIMITIVE_ABORT;
 } /* jerry_value_is_abort */
 
 /**
@@ -998,6 +998,9 @@ jerry_is_feature_enabled (const jerry_feature_t feature) /**< feature to check *
 #if ENABLED (JERRY_BUILTIN_WEAKSET)
           || feature == JERRY_FEATURE_WEAKSET
 #endif /* ENABLED (JERRY_BUILTIN_WEAKSET) */
+#if ENABLED (JERRY_BUILTIN_BIGINT)
+          || feature == JERRY_FEATURE_BIGINT
+#endif /* ENABLED (JERRY_BUILTIN_BIGINT) */
           );
 } /* jerry_is_feature_enabled */
 
@@ -1166,7 +1169,7 @@ jerry_get_value_from_error (jerry_value_t value, /**< api value */
     return release ? value : ecma_copy_value (value);
   }
 
-  jerry_value_t ret_val = jerry_acquire_value (ecma_get_error_reference_from_value (value)->value);
+  jerry_value_t ret_val = jerry_acquire_value (ecma_get_extended_primitive_from_value (value)->u.value);
 
   if (release)
   {
@@ -1186,7 +1189,7 @@ jerry_get_error_type (jerry_value_t value) /**< api value */
 {
   if (JERRY_UNLIKELY (ecma_is_value_error_reference (value)))
   {
-    value = ecma_get_error_reference_from_value (value)->value;
+    value = ecma_get_extended_primitive_from_value (value)->u.value;
   }
 
   if (!ecma_is_value_object (value))
@@ -1360,7 +1363,7 @@ jerry_acquire_value (jerry_value_t value) /**< API value */
 
   if (JERRY_UNLIKELY (ecma_is_value_error_reference (value)))
   {
-    ecma_ref_error_reference (ecma_get_error_reference_from_value (value));
+    ecma_ref_extended_primitive (ecma_get_extended_primitive_from_value (value));
     return value;
   }
 
@@ -1377,7 +1380,7 @@ jerry_release_value (jerry_value_t value) /**< API value */
 
   if (JERRY_UNLIKELY (ecma_is_value_error_reference (value)))
   {
-    ecma_deref_error_reference (ecma_get_error_reference_from_value (value));
+    ecma_deref_error_reference (ecma_get_extended_primitive_from_value (value));
     return;
   }
 
@@ -2348,7 +2351,7 @@ jerry_get_property_by_index (const jerry_value_t obj_val, /**< object value */
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
   }
 
-  ecma_value_t ret_value = ecma_op_object_get_by_uint32_index (ecma_get_object_from_value (obj_val), index);
+  ecma_value_t ret_value = ecma_op_object_get_by_index (ecma_get_object_from_value (obj_val), index);
 
   return jerry_return (ret_value);
 } /* jerry_get_property_by_index */
@@ -2453,10 +2456,10 @@ jerry_set_property_by_index (const jerry_value_t obj_val, /**< object value */
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
   }
 
-  ecma_value_t ret_value = ecma_op_object_put_by_uint32_index (ecma_get_object_from_value (obj_val),
-                                                               index,
-                                                               value_to_set,
-                                                               true);
+  ecma_value_t ret_value = ecma_op_object_put_by_index (ecma_get_object_from_value (obj_val),
+                                                        index,
+                                                        value_to_set,
+                                                        true);
 
   return jerry_return (ret_value);
 } /* jerry_set_property_by_index */
@@ -2922,8 +2925,21 @@ jerry_get_object_keys (const jerry_value_t obj_val) /**< object value */
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
   }
 
-  return ecma_builtin_helper_object_get_properties (ecma_get_object_from_value (obj_val),
-                                                    ECMA_LIST_ENUMERABLE);
+  ecma_collection_t *prop_names = ecma_op_object_get_enumerable_property_names (ecma_get_object_from_value (obj_val),
+                                                                                ECMA_ENUMERABLE_PROPERTY_KEYS);
+
+#if ENABLED (JERRY_BUILTIN_PROXY)
+  if (JERRY_UNLIKELY (prop_names == NULL))
+  {
+    return ECMA_VALUE_ERROR;
+  }
+#endif /* ENABLED (JERRY_BUILTIN_PROXY) */
+
+  ecma_value_t result_array = ecma_op_create_array_object (prop_names->buffer_p, prop_names->item_count, false);
+
+  ecma_collection_free (prop_names);
+
+  return result_array;
 } /* jerry_get_object_keys */
 
 /**
@@ -3219,7 +3235,7 @@ jerry_foreach_object_property (const jerry_value_t obj_val, /**< object value */
   }
 
   ecma_object_t *object_p = ecma_get_object_from_value (obj_val);
-  ecma_collection_t *names_p = ecma_op_object_get_property_names (object_p, ECMA_LIST_ENUMERABLE_PROTOTYPE);
+  ecma_collection_t *names_p = ecma_op_object_enumerate (object_p);
 
 #if ENABLED (JERRY_BUILTIN_PROXY)
   if (names_p == NULL)

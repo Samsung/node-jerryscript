@@ -20,6 +20,8 @@
 #include <math.h>
 
 #include "ecma-alloc.h"
+#include "ecma-bigint.h"
+#include "ecma-bigint-object.h"
 #include "ecma-boolean-object.h"
 #include "ecma-conversion.h"
 #include "ecma-exceptions.h"
@@ -279,12 +281,6 @@ ecma_op_to_number (ecma_value_t value) /**< ecma value */
     ecma_string_t *str_p = ecma_get_string_from_value (value);
     return ecma_make_number_value (ecma_string_to_number (str_p));
   }
-#if ENABLED (JERRY_ESNEXT)
-  if (ecma_is_value_symbol (value))
-  {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a Symbol value to a number."));
-  }
-#endif /* ENABLED (JERRY_ESNEXT) */
 
   if (ecma_is_value_undefined (value))
   {
@@ -300,6 +296,20 @@ ecma_op_to_number (ecma_value_t value) /**< ecma value */
   {
     return ecma_make_integer_value (ecma_is_value_true (value) ? 1 : 0);
   }
+
+#if ENABLED (JERRY_ESNEXT)
+  if (ecma_is_value_symbol (value))
+  {
+    return ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a Symbol value to a number"));
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+#if ENABLED (JERRY_BUILTIN_BIGINT)
+  if (ecma_is_value_bigint (value))
+  {
+    return ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a BigInt value to a number"));
+  }
+#endif /* ENABLED (JERRY_BUILTIN_BIGINT) */
 
   JERRY_ASSERT (ecma_is_value_object (value));
 
@@ -364,13 +374,6 @@ ecma_get_number (ecma_value_t value, /**< ecma value*/
     return ECMA_VALUE_EMPTY;
   }
 
-#if ENABLED (JERRY_ESNEXT)
-  if (ecma_is_value_symbol (value))
-  {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a Symbol value to a number."));
-  }
-#endif /* ENABLED (JERRY_ESNEXT) */
-
   if (ecma_is_value_true (value))
   {
     *number_p = 1;
@@ -382,6 +385,20 @@ ecma_get_number (ecma_value_t value, /**< ecma value*/
     *number_p = 0;
     return ECMA_VALUE_EMPTY;
   }
+
+#if ENABLED (JERRY_ESNEXT)
+  if (ecma_is_value_symbol (value))
+  {
+    return ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a Symbol value to a number."));
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+#if ENABLED (JERRY_BUILTIN_BIGINT)
+  if (ecma_is_value_bigint (value))
+  {
+    return ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a BigInt value to a number"));
+  }
+#endif /* ENABLED (JERRY_BUILTIN_BIGINT) */
 
   JERRY_ASSERT (ecma_is_value_object (value));
 
@@ -452,14 +469,6 @@ ecma_op_to_string (ecma_value_t value) /**< ecma value */
     return ecma_get_magic_string (LIT_MAGIC_STRING_NULL);
   }
 
-#if ENABLED (JERRY_ESNEXT)
-  if (ecma_is_value_symbol (value))
-  {
-    ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a Symbol value to a string."));
-    return NULL;
-  }
-#endif /* ENABLED (JERRY_ESNEXT) */
-
   if (ecma_is_value_true (value))
   {
     return ecma_get_magic_string (LIT_MAGIC_STRING_TRUE);
@@ -469,6 +478,21 @@ ecma_op_to_string (ecma_value_t value) /**< ecma value */
   {
     return ecma_get_magic_string (LIT_MAGIC_STRING_FALSE);
   }
+
+#if ENABLED (JERRY_ESNEXT)
+  if (ecma_is_value_symbol (value))
+  {
+    ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a Symbol value to a string."));
+    return NULL;
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+#if ENABLED (JERRY_BUILTIN_BIGINT)
+  if (ecma_is_value_bigint (value))
+  {
+    return ecma_bigint_to_string (value, 10);
+  }
+#endif /* ENABLED (JERRY_BUILTIN_BIGINT) */
 
   JERRY_ASSERT (ecma_is_value_object (value));
 
@@ -567,6 +591,12 @@ ecma_op_to_object (ecma_value_t value) /**< ecma value */
     return ecma_op_create_symbol_object (value);
   }
 #endif /* ENABLED (JERRY_ESNEXT) */
+#if ENABLED (JERRY_BUILTIN_BIGINT)
+  else if (ecma_is_value_bigint (value))
+  {
+    return ecma_op_create_bigint_object (value);
+  }
+#endif /* ENABLED (JERRY_BUILTIN_BIGINT) */
   else
   {
     if (ecma_is_value_undefined (value)
@@ -946,7 +976,7 @@ ecma_op_to_integer (ecma_value_t value, /**< ecma value */
  */
 ecma_value_t
 ecma_op_to_length (ecma_value_t value, /**< ecma value */
-                   uint32_t *length) /**< [out] ecma number */
+                   ecma_length_t *length) /**< [out] ecma number */
 {
   /* 1 */
   if (ECMA_IS_VALUE_ERROR (value))
@@ -973,14 +1003,14 @@ ecma_op_to_length (ecma_value_t value, /**< ecma value */
   }
 
   /* 5 */
-  if (num >= (ecma_number_t) UINT32_MAX)
+  if (num >= ECMA_NUMBER_MAX_SAFE_INTEGER)
   {
-    *length = UINT32_MAX;
+    *length = (ecma_length_t) ECMA_NUMBER_MAX_SAFE_INTEGER;
     return ECMA_VALUE_EMPTY;
   }
 
   /* 6 */
-  *length = (uint32_t) num;
+  *length = (ecma_length_t) num;
   return ECMA_VALUE_EMPTY;
 #else /* !ENABLED (JERRY_ESNEXT) */
   /* In the case of ES5, ToLength(ES6) operation is the same as ToUint32(ES5) */
@@ -1026,7 +1056,7 @@ ecma_op_create_list_from_array_like (ecma_value_t arr,  /**< array value */
   ecma_object_t *obj_p = ecma_get_object_from_value (arr);
 
   /* 4. 5. */
-  uint32_t len;
+  ecma_length_t len;
   if (ECMA_IS_VALUE_ERROR (ecma_op_object_get_length (obj_p, &len)))
   {
     return NULL;
@@ -1036,9 +1066,9 @@ ecma_op_create_list_from_array_like (ecma_value_t arr,  /**< array value */
   ecma_collection_t *list_ptr = ecma_new_collection ();
 
   /* 7. 8. */
-  for (uint32_t idx = 0; idx < len; idx++)
+  for (ecma_length_t idx = 0; idx < len; idx++)
   {
-    ecma_value_t next = ecma_op_object_get_by_uint32_index (obj_p, idx);
+    ecma_value_t next = ecma_op_object_get_by_index (obj_p, idx);
     if (ECMA_IS_VALUE_ERROR (next))
     {
       ecma_collection_free (list_ptr);
