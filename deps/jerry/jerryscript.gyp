@@ -45,6 +45,12 @@
          'jerryscript/jerry-port/default/include',
          'v8jerry',
       ],
+      'defines': [
+        'JERRY_CPOINTER_32_BIT=1',
+        'JERRY_GLOBAL_HEAP_SIZE=16384',
+        'JERRY_LINE_INFO=1',
+        'JERRY_V8_DUMP_BACKTRACE=1',
+      ],
       'sources': [
         'api.cc',
         'api_ext.cc',

@@ -383,7 +383,29 @@ void Context::SetAlignedPointerInEmbedderData(int index, void* value) {
 
 void Template::Set(v8::Local<Name> name, v8::Local<Data> value,
                    v8::PropertyAttribute attribute) {
-  UNIMPLEMENTED(1365);
+  V8_CALL_TRACE();
+  JerryTemplate* templt = reinterpret_cast<JerryTemplate*>(this);
+
+  // Here we copy the values as the template's internl elements will do a release on them
+  JerryValue* key = reinterpret_cast<JerryValue*>(*name)->Copy();
+  JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(*value);
+
+  JerryValue* jvalue;
+  switch (jhandle->type()) {
+    case JerryHandle::Value: {
+      jvalue = reinterpret_cast<JerryValue*>(jhandle)->Copy(); break;
+    }
+    case JerryHandle::FunctionTemplate: {
+      JerryFunctionTemplate* jtmplt = reinterpret_cast<JerryFunctionTemplate*>(jhandle);
+      jvalue = jtmplt->GetFunction()->Copy();
+      break;
+    }
+    default: {
+      UNIMPLEMENTED(1365);
+    }
+  }
+
+  templt->Set(key, jvalue, attribute);
 }
 
 void Template::SetAccessorProperty(v8::Local<v8::Name> name,
@@ -440,8 +462,8 @@ Local<FunctionTemplate> FunctionTemplate::New(
 
 Local<Signature> Signature::New(Isolate* isolate,
                                 Local<FunctionTemplate> receiver) {
-  UNIMPLEMENTED(1525);
-  return Local<Signature>();
+  V8_CALL_TRACE();
+  RETURN_HANDLE(Signature, Isolate::GetCurrent(), reinterpret_cast<JerryFunctionTemplate*>(*receiver));
 }
 
 Local<ObjectTemplate> FunctionTemplate::InstanceTemplate() {
@@ -1458,8 +1480,19 @@ Maybe<int32_t> Value::Int32Value(Local<Context> context) const {
 }
 
 Maybe<uint32_t> Value::Uint32Value(Local<Context> context) const {
-  UNIMPLEMENTED(3944);
-  return Just((uint32_t) 0);
+  V8_CALL_TRACE();
+  uint32_t result = 0;
+  // TODO: Use ToUint32 conversion if available.
+  JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+
+  if (convertedValue != NULL) {
+    double value = convertedValue->GetNumberValue();
+
+    result = (value >= 0) ? (uint32_t)value : 0;
+    delete convertedValue;
+  }
+
+  return Just(result);
 }
 
 bool Value::StrictEquals(Local<Value> that) const {
@@ -2110,8 +2143,10 @@ v8::String::GetExternalOneByteStringResource() const {
 }
 
 Local<Value> Symbol::Description() const {
-  UNIMPLEMENTED(5511);
-  return Local<Value>();
+  V8_CALL_TRACE();
+
+  jerry_value_t result = jerry_get_symbol_descriptive_string (reinterpret_cast<const JerryValue*>(this)->value());
+  RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(result));
 }
 
 double Number::Value() const {
@@ -2300,9 +2335,27 @@ v8::Local<v8::Object> Context::Global() {
   RETURN_HANDLE(Object, GetIsolate(), new JerryValue(jerry_get_global_object()));
 }
 
+static jerry_value_t trace_function(const jerry_value_t function_obj, const jerry_value_t this_val,
+                                    const jerry_value_t args_p[], const jerry_length_t args_count) {
+  return jerry_create_undefined();
+}
+
 Local<v8::Object> Context::GetExtrasBindingObject() {
-  UNIMPLEMENTED(6075);
-  return Local<v8::Object>();
+  V8_CALL_TRACE();
+
+  jerry_value_t object = jerry_create_object();
+  jerry_value_t func = jerry_create_external_function(trace_function);
+
+  jerry_value_t name = jerry_create_string((const jerry_char_t*)"isTraceCategoryEnabled");
+  jerry_set_property (object, name, func);
+  jerry_release_value (name);
+
+  name = jerry_create_string((const jerry_char_t*)"trace");
+  jerry_set_property (object, name, func);
+  jerry_release_value (name);
+
+  jerry_release_value (func);
+  RETURN_HANDLE(Object, GetIsolate(), new JerryValue(object));
 }
 
 void Context::AllowCodeGenerationFromStrings(bool allow) {
@@ -2310,8 +2363,14 @@ void Context::AllowCodeGenerationFromStrings(bool allow) {
 }
 
 MaybeLocal<v8::Object> ObjectTemplate::NewInstance(Local<Context> context) {
-  UNIMPLEMENTED(6143);
-  return MaybeLocal<v8::Object>();
+  V8_CALL_TRACE();
+  JerryObjectTemplate* object_template = reinterpret_cast<JerryObjectTemplate*>(this);
+
+  // TODO: the function template's method should be set as the object's constructor
+  JerryValue* new_instance = JerryValue::NewObject();
+  object_template->InstallProperties(new_instance->value());
+
+  RETURN_HANDLE(Object, context->GetIsolate(), new_instance);
 }
 
 MaybeLocal<v8::Function> FunctionTemplate::GetFunction(Local<Context> context) {
@@ -2408,11 +2467,15 @@ MaybeLocal<String> v8::String::NewExternalTwoByte(
     Isolate* isolate, v8::String::ExternalStringResource* resource) {
   V8_CALL_TRACE();
 
+  std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
+  std::string dest = convert.to_bytes(reinterpret_cast<const char16_t*>(resource->data()),
+                                      reinterpret_cast<const char16_t*>(resource->data() + resource->length()));
+
   if (resource->length() >= String::kMaxLength) {
       return Local<String>();
   }
 
-  jerry_value_t str = JerryString::FromBuffer((const char*)resource->data(), resource->length());
+  jerry_value_t str = JerryString::FromBuffer(dest.c_str(), dest.size());
 
   RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::TWO_BYTE));
 }
@@ -2425,7 +2488,7 @@ MaybeLocal<String> v8::String::NewExternalOneByte(
       return Local<String>();
   }
 
-  jerry_value_t str = jerry_create_external_string_sz((const jerry_char_t *)resource->data(), resource->length(), NULL);
+  jerry_value_t str = JerryString::FromBuffer((const char*)resource->data(), resource->length());
 
   RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::TWO_BYTE));
 }
