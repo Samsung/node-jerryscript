@@ -106,6 +106,11 @@ TEST262_ES2015_TEST_SUITE_OPTIONS = [
     Options('test262_tests_es2015', OPTIONS_PROFILE_ESNEXT + ['--line-info=on', '--error-messages=on']),
 ]
 
+# Test options for test262-esnext
+TEST262_ESNEXT_TEST_SUITE_OPTIONS = [
+    Options('test262_tests_esnext', OPTIONS_PROFILE_ESNEXT + ['--line-info=on', '--error-messages=on']),
+]
+
 # Test options for jerry-debugger
 DEBUGGER_TEST_OPTIONS = [
     Options('jerry_debugger_tests',
@@ -159,6 +164,8 @@ JERRY_BUILDOPTIONS = [
             ['--cmake-param=-DENABLE_ALL_IN_ONE_SOURCE=ON']),
     Options('buildoption_test-jerry-debugger',
             ['--jerry-debugger=on']),
+    Options('buildoption_test-module-off',
+            ['--compile-flag=-DJERRY_MODULE_SYSTEM=0', '--lto=off']),
 ]
 
 def get_arguments():
@@ -198,6 +205,12 @@ def get_arguments():
                         nargs='?', choices=['default', 'all', 'update'],
                         help='Run test262 - ES2015. default: all tests except excludelist, ' +
                         'all: all tests, update: all tests and update excludelist')
+    parser.add_argument('--test262-esnext', default=False, const='default',
+                        nargs='?', choices=['default', 'all', 'update'],
+                        help='Run test262 - ESnext. default: all tests except excludelist, ' +
+                        'all: all tests, update: all tests and update excludelist')
+    parser.add_argument('--test262-test-list', metavar='LIST',
+                        help='Add a comma separated list of tests or directories to run in test262 test suite')
     parser.add_argument('--unittests', action='store_true',
                         help='Run unittests (including doctests)')
     parser.add_argument('--buildoption-test', action='store_true',
@@ -210,6 +223,12 @@ def get_arguments():
         sys.exit(1)
 
     script_args = parser.parse_args()
+
+    if script_args.test262_test_list and not \
+       (script_args.test262 or script_args.test262_es2015 or script_args.test262_esnext):
+        print("--test262-test-list is only allowed with --test262 or --test262-es2015 or --test262-esnext\n")
+        parser.print_help()
+        sys.exit(1)
 
     return script_args
 
@@ -399,6 +418,8 @@ def run_test262_test_suite(options):
         jobs.extend(TEST262_TEST_SUITE_OPTIONS)
     if options.test262_es2015:
         jobs.extend(TEST262_ES2015_TEST_SUITE_OPTIONS)
+    if options.test262_esnext:
+        jobs.extend(TEST262_ESNEXT_TEST_SUITE_OPTIONS)
 
     for job in jobs:
         ret_build, build_dir_path = create_binary(job, options)
@@ -412,14 +433,21 @@ def run_test262_test_suite(options):
             '--test-dir', settings.TEST262_TEST_SUITE_DIR
         ]
 
-        if '--profile=es.next' in job.build_args:
+        if job.name.endswith('es2015'):
             test_cmd.append('--es2015')
             test_cmd.append(options.test262_es2015)
+        elif job.name.endswith('esnext'):
+            test_cmd.append('--esnext')
+            test_cmd.append(options.test262_esnext)
         else:
             test_cmd.append('--es51')
 
         if job.test_args:
             test_cmd.extend(job.test_args)
+
+        if options.test262_test_list:
+            test_cmd.append('--test262-test-list')
+            test_cmd.append(options.test262_test_list)
 
         ret_test |= run_check(test_cmd, env=dict(TZ='America/Los_Angeles'))
 
@@ -481,7 +509,7 @@ def main(options):
         Check(options.check_magic_strings, run_check, [settings.MAGIC_STRINGS_SCRIPT]),
         Check(options.jerry_debugger, run_jerry_debugger_tests, options),
         Check(options.jerry_tests, run_jerry_tests, options),
-        Check(options.test262 or options.test262_es2015, run_test262_test_suite, options),
+        Check(options.test262 or options.test262_es2015 or options.test262_esnext, run_test262_test_suite, options),
         Check(options.unittests, run_unittests, options),
         Check(options.buildoption_test, run_buildoption_test, options),
     ]

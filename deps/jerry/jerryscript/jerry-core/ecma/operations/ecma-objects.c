@@ -1231,7 +1231,7 @@ ecma_op_object_put_with_receiver (ecma_object_t *object_p, /**< the object */
         if (array_index != ECMA_STRING_NOT_ARRAY_INDEX)
         {
           ecma_number_t num_var;
-          ecma_value_t error = ecma_get_number (value, &num_var);
+          ecma_value_t error = ecma_op_to_numeric (value, &num_var, ECMA_TO_NUMERIC_NO_OPTS);
 
           if (ECMA_IS_VALUE_ERROR (error))
           {
@@ -1934,8 +1934,10 @@ ecma_op_object_get_enumerable_property_names (ecma_object_t *obj_p, /**< routine
         return NULL;
       }
 
+      const bool is_enumerable = (prop_desc.flags & ECMA_PROP_IS_ENUMERABLE) != 0;
+      ecma_free_property_descriptor (&prop_desc);
       /* 4.a.ii */
-      if ((prop_desc.flags & ECMA_PROP_IS_ENUMERABLE) != 0)
+      if (is_enumerable)
       {
         /* 4.a.ii.1 */
         if (option == ECMA_ENUMERABLE_PROPERTY_KEYS)
@@ -1975,11 +1977,6 @@ ecma_op_object_get_enumerable_property_names (ecma_object_t *obj_p, /**< routine
             ecma_collection_push_back (properties_p, ecma_make_object_value (entry_p));
           }
         }
-      }
-
-      if (ecma_is_value_true (status))
-      {
-        ecma_free_property_descriptor (&prop_desc);
       }
     }
   }

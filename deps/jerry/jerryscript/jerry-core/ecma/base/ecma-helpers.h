@@ -196,13 +196,25 @@ typedef enum
 /**
  * JERRY_ASSERT compatible macro for checking whether the given ecma-value is symbol
  */
-#define ECMA_ASSERT_VALUE_IS_SYMBOL(value) (ecma_is_value_symbol ((value)))
+#define ECMA_CHECK_SYMBOL_IN_ASSERT(value) (ecma_is_value_symbol ((value)))
 #else /* !ENABLED (JERRY_ESNEXT) */
 /**
  * JERRY_ASSERT compatible macro for checking whether the given ecma-value is symbol
  */
-#define ECMA_ASSERT_VALUE_IS_SYMBOL(value) (false)
+#define ECMA_CHECK_SYMBOL_IN_ASSERT(value) (false)
 #endif /* ENABLED (JERRY_ESNEXT) */
+
+#if ENABLED (JERRY_BUILTIN_BIGINT)
+/**
+ * JERRY_ASSERT compatible macro for checking whether the given ecma-value is bigint
+ */
+#define ECMA_CHECK_BIGINT_IN_ASSERT(value) ecma_is_value_bigint(value)
+#else /* !ENABLED (JERRY_BUILTIN_BIGINT) */
+/**
+ * JERRY_ASSERT compatible macro for checking whether the given ecma-value is bigint
+ */
+#define ECMA_CHECK_BIGINT_IN_ASSERT(value) false
+#endif /* ENABLED (JERRY_BUILTIN_BIGINT) */
 
 /**
  * Check whether the given type is ECMA_OBJECT_TYPE_PROXY
@@ -302,7 +314,7 @@ lit_magic_string_id_t ecma_get_typeof_lit_id (ecma_value_t value);
 #if ENABLED (JERRY_ESNEXT)
 ecma_string_t *ecma_new_symbol_from_descriptor_string (ecma_value_t string_desc);
 bool ecma_prop_name_is_symbol (ecma_string_t *string_p);
-uint32_t ecma_op_advance_string_index (ecma_string_t *str_p, ecma_length_t index_num, bool is_unicode);
+ecma_length_t ecma_op_advance_string_index (ecma_string_t *str_p, ecma_length_t index_num, bool is_unicode);
 #endif /* ENABLED (JERRY_ESNEXT) */
 #if ENABLED (JERRY_BUILTIN_MAP) || ENABLED (JERRY_BUILTIN_SET)
 ecma_string_t *ecma_new_map_key_string (ecma_value_t value);
@@ -414,6 +426,8 @@ ecma_string_t *ecma_stringbuilder_finalize (ecma_stringbuilder_t *builder_p);
 void ecma_stringbuilder_destroy (ecma_stringbuilder_t *builder_p);
 
 /* ecma-helpers-number.c */
+ecma_number_t ecma_number_pack (bool sign, uint32_t biased_exp, uint64_t fraction);
+void ecma_number_unpack (ecma_number_t num, bool *sign_p, uint32_t *biased_exp_p, uint64_t *fraction_p);
 ecma_number_t ecma_number_make_nan (void);
 ecma_number_t ecma_number_make_infinity (bool sign);
 bool ecma_number_is_nan (ecma_number_t num);

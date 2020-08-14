@@ -1074,32 +1074,60 @@ parser_post_processing (parser_context_t *context_p) /**< context */
     flags = cbc_flags[last_opcode];
     length++;
 
-    if (last_opcode == CBC_EXT_OPCODE)
+    switch (last_opcode)
     {
-      cbc_ext_opcode_t ext_opcode;
+      case CBC_EXT_OPCODE:
+      {
+        cbc_ext_opcode_t ext_opcode;
 
-      ext_opcode = (cbc_ext_opcode_t) page_p->bytes[offset];
-      branch_offset_length = CBC_BRANCH_OFFSET_LENGTH (ext_opcode);
-      flags = cbc_ext_flags[ext_opcode];
-      PARSER_NEXT_BYTE (page_p, offset);
-      length++;
+        ext_opcode = (cbc_ext_opcode_t) page_p->bytes[offset];
+        branch_offset_length = CBC_BRANCH_OFFSET_LENGTH (ext_opcode);
+        flags = cbc_ext_flags[ext_opcode];
+        PARSER_NEXT_BYTE (page_p, offset);
+        length++;
 
 #if ENABLED (JERRY_LINE_INFO)
-      if (ext_opcode == CBC_EXT_LINE)
-      {
-        uint8_t last_byte = 0;
-
-        do
+        if (ext_opcode == CBC_EXT_LINE)
         {
-          last_byte = page_p->bytes[offset];
-          PARSER_NEXT_BYTE (page_p, offset);
-          length++;
-        }
-        while (last_byte & CBC_HIGHEST_BIT_MASK);
+          uint8_t last_byte = 0;
 
-        continue;
-      }
+          do
+          {
+            last_byte = page_p->bytes[offset];
+            PARSER_NEXT_BYTE (page_p, offset);
+            length++;
+          }
+          while (last_byte & CBC_HIGHEST_BIT_MASK);
+
+          continue;
+        }
 #endif /* ENABLED (JERRY_LINE_INFO) */
+        break;
+      }
+      case CBC_POST_DECR:
+      {
+        *opcode_p = CBC_PRE_DECR;
+        break;
+      }
+      case CBC_POST_INCR:
+      {
+        *opcode_p = CBC_PRE_INCR;
+        break;
+      }
+      case CBC_POST_DECR_IDENT:
+      {
+        *opcode_p = CBC_PRE_DECR_IDENT;
+        break;
+      }
+      case CBC_POST_INCR_IDENT:
+      {
+        *opcode_p = CBC_PRE_INCR_IDENT;
+        break;
+      }
+      default:
+      {
+        break;
+      }
     }
 
     while (flags & (CBC_HAS_LITERAL_ARG | CBC_HAS_LITERAL_ARG2))
@@ -1404,6 +1432,10 @@ parser_post_processing (parser_context_t *context_p) /**< context */
   else if (context_p->status_flags & PARSER_CLASS_CONSTRUCTOR)
   {
     function_type = CBC_FUNCTION_TO_TYPE_BITS (CBC_FUNCTION_CONSTRUCTOR);
+  }
+  else if (context_p->status_flags & PARSER_IS_METHOD)
+  {
+    function_type = CBC_FUNCTION_TO_TYPE_BITS (CBC_FUNCTION_METHOD);
   }
   else
   {

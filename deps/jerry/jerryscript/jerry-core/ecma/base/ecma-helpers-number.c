@@ -48,7 +48,7 @@ JERRY_STATIC_ASSERT (sizeof (ecma_number_t) == sizeof (uint32_t),
  *
  * @return ecma-number with specified sign, biased_exponent and fraction
  */
-static ecma_number_t
+ecma_number_t
 ecma_number_pack (bool sign, /**< sign */
                   uint32_t biased_exp, /**< biased exponent */
                   uint64_t fraction) /**< fraction */
@@ -68,7 +68,7 @@ ecma_number_pack (bool sign, /**< sign */
 /**
  * Unpacking sign, fraction and biased exponent from ecma-number
  */
-static void
+void
 ecma_number_unpack (ecma_number_t num, /**< ecma-number */
                     bool *sign_p, /**< [out] sign (optional) */
                     uint32_t *biased_exp_p, /**< [out] biased exponent (optional) */
@@ -111,7 +111,7 @@ JERRY_STATIC_ASSERT (sizeof (ecma_number_t) == sizeof (uint64_t),
  *
  * @return ecma-number with specified sign, biased_exponent and fraction
  */
-static ecma_number_t
+ecma_number_t
 ecma_number_pack (bool sign, /**< sign */
                   uint32_t biased_exp, /**< biased exponent */
                   uint64_t fraction) /**< fraction */
@@ -131,7 +131,7 @@ ecma_number_pack (bool sign, /**< sign */
 /**
  * Unpacking sign, fraction and biased exponent from ecma-number
  */
-static void
+void
 ecma_number_unpack (ecma_number_t num, /**< ecma-number */
                     bool *sign_p, /**< [out] sign (optional) */
                     uint32_t *biased_exp_p, /**< [out] biased exponent (optional) */
@@ -765,7 +765,7 @@ ecma_number_parse_int (const lit_utf8_byte_t *string_buff, /**< routine's first 
 
   /* 6. */
   ecma_number_t radix_num;
-  radix = ecma_get_number (radix, &radix_num);
+  radix = ecma_op_to_numeric (radix, &radix_num, ECMA_TO_NUMERIC_NO_OPTS);
 
   if (!ecma_is_value_empty (radix))
   {

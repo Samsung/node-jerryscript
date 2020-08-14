@@ -51,20 +51,7 @@ ecma_builtin_bigint_dispatch_call (const ecma_value_t *arguments_list_p, /**< ar
   JERRY_ASSERT (arguments_list_len == 0 || arguments_list_p != NULL);
 
   ecma_value_t value = (arguments_list_len == 0) ? ECMA_VALUE_UNDEFINED : arguments_list_p[0];
-
-  if (!ecma_is_value_string (value))
-  {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("TODO: Only strings are supported now"));
-  }
-
-  ecma_string_t *string_p = ecma_get_string_from_value (value);
-
-  ECMA_STRING_TO_UTF8_STRING (string_p, string_buffer_p, string_buffer_size);
-
-  ecma_value_t result = ecma_bigint_parse_string (string_buffer_p, string_buffer_size);
-
-  ECMA_FINALIZE_UTF8_STRING (string_buffer_p, string_buffer_size);
-  return result;
+  return ecma_bigint_to_bigint (value, true);
 } /* ecma_builtin_bigint_dispatch_call */
 
 /**

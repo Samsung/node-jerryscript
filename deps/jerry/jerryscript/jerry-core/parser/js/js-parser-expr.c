@@ -743,7 +743,7 @@ parser_parse_class_literal (parser_context_t *context_p, /**< context */
 parse_class_method:
     ; /* Empty statement to make compiler happy. */
     uint16_t literal_index = context_p->lit_object.index;
-    uint16_t function_literal_index = lexer_construct_function_object (context_p, status_flags);
+    uint16_t function_literal_index = lexer_construct_function_object (context_p, status_flags | PARSER_IS_METHOD);
 
     parser_emit_cbc_literal (context_p,
                              CBC_PUSH_LITERAL,
@@ -915,7 +915,8 @@ parser_parse_object_method (parser_context_t *context_p) /**< context */
   context_p->source_p--;
   context_p->column--;
   uint16_t function_literal_index = lexer_construct_function_object (context_p, (PARSER_FUNCTION_CLOSURE
-                                                                                 | PARSER_ALLOW_SUPER));
+                                                                                 | PARSER_ALLOW_SUPER
+                                                                                 | PARSER_IS_METHOD));
 
   parser_emit_cbc_literal (context_p,
                            CBC_PUSH_LITERAL,
@@ -1882,6 +1883,12 @@ parser_parse_unary_expression (parser_context_t *context_p, /**< context */
             {
               is_negative_number = !is_negative_number;
             }
+#if ENABLED (JERRY_BUILTIN_BIGINT)
+            else if (JERRY_LIKELY (context_p->token.extra_value == LEXER_NUMBER_BIGINT))
+            {
+              break;
+            }
+#endif /* ENABLED (JERRY_BUILTIN_BIGINT) */
             parser_stack_pop_uint8 (context_p);
           }
           while (context_p->stack_top_uint8 == LEXER_PLUS

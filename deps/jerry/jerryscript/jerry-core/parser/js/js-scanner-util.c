@@ -1382,6 +1382,14 @@ scanner_detect_invalid_var (parser_context_t *context_p, /**< context */
   }
 
   scanner_literal_pool_t *literal_pool_p = scanner_context_p->active_literal_pool_p;
+
+  if (literal_pool_p->status_flags & SCANNER_LITERAL_POOL_BLOCK
+      && (var_literal_p->type & (SCANNER_LITERAL_IS_FUNC | SCANNER_LITERAL_IS_FUNC_DECLARATION))
+         == (SCANNER_LITERAL_IS_FUNC | SCANNER_LITERAL_IS_FUNC_DECLARATION))
+  {
+    scanner_raise_redeclaration_error (context_p);
+  }
+
   const uint8_t *char_p = var_literal_p->char_p;
   prop_length_t length = var_literal_p->length;
 
@@ -1399,6 +1407,8 @@ scanner_detect_invalid_var (parser_context_t *context_p, /**< context */
       {
         if (literal_p->type & SCANNER_LITERAL_IS_LOCAL
             && !(literal_p->type & SCANNER_LITERAL_IS_ARG)
+            && !((literal_p->type & SCANNER_LITERAL_IS_FUNC)
+                 && (literal_pool_p->status_flags & SCANNER_LITERAL_POOL_BLOCK) == 0)
             && (literal_p->type & SCANNER_LITERAL_IS_LOCAL) != SCANNER_LITERAL_IS_LOCAL
             && literal_p->length == length)
         {
@@ -1424,6 +1434,8 @@ scanner_detect_invalid_var (parser_context_t *context_p, /**< context */
       {
         if (literal_p->type & SCANNER_LITERAL_IS_LOCAL
             && !(literal_p->type & SCANNER_LITERAL_IS_ARG)
+            && !((literal_p->type & SCANNER_LITERAL_IS_FUNC)
+                 && (literal_pool_p->status_flags & SCANNER_LITERAL_POOL_BLOCK) == 0)
             && (literal_p->type & SCANNER_LITERAL_IS_LOCAL) != SCANNER_LITERAL_IS_LOCAL
             && lexer_compare_identifiers (context_p, literal_p, var_literal_p))
         {
@@ -1739,13 +1751,19 @@ scanner_is_context_needed (parser_context_t *context_p, /**< context */
     }
     else if (check_type == PARSER_CHECK_GLOBAL_CONTEXT)
     {
+#if ENABLED (JERRY_MODULE_SYSTEM)
+      const bool is_import = (type == SCANNER_STREAM_TYPE_IMPORT);
+#else
+      const bool is_import = true;
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
+
       /* FIXME: a private declarative lexical environment should always be present
        * for modules. Remove SCANNER_STREAM_TYPE_IMPORT after it is implemented. */
       JERRY_ASSERT (type == SCANNER_STREAM_TYPE_VAR
                     || type == SCANNER_STREAM_TYPE_LET
                     || type == SCANNER_STREAM_TYPE_CONST
                     || type == SCANNER_STREAM_TYPE_FUNC
-                    || type == SCANNER_STREAM_TYPE_IMPORT);
+                    || is_import);
 
       /* Only let/const can be stored in registers */
       JERRY_ASSERT ((data & SCANNER_STREAM_NO_REG)
@@ -1792,10 +1810,16 @@ scanner_is_context_needed (parser_context_t *context_p, /**< context */
     }
 
 #if ENABLED (JERRY_ESNEXT)
+#if ENABLED (JERRY_MODULE_SYSTEM)
+    const bool is_import = (type == SCANNER_STREAM_TYPE_IMPORT);
+#else
+    const bool is_import = true;
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
+
     if (JERRY_UNLIKELY (check_type == PARSER_CHECK_GLOBAL_CONTEXT)
         && (type == SCANNER_STREAM_TYPE_VAR
             || (type == SCANNER_STREAM_TYPE_FUNC && !(context_p->global_status_flags & ECMA_PARSE_DIRECT_EVAL))
-            || type == SCANNER_STREAM_TYPE_IMPORT))
+            || is_import))
     {
       continue;
     }

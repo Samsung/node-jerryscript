@@ -359,7 +359,7 @@ ecma_builtin_helper_array_concat_value (ecma_object_t *array_obj_p, /**< array *
     /* 4 . */
     if (*length_p + arg_len > ECMA_NUMBER_MAX_SAFE_INTEGER)
     {
-      return ecma_raise_range_error (ECMA_ERR_MSG ("Invalid array length."));
+      return ecma_raise_type_error (ECMA_ERR_MSG ("Invalid array length."));
     }
 #else /* !ENABLED (JERRY_ESNEXT) */
     /* 5.b.ii */
@@ -539,7 +539,7 @@ ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_st
   else
   {
 #endif /* ENABLED (JERRY_ESNEXT) */
-    ret_value = ecma_get_number (arg2, &pos_num);
+    ret_value = ecma_op_to_numeric (arg2, &pos_num, ECMA_TO_NUMERIC_NO_OPTS);
 #if ENABLED (JERRY_ESNEXT)
   }
 #endif /* ENABLED (JERRY_ESNEXT) */
