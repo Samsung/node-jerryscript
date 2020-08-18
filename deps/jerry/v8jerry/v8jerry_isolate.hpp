@@ -124,7 +124,7 @@ private:
 
     // Slots accessed by v8::Isolate::Get/SetData
     // They must be the first field of GraalIsolate
-    void* m_slot[22] = {};
+    void* m_slot[26] = {};
 
     // TODO: support non POSIX systems.
     #ifdef __POSIX__

@@ -17,8 +17,8 @@
 #include "v8jerry_allocator.hpp"
 #include "v8jerry_backing_store.hpp"
 #include "v8jerry_callback.hpp"
-#include "v8jerry_handlescope.hpp"
 #include "v8jerry_flags.hpp"
+#include "v8jerry_handlescope.hpp"
 #include "v8jerry_isolate.hpp"
 #include "v8jerry_platform.hpp"
 #include "v8jerry_templates.hpp"
@@ -392,8 +392,10 @@ void Template::Set(v8::Local<Name> name, v8::Local<Data> value,
 
   JerryValue* jvalue;
   switch (jhandle->type()) {
-    case JerryHandle::Value: {
-      jvalue = reinterpret_cast<JerryValue*>(jhandle)->Copy(); break;
+    case JerryHandle::Value:
+    case JerryHandle::GlobalValue: {
+      jvalue = reinterpret_cast<JerryValue*>(jhandle)->Copy();
+      break;
     }
     case JerryHandle::FunctionTemplate: {
       JerryFunctionTemplate* jtmplt = reinterpret_cast<JerryFunctionTemplate*>(jhandle);
@@ -413,7 +415,24 @@ void Template::SetAccessorProperty(v8::Local<v8::Name> name,
                                    v8::Local<FunctionTemplate> setter,
                                    v8::PropertyAttribute attribute,
                                    v8::AccessControl access_control) {
-  UNIMPLEMENTED(1390);
+  V8_CALL_TRACE();
+
+  JerryValue* key = reinterpret_cast<JerryValue*>(*name)->Copy();
+  // TODO: maybe this should not be a JerryValue?
+
+  JerryValue* jgetter = NULL;
+  JerryValue* jsetter = NULL;
+  if (!getter.IsEmpty()) {
+    jgetter = reinterpret_cast<JerryFunctionTemplate*>(*getter)->GetFunction()->Copy();
+  }
+
+  if (!setter.IsEmpty()) {
+    jgetter = reinterpret_cast<JerryFunctionTemplate*>(*setter)->GetFunction()->Copy();
+  }
+  // TODO: handle attributes and settings
+
+  JerryTemplate* templt = reinterpret_cast<JerryTemplate*>(this);
+  templt->SetAccessorProperty(key, jgetter, jsetter, attribute);
 }
 
 Local<ObjectTemplate> FunctionTemplate::PrototypeTemplate() {
@@ -582,22 +601,44 @@ Local<PrimitiveArray> ScriptOrModule::GetHostDefinedOptions() {
 }
 
 Local<PrimitiveArray> PrimitiveArray::New(Isolate* v8_isolate, int length) {
-  UNIMPLEMENTED(2180);
+  if (length < 0) {
+      length = 0;
+  }
+
+  jerry_value_t array_value = jerry_create_array(length);
+  RETURN_HANDLE(PrimitiveArray, v8_isolate, new JerryValue(array_value));
 }
 
 int PrimitiveArray::Length() const {
-  UNIMPLEMENTED(2189);
-  return 0;
+  V8_CALL_TRACE();
+  const JerryValue* array = reinterpret_cast<const JerryValue*>(this);
+
+  return jerry_get_array_length(array->value());
 }
 
 void PrimitiveArray::Set(Isolate* v8_isolate, int index,
                          Local<Primitive> item) {
-  UNIMPLEMENTED(2194);
+  V8_CALL_TRACE();
+  const JerryValue* array = reinterpret_cast<const JerryValue*>(this);
+  const JerryValue* value = reinterpret_cast<const JerryValue*>(*item);
+
+  jerry_set_property_by_index(array->value(), (uint32_t)index, value->value());
 }
 
 Local<Primitive> PrimitiveArray::Get(Isolate* v8_isolate, int index) {
-  UNIMPLEMENTED(2207);
-  return Local<Primitive>();
+  V8_CALL_TRACE();
+  const JerryValue* array = reinterpret_cast<const JerryValue*>(this);
+
+  jerry_value_t property = jerry_get_property_by_index(array->value(), (uint32_t)index);
+
+  JerryValue* result = NULL;
+  if (!jerry_value_is_error(property)) {
+      result = new JerryValue(property);
+  } else {
+      jerry_release_value(property);
+  }
+
+  RETURN_HANDLE(Primitive, v8_isolate, result);
 }
 
 Module::Status Module::GetStatus() const {
@@ -787,9 +828,14 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
                                                       source->source_string->Utf8Length(isolate),
                                                       JERRY_PARSE_NO_OPTS);
 
+  if (script_or_module_out != nullptr) {
+    jerry_value_t object = jerry_create_object();
+    JerryValue* script_or_module = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), object);
+    *script_or_module_out = Local<ScriptOrModule>::New(isolate, reinterpret_cast<ScriptOrModule*>(script_or_module));
+  }
+
   JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
   RETURN_HANDLE(Function, isolate, result);
-  return MaybeLocal<Function>();
 }
 
 uint32_t ScriptCompiler::CachedDataVersionTag() {
@@ -1430,14 +1476,14 @@ size_t v8::BackingStore::ByteLength() const {
 
 std::shared_ptr<v8::BackingStore> v8::ArrayBuffer::GetBackingStore() {
   V8_CALL_TRACE();
-  JerryBackingStore* backingStore = reinterpret_cast<JerryValue*>(this)->GetBackingStore();
-  return JerryBackingStore::toShared(backingStore);
+  JerryBackingStore* jerryBackingStore = reinterpret_cast<JerryValue*>(this)->GetBackingStore();
+  return std::shared_ptr<v8::BackingStore>{reinterpret_cast<v8::BackingStore*>(new BackingStoreRef(jerryBackingStore))};
 }
 
 std::shared_ptr<v8::BackingStore> v8::SharedArrayBuffer::GetBackingStore() {
   V8_CALL_TRACE();
-  JerryBackingStore* backingStore = reinterpret_cast<JerryValue*>(this)->GetBackingStore();
-  return JerryBackingStore::toShared(backingStore);
+  JerryBackingStore* jerryBackingStore = reinterpret_cast<JerryValue*>(this)->GetBackingStore();
+  return std::shared_ptr<v8::BackingStore>{reinterpret_cast<v8::BackingStore*>(new BackingStoreRef(jerryBackingStore))};
 }
 
 void v8::ArrayBuffer::CheckCast(Value* that) {
@@ -1470,13 +1516,29 @@ Maybe<double> Value::NumberValue(Local<Context> context) const {
 }
 
 Maybe<int64_t> Value::IntegerValue(Local<Context> context) const {
-  UNIMPLEMENTED(3917);
-  return Just((int64_t) 0);
+  V8_CALL_TRACE();
+  int64_t result = 0;
+  JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+
+  if (convertedValue != NULL) {
+    result = convertedValue->GetInt64Value();
+    delete convertedValue;
+  }
+
+  return Just(result);
 }
 
 Maybe<int32_t> Value::Int32Value(Local<Context> context) const {
-  UNIMPLEMENTED(3931);
-  return Just((int32_t) 0);
+  V8_CALL_TRACE();
+  int32_t result = 0;
+  JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+
+  if (convertedValue != NULL) {
+    result = convertedValue->GetInt32Value();
+    delete convertedValue;
+  }
+
+  return Just(result);
 }
 
 Maybe<uint32_t> Value::Uint32Value(Local<Context> context) const {
@@ -1496,8 +1558,15 @@ Maybe<uint32_t> Value::Uint32Value(Local<Context> context) const {
 }
 
 bool Value::StrictEquals(Local<Value> that) const {
-  UNIMPLEMENTED(3989);
-  return false;
+  V8_CALL_TRACE();
+  const JerryValue* lhs = reinterpret_cast<const JerryValue*> (this);
+  JerryValue* rhs = reinterpret_cast<JerryValue*> (*that);
+
+  jerry_value_t result = jerry_binary_operation (JERRY_BIN_OP_STRICT_EQUAL, lhs->value(), rhs->value());
+  bool isEqual = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+  jerry_release_value(result);
+
+  return isEqual;
 }
 
 bool Value::SameValue(Local<Value> that) const {
@@ -2417,7 +2486,13 @@ MaybeLocal<String> String::NewFromUtf8(Isolate* isolate, const char* data,
       length = strlen(data);
   }
 
-  jerry_value_t str_value = jerry_create_string_sz_from_utf8((const jerry_char_t*)data, length);
+  jerry_value_t str_value;
+
+  if (!jerry_is_valid_utf8_string ((const jerry_char_t*)data, length)) {
+    str_value = jerry_create_string_sz(NULL, 0);
+  } else {
+    str_value = jerry_create_string_sz_from_utf8((const jerry_char_t*)data, length);
+  }
 
   RETURN_HANDLE(String, isolate, new JerryValue(str_value));
 }
@@ -2714,16 +2789,16 @@ Local<ArrayBuffer> v8::ArrayBuffer::New(
 std::unique_ptr<v8::BackingStore> v8::ArrayBuffer::NewBackingStore(
     Isolate* isolate, size_t byte_length) {
   V8_CALL_TRACE();
-  JerryBackingStore* backingStore = new JerryBackingStore(byte_length);
-  return JerryBackingStore::toUnique(backingStore);
+  JerryBackingStore* jerryBackingStore = new JerryBackingStore(byte_length);
+  return std::unique_ptr<v8::BackingStore>{reinterpret_cast<v8::BackingStore*>(new BackingStoreRef(jerryBackingStore))};
 }
 
 std::unique_ptr<v8::BackingStore> v8::ArrayBuffer::NewBackingStore(
     void* data, size_t byte_length, BackingStoreDeleterCallback deleter,
     void* deleter_data) {
   V8_CALL_TRACE();
-  JerryBackingStore* backingStore = new JerryBackingStore(data, byte_length, deleter, deleter_data);
-  return JerryBackingStore::toUnique(backingStore);
+  JerryBackingStore* jerryBackingStore = new JerryBackingStore(data, byte_length, deleter, deleter_data);
+  return std::unique_ptr<v8::BackingStore>{reinterpret_cast<v8::BackingStore*>(new BackingStoreRef(jerryBackingStore))};
 }
 
 Local<ArrayBuffer> v8::ArrayBufferView::Buffer() {

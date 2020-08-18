@@ -11039,11 +11039,12 @@ void ReturnValue<T>::Set(double i) {
 template<typename T>
 void ReturnValue<T>::Set(int32_t i) {
   TYPE_CHECK(T, Integer);
-  typedef internal::Internals I;
-  if (V8_LIKELY(I::IsValidSmi(i))) {
-    *value_ = I::IntToSmi(i);
-    return;
-  }
+  // [[V8_API_CHANGE]]
+  //typedef internal::Internals I;
+  //if (V8_LIKELY(I::IsValidSmi(i))) {
+  //  *value_ = I::IntToSmi(i);
+  //  return;
+  //}
   Set(Integer::New(GetIsolate(), i));
 }
 
@@ -11051,11 +11052,12 @@ template<typename T>
 void ReturnValue<T>::Set(uint32_t i) {
   TYPE_CHECK(T, Integer);
   // Can't simply use INT32_MAX here for whatever reason.
-  bool fits_into_int32_t = (i & (1U << 31)) == 0;
-  if (V8_LIKELY(fits_into_int32_t)) {
-    Set(static_cast<int32_t>(i));
-    return;
-  }
+  // [[V8_API_CHANGE]]
+  //bool fits_into_int32_t = (i & (1U << 31)) == 0;
+  //if (V8_LIKELY(fits_into_int32_t)) {
+  //  Set(static_cast<int32_t>(i));
+  //  return;
+  //}
   Set(Integer::NewFromUnsigned(GetIsolate(), i));
 }
 
@@ -11881,7 +11883,9 @@ Local<Boolean> True(Isolate* isolate) {
   typedef internal::Internals I;
   I::CheckInitialized(isolate);
   S* slot = I::GetRoot(isolate, I::kTrueValueRootIndex);
-  return Local<Boolean>(reinterpret_cast<Boolean*>(slot));
+  // [[V8_API_CHANGE]]
+  // return Local<Boolean>(reinterpret_cast<Boolean*>(slot));
+  return Local<Boolean>(reinterpret_cast<Boolean*>(*slot));
 }
 
 
@@ -11890,7 +11894,9 @@ Local<Boolean> False(Isolate* isolate) {
   typedef internal::Internals I;
   I::CheckInitialized(isolate);
   S* slot = I::GetRoot(isolate, I::kFalseValueRootIndex);
-  return Local<Boolean>(reinterpret_cast<Boolean*>(slot));
+  // [[V8_API_CHANGE]]
+  // return Local<Boolean>(reinterpret_cast<Boolean*>(slot));
+  return Local<Boolean>(reinterpret_cast<Boolean*>(*slot));
 }
 
 

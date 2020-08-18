@@ -6,6 +6,13 @@
 
 class JerryBackingStore;
 
+class BackingStoreRef {
+public:
+  BackingStoreRef(JerryBackingStore *ref) : m_backingStore(ref) { }
+
+  JerryBackingStore *m_backingStore;
+};
+
 class JerryBackingStore {
 public:
     JerryBackingStore(size_t byteLength)
@@ -63,25 +70,13 @@ public:
         }
     }
 
-    static std::unique_ptr<v8::BackingStore> toUnique(JerryBackingStore* backingStore){
-        return std::unique_ptr<v8::BackingStore>{reinterpret_cast<v8::BackingStore*>(backingStore)};
-        // std::unique_ptr<JerryBackingStore> sharedBackingStore(backingStore);
-        // return std::unique_ptr<v8::BackingStore>{reinterpret_cast<v8::BackingStore*>(std::move(sharedBackingStore).release())};
-    }
-
-    static std::shared_ptr<v8::BackingStore> toShared(JerryBackingStore* backingStore){
-        return std::shared_ptr<v8::BackingStore>{reinterpret_cast<v8::BackingStore*>(backingStore)};
-        // std::shared_ptr<JerryBackingStore> sharedBackingStore(backingStore);
-        // return std::shared_ptr<v8::BackingStore>{reinterpret_cast<v8::BackingStore*>(std::move(sharedBackingStore).get())};
-    }
-
     static void MallocDeleter(void* data, size_t length, void* deleter_data) { free (data); };
     static void EmptyDeleter(void* data, size_t length, void* deleter_data) { };
     static std::unique_ptr<v8::BackingStore> Reallocate(
         v8::Isolate* isolate, std::unique_ptr<v8::BackingStore> backing_store, size_t byte_length);
-    static v8::BackingStore* toV8(JerryBackingStore* backing_store) { return reinterpret_cast<v8::BackingStore*>(backing_store); }
-    static const JerryBackingStore* fromV8(const v8::BackingStore* backing_store) { return reinterpret_cast<const JerryBackingStore*>(backing_store); }
-    static JerryBackingStore* fromV8(v8::BackingStore* backing_store) { return reinterpret_cast<JerryBackingStore*>(backing_store); }
+    //static v8::BackingStore* toV8(JerryBackingStore* backing_store) { return reinterpret_cast<v8::BackingStore*>(backing_store); }
+    static const JerryBackingStore* fromV8(const v8::BackingStore* backing_store) { return reinterpret_cast<const BackingStoreRef*>(backing_store)->m_backingStore; }
+    static JerryBackingStore* fromV8(v8::BackingStore* backing_store) { return reinterpret_cast<BackingStoreRef*>(backing_store)->m_backingStore; }
 private:
     void* m_data;
     void* m_deleterData;

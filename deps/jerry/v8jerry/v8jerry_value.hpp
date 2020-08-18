@@ -19,8 +19,9 @@ public:
         Context,
         FunctionTemplate,
         ObjectTemplate,
-        Value,
 
+        // Only value types are allowed after this point
+        Value,
         GlobalValue,
     };
 
@@ -32,10 +33,8 @@ public:
 
     Type type() const { return m_type; }
 
-
     static bool IsValueType(JerryHandle* handle) {
-        return (handle != NULL) &&
-                ((handle->type() == Value) || (handle->type() == GlobalValue));
+        return (handle != NULL && handle->type() >= Value);
     }
 
 private:
@@ -71,12 +70,17 @@ struct JerryV8WeakReferenceData {
 
 class JerryValue : public JerryHandle {
 public:
+    JerryValue(jerry_value_t value, JerryHandle::Type type)
+        : JerryHandle(type)
+        , m_value(value)
+    {}
+
     JerryValue()
-        : JerryValue(0, false)
+        : JerryValue(0, JerryHandle::Value)
     {}
 
     JerryValue(jerry_value_t value)
-        : JerryValue(value, false)
+        : JerryValue(value, JerryHandle::Value)
     {}
 
     /* Create a JerryValue if there is no error.
@@ -205,7 +209,7 @@ public:
 
     JerryValue* Move(JerryValue* to) { jerry_release_value(m_value); m_value = jerry_acquire_value(to->value()); }
     JerryValue* Copy() const { return new JerryValue(jerry_acquire_value(m_value)); }
-    JerryValue* CopyToGlobal() const { return new JerryValue(jerry_acquire_value(m_value), true); }
+    JerryValue* CopyToGlobal() const { return new JerryValue(jerry_acquire_value(m_value), JerryHandle::GlobalValue); }
 
     void MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data);
     bool IsWeakReferenced();
@@ -256,11 +260,6 @@ public:
     }
 
 private:
-    JerryValue(jerry_value_t value, bool isGlobal)
-        : JerryHandle(isGlobal ? JerryHandle::GlobalValue : JerryHandle::Value)
-        , m_value(value)
-    {}
-
     jerry_value_t m_value;
 };
 

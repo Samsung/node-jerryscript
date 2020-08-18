@@ -44,17 +44,9 @@ static jerry_object_native_info_t JerryV8WeakReferenceInfo = {
 };
 
 static void JerryV8BackingStoreCallback(void* data) {
-    if (data == NULL) {
-        return;
+    if (data != NULL) {
+        delete static_cast<JerryBackingStore*>(data);
     }
-
-    JerryBackingStore* backingStore = static_cast<JerryBackingStore*>(data);
-
-    if (backingStore->deleter() != NULL) {
-        backingStore->deleter()(backingStore->data(), backingStore->byteLength(), backingStore->deleterData());
-    }
-
-    delete backingStore;
 };
 
 static jerry_object_native_info_t JerryV8BackingStoreInfo = {
