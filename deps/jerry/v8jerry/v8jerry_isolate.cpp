@@ -361,13 +361,13 @@ JerryValue* JerryIsolate::CurrentContext(void) {
 JerryValue* JerryIsolate::GetGlobalSymbol(JerryValue* name) {
     for (auto &it : m_global_symbols) {
         if (jerry_get_boolean_value (jerry_binary_operation (JERRY_BIN_OP_STRICT_EQUAL, it.first->value(), name->value()))) {
-            return it.second;
+            return it.second->Copy();
         }
     }
     JerryValue *symbolHandle = new JerryValue (jerry_create_symbol(name->value()));
     m_global_symbols.push_back(std::pair<JerryValue*, JerryValue*>(name, symbolHandle));
 
-    return symbolHandle;
+    return symbolHandle->Copy();
 }
 
 void JerryIsolate::PushHandleScope(JerryHandleScopeType type, void* handle_scope) {
