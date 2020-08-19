@@ -95,18 +95,6 @@ vm_get_backtrace (uint32_t max_depth) /**< maximum backtrace depth, 0 = unlimite
     ecma_deref_ecma_string (line_str_p);
 
     ecma_string_t *builder_str_p = ecma_stringbuilder_finalize (&builder);
-
-#if ENABLED (JERRY_V8_DUMP_BACKTRACE)
-    ECMA_STRING_TO_UTF8_STRING (builder_str_p, line_p, line_size)
-    printf("[ECMAScript trace]: ");
-    for (uint32_t i = 0; i < line_size; i++)
-    {
-      printf("%c", line_p[i]);
-    }
-    printf("\n");
-    ECMA_FINALIZE_UTF8_STRING (line_p, line_size)
-#endif /* JERRY_V8_DUMP_BACKTRACE */
-
     ecma_fast_array_set_property (array_p, index, ecma_make_string_value (builder_str_p));
     ecma_deref_ecma_string (builder_str_p);
 
