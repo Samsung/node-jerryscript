@@ -198,6 +198,12 @@ void V8::MoveGlobalReference(internal::Address** from, internal::Address** to) {
   // }
 }
 
+bool V8::IsWeak(internal::Address* location)
+{
+  JerryValue* object = reinterpret_cast<JerryValue*> (location);
+  return object->IsWeakReferenced();
+}
+
 void V8::MakeWeak(i::Address* location, void* parameter,
                   WeakCallbackInfo<void>::Callback weak_callback,
                   WeakCallbackType type) {

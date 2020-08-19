@@ -9737,6 +9737,8 @@ class V8_EXPORT V8 {
   static internal::Address* CopyGlobalReference(internal::Address* from);
   static void DisposeGlobal(internal::Address* global_handle);
   static void DisposeTracedGlobal(internal::Address* global_handle);
+  // [[V8_API_CHANGE]]
+  static bool IsWeak(internal::Address* location);
   static void MakeWeak(internal::Address* location, void* data,
                        WeakCallbackInfo<void>::Callback weak_callback,
                        WeakCallbackType type);
@@ -10741,10 +10743,12 @@ void Persistent<T, M>::Copy(const Persistent<S, M2>& that) {
 
 template <class T>
 bool PersistentBase<T>::IsWeak() const {
-  typedef internal::Internals I;
+  // [[V8_API_CHANGE]]
+  //typedef internal::Internals I;
   if (this->IsEmpty()) return false;
-  return I::GetNodeState(reinterpret_cast<internal::Address*>(this->val_)) ==
-         I::kNodeStateIsWeakValue;
+  //return I::GetNodeState(reinterpret_cast<internal::Address*>(this->val_)) ==
+  //       I::kNodeStateIsWeakValue;
+  return V8::IsWeak(reinterpret_cast<internal::Address*>(this->val_));
 }
 
 
