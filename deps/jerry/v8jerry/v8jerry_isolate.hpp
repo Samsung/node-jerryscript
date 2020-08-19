@@ -138,7 +138,7 @@ private:
     std::deque<JerryValue*> m_contexts;
     std::vector<JerryTemplate*> m_templates;
     std::vector<JerryValue*> m_eternals;
-    std::vector<std::pair<JerryValue*, JerryValue*>> m_global_symbols;
+    std::vector<std::pair<jerry_value_t, jerry_value_t>> m_global_symbols;
     std::vector<JerryValue*> m_weakrefs;
     std::unordered_map<uint16_t*, std::u16string*> m_utf16strs;
 

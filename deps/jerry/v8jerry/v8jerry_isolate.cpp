@@ -243,6 +243,11 @@ void JerryIsolate::Dispose(void) {
         delete *it;
     }
 
+    for (auto &it : m_global_symbols) {
+        jerry_release_value (it.first);
+        jerry_release_value (it.second);
+    }
+
     delete m_magic_string_stack;
     ClearError();
 
@@ -359,15 +364,16 @@ JerryValue* JerryIsolate::CurrentContext(void) {
 }
 
 JerryValue* JerryIsolate::GetGlobalSymbol(JerryValue* name) {
+    jerry_value_t nameValue = name->value();
     for (auto &it : m_global_symbols) {
-        if (jerry_get_boolean_value (jerry_binary_operation (JERRY_BIN_OP_STRICT_EQUAL, it.first->value(), name->value()))) {
-            return it.second->Copy();
+        if (jerry_get_boolean_value (jerry_binary_operation(JERRY_BIN_OP_STRICT_EQUAL, it.first, nameValue))) {
+            return new JerryValue(jerry_acquire_value (it.second));
         }
     }
-    JerryValue *symbolHandle = new JerryValue (jerry_create_symbol(name->value()));
-    m_global_symbols.push_back(std::pair<JerryValue*, JerryValue*>(name, symbolHandle));
+    jerry_value_t symbol = jerry_create_symbol(nameValue);
+    m_global_symbols.push_back(std::pair<jerry_value_t, jerry_value_t>(jerry_acquire_value (nameValue), jerry_acquire_value (symbol)));
 
-    return symbolHandle->Copy();
+    return new JerryValue(symbol);
 }
 
 void JerryIsolate::PushHandleScope(JerryHandleScopeType type, void* handle_scope) {
