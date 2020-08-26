@@ -563,7 +563,9 @@ void ObjectTemplate::SetAccessor(v8::Local<Name> name,
 void ObjectTemplate::SetHandler(
     const NamedPropertyHandlerConfiguration& config) {
   V8_CALL_TRACE();
-  // [[TODO]] interceptor!!
+  JerryObjectTemplate* object_template = reinterpret_cast<JerryObjectTemplate*>(this);
+  object_template->SetProxyHandler(config);
+
 }
 
 void ObjectTemplate::SetHandler(
@@ -2444,6 +2446,10 @@ MaybeLocal<v8::Object> ObjectTemplate::NewInstance(Local<Context> context) {
   // TODO: the function template's method should be set as the object's constructor
   JerryValue* new_instance = JerryValue::NewObject();
   object_template->InstallProperties(new_instance->value());
+
+  if (object_template->HasProxyHandler()) {
+    new_instance = object_template->Proxify(new_instance);
+  }
 
   RETURN_HANDLE(Object, context->GetIsolate(), new_instance);
 }

@@ -143,6 +143,23 @@ struct JerryV8GetterSetterHandlerData {
     static jerry_object_native_info_t TypeInfo;
 };
 
+enum JerryV8ProxyHandlerType {
+    UNKNOWN,
+    GET,
+    SET,
+    DELETE,
+    QUERY,
+    ENUMERATE,
+};
+
+struct JerryV8ProxyHandlerData {
+    JerryV8ProxyHandlerType handler_type;
+    const v8::NamedPropertyHandlerConfiguration* configuration;
+
+    static jerry_object_native_info_t TypeInfo;
+};
+
+
 class JerryObjectTemplate : public JerryTemplate {
 public:
     JerryObjectTemplate()
@@ -150,11 +167,17 @@ public:
         , m_function_template(NULL)
         , m_accessors(0)
         , m_internal_field_count(0)
+        , m_proxy_handler(NULL)
     {
     }
 
     ~JerryObjectTemplate(void) {
         ReleaseProperties();
+
+        if (m_proxy_handler) {
+            delete m_proxy_handler;
+        }
+
     }
 
     void SetInteralFieldCount(int count) { m_internal_field_count = count; }
@@ -195,12 +218,22 @@ public:
         }
     }
 
+    void SetProxyHandler(const v8::NamedPropertyHandlerConfiguration& configuration) {
+        m_proxy_handler = new v8::NamedPropertyHandlerConfiguration(configuration);
+    }
+
+    bool HasProxyHandler(void) { return m_proxy_handler != NULL; }
+
+    JerryValue* Proxify(JerryValue* target_instance);
+
+
 private:
     // If the m_function_template is null then this is not bound to a function
     // it must be released "manually"
     JerryFunctionTemplate* m_function_template;
     std::vector<AccessorEntry*> m_accessors;
     int m_internal_field_count;
+    v8::NamedPropertyHandlerConfiguration* m_proxy_handler;
 };
 
 /* Simple function call types & methods */

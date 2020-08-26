@@ -27,8 +27,8 @@ public:
         const jerry_value_t this_val,
         const jerry_value_t args_p[],
         const jerry_length_t args_cnt,
-        const JerryV8GetterSetterHandlerData* data)
-        : v8::PropertyCallbackInfo<T>(reinterpret_cast<v8::internal::Address*>(BuildArgs(this_val, data)))
+        const jerry_value_t external_data)
+        : v8::PropertyCallbackInfo<T>(reinterpret_cast<v8::internal::Address*>(BuildArgs(this_val, external_data)))
         , m_args(reinterpret_cast<JerryHandle**>(this->args_))
     {
     }
@@ -38,7 +38,7 @@ public:
     }
 
 private:
-    static JerryHandle** BuildArgs(const jerry_value_t this_val, const JerryV8GetterSetterHandlerData* data) {
+    static JerryHandle** BuildArgs(const jerry_value_t this_val, const jerry_value_t external_data) {
         JerryHandle **values = new JerryHandle*[kImplicitArgsSize];
 
         values[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = 0; // TODO: fix this
@@ -48,7 +48,7 @@ private:
         //values[v8::PropertyCallbackInfo<T>::kReturnValueDefaultValueIndex] = new JerryValue(jerry_create_undefined()); // TODO
         values[v8::PropertyCallbackInfo<T>::kReturnValueIndex] = new JerryValue(jerry_create_undefined());
 
-        values[v8::PropertyCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(data->external)); /* data; */
+        values[v8::PropertyCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(external_data)); /* data; */
         values[v8::PropertyCallbackInfo<T>::kThisIndex] = new JerryValue(jerry_acquire_value(this_val));
 
         // HandleScope will do the cleanup for us at a later stage
@@ -85,7 +85,7 @@ jerry_value_t JerryV8GetterSetterHandler(
     v8::Local<v8::Name> v8_name = data->accessor->name->AsLocal<v8::Name>();
 
     if (data->is_setter) {
-        JerryPropertyCallbackInfo<void> info(function_obj, this_val, args_p, args_cnt, data);
+        JerryPropertyCallbackInfo<void> info(function_obj, this_val, args_p, args_cnt, data->external);
 
         // TODO: assert on args[0]?
         JerryValue new_value(jerry_acquire_value(args_p[0]));
@@ -98,7 +98,7 @@ jerry_value_t JerryV8GetterSetterHandler(
             data->v8.setter.stringed(v8_name.As<v8::String>(), v8_value, info);
         }
     } else {
-        JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data);
+        JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data->external);
         if (data->is_named) {
             data->v8.getter.named(v8_name, info);
         } else {
@@ -239,7 +239,6 @@ JerryV8FunctionHandlerData* JerryGetFunctionHandlerData(jerry_value_t target) {
 jerry_value_t JerryV8FunctionHandler(
     const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
 
-    // TODO: extract the native pointer extraction to a method
     void *native_p;
     bool has_data = jerry_get_object_native_pointer(function_obj, &native_p, &JerryV8FunctionHandlerData::TypeInfo);
 
@@ -309,6 +308,128 @@ jerry_value_t JerryV8FunctionHandler(
 
     // No need to delete the JerryValue here, the HandleScope will take (should) care of it!
     //delete retVal;
+
+    return jret;
+}
+
+jerry_value_t JerryV8ProxyHandler(
+    const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
+
+    // TODO: extract the native pointer extraction to a method
+    void *native_p;
+    bool has_data = jerry_get_object_native_pointer(function_obj, &native_p, &JerryV8ProxyHandlerData::TypeInfo);
+
+    if (!has_data) {
+        fprintf(stderr, "ERRR.... should not be here!(%s:%d)\n", __FILE__, __LINE__);
+        abort();
+        return jerry_create_error(JERRY_ERROR_REFERENCE, (const jerry_char_t*)"BAD!!");
+    }
+    JerryV8ProxyHandlerData* data = reinterpret_cast<JerryV8ProxyHandlerData*>(native_p);
+
+    // Make sure that Localy allocated vars will be freed upon exit.
+    v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
+
+    jerry_value_t jret = jerry_create_undefined();
+
+#define MAKE_NAME(VALUE) JerryValue __name(jerry_acquire_value (VALUE));
+
+    v8::Local<v8::Value> v8_external = data->configuration->data;
+
+    jerry_value_t external = (v8_external.IsEmpty() ? jerry_create_undefined ()
+                                                    : reinterpret_cast<JerryValue*>(&v8_external)->value());
+
+    switch(data->handler_type) {
+        case GET: {
+            MAKE_NAME(args_p[1]);
+            JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
+
+            data->configuration->getter(__name.AsLocal<v8::Name>(), info);
+
+            JerryIsolate* iso = JerryIsolate::GetCurrent();
+            if (!iso->HasError()) {
+                v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+
+                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+
+                jret = jerry_acquire_value(retVal->value());
+            } else {
+                JerryValue* jerror = iso->GetRawError();
+                jret = jerry_create_error_from_value(jerror->value(), false);
+                iso->ClearError();
+            }
+            break;
+        }
+        case SET: {
+            MAKE_NAME(args_p[1]);
+            JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
+            // TODO: assert on args[0]?
+            JerryValue new_value(jerry_acquire_value(args_p[2]));
+            v8::Local<v8::Value> v8_value = new_value.AsLocal<v8::Value>();
+
+            data->configuration->setter(__name.AsLocal<v8::Name>(), v8_value, info);
+            break;
+        }
+        case QUERY: {
+            MAKE_NAME(args_p[1]);
+            JerryPropertyCallbackInfo<v8::Integer> info(function_obj, this_val, args_p, args_cnt, external);
+            data->configuration->query(__name.AsLocal<v8::Name>(), info);
+
+            JerryIsolate* iso = JerryIsolate::GetCurrent();
+            if (!iso->HasError()) {
+                v8::ReturnValue<v8::Integer> returnValue = info.GetReturnValue();
+
+                // Again: dragons!
+                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+
+                jret = jerry_acquire_value(retVal->value());
+            } else {
+                JerryValue* jerror = iso->GetRawError();
+                jret = jerry_create_error_from_value(jerror->value(), false);
+                iso->ClearError();
+            }
+
+            break;
+        }
+        case DELETE: {
+            MAKE_NAME(args_p[1]);
+            JerryPropertyCallbackInfo<v8::Boolean> info(function_obj, this_val, args_p, args_cnt, external);
+            data->configuration->deleter(__name.AsLocal<v8::Name>(), info);
+
+            JerryIsolate* iso = JerryIsolate::GetCurrent();
+            if (!iso->HasError()) {
+                v8::ReturnValue<v8::Boolean> returnValue = info.GetReturnValue();
+
+                // Again: dragons!
+                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+
+                jret = jerry_acquire_value(retVal->value());
+            } else {
+                JerryValue* jerror = iso->GetRawError();
+                jret = jerry_create_error_from_value(jerror->value(), false);
+                iso->ClearError();
+            }
+            break;
+        }
+        case ENUMERATE: {
+            JerryPropertyCallbackInfo<v8::Array> info(function_obj, this_val, args_p, args_cnt, external);
+            data->configuration->enumerator(info);
+
+            JerryIsolate* iso = JerryIsolate::GetCurrent();
+            if (!iso->HasError()) {
+                v8::ReturnValue<v8::Array> returnValue = info.GetReturnValue();
+
+                // Again: dragons!
+                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+
+                jret = jerry_acquire_value(retVal->value());
+            } else {
+                JerryValue* jerror = iso->GetRawError();
+                jret = jerry_create_error_from_value(jerror->value(), false);
+                iso->ClearError();
+            }
+            break;
+        }
+    }
 
     return jret;
 }

@@ -119,6 +119,64 @@ void JerryObjectTemplate::InstallProperties(const jerry_value_t target) {
 }
 
 
+static void JerryV8ProxyHandlerDataFree(void *data_p) {
+    JerryV8ProxyHandlerData* data = reinterpret_cast<JerryV8ProxyHandlerData*>(data_p);
+    delete data;
+}
+
+jerry_object_native_info_t JerryV8ProxyHandlerData::TypeInfo = {
+    .free_cb = JerryV8ProxyHandlerDataFree,
+};
+
+jerry_value_t JerryV8ProxyHandler(
+    const jerry_value_t function_obj,
+    const jerry_value_t this_val,
+    const jerry_value_t args_p[],
+    const jerry_length_t args_cnt);
+
+static jerry_value_t BuildProxyHandlerMethod(const v8::NamedPropertyHandlerConfiguration* proxy_handler,
+                                             JerryV8ProxyHandlerType handler_type) {
+    jerry_value_t func = jerry_create_external_function(JerryV8ProxyHandler);
+
+    JerryV8ProxyHandlerData* data = new JerryV8ProxyHandlerData();
+    data->configuration = proxy_handler;
+    data->handler_type = handler_type;
+
+    jerry_set_object_native_pointer(func, data, &JerryV8ProxyHandlerData::TypeInfo);
+
+    return func;
+}
+
+JerryValue* JerryObjectTemplate::Proxify(JerryValue* target_instance) {
+    JerryValue* handler = JerryValue::NewObject();
+
+    struct handlers {
+        const char* name;
+        JerryV8ProxyHandlerType type;
+    } types[] = {
+        { "get", GET, },
+        { "set", SET, },
+        { "delete", DELETE, },
+        { "has", QUERY, },
+        { "ownKeys", ENUMERATE, },
+    };
+
+    for (size_t idx = 0; idx < sizeof(types) / sizeof(types[0]); idx++) {
+        JerryValue key(jerry_create_string((const jerry_char_t*) types[idx].name));
+        JerryValue method(BuildProxyHandlerMethod(m_proxy_handler, types[idx].type));
+
+        handler->SetProperty(&key, &method);
+    }
+
+    jerry_value_t proxy = jerry_create_proxy(target_instance->value(), handler->value());
+
+    delete target_instance;
+    delete handler;
+
+    return new JerryValue(proxy);
+}
+
+
 /* JerryFunctionTemplate */
 
 JerryObjectTemplate* JerryFunctionTemplate::PrototypeTemplate(void) {
