@@ -159,6 +159,8 @@ JerryValue* JerryObjectTemplate::Proxify(JerryValue* target_instance) {
         { "delete", DELETE, },
         { "has", QUERY, },
         { "ownKeys", ENUMERATE, },
+        { "defineProperty", DEFINE_PROPERTY, },
+        { "getOwnPropertyDescriptor", GET_OWN_PROPERTY_DESC, },
     };
 
     for (size_t idx = 0; idx < sizeof(types) / sizeof(types[0]); idx++) {

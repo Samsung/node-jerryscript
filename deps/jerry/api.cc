@@ -25,7 +25,7 @@
 #include "v8jerry_value.hpp"
 
 // /* Remove the comments to enable trace macros */
-#define USE_TRACE
+// #define USE_TRACE
 
 #if defined(USE_TRACE)
 #include <iostream>
@@ -1602,30 +1602,55 @@ Maybe<bool> v8::Object::Set(v8::Local<v8::Context> context, uint32_t index,
   return Just(reinterpret_cast<JerryValue*>(this)->SetPropertyIdx(index, reinterpret_cast<JerryValue*>(*value)));
 }
 
+/* PropertyDescriptor */
+
+struct PropertyDescriptor::PrivateData {
+    bool enumerable : 1;
+    bool has_enumerable : 1;
+    bool configurable : 1;
+    bool has_configurable : 1;
+    bool writable : 1;
+    bool has_writable : 1;
+    Local<Value> value;
+    Local<Value> get;
+    Local<Value> set;
+
+    PrivateData()
+        : enumerable(false)
+        , has_enumerable(false)
+        , configurable(false)
+        , has_configurable(false)
+        , writable(false)
+        , has_writable(false)
+    {}
+};
+
 v8::PropertyDescriptor::PropertyDescriptor(v8::Local<v8::Value> value)
-    : private_(NULL) {
-  UNIMPLEMENTED(4093);
+    : private_(new PrivateData()) {
+  private_->value = value;
 }
 
 v8::PropertyDescriptor::PropertyDescriptor(v8::Local<v8::Value> value,
                                            bool writable)
-    : private_(NULL) {
-  UNIMPLEMENTED(4099);
+    : private_(new PrivateData()) {
+  private_->value = value;
+  private_->has_writable = true;
+  private_->writable = writable;
 }
 
 v8::PropertyDescriptor::PropertyDescriptor(v8::Local<v8::Value> get,
                                            v8::Local<v8::Value> set)
-    : private_(NULL) {
-  UNIMPLEMENTED(4107);
+    : private_(new PrivateData()) {
+  private_->get = get;
+  private_->set = set;;
 }
 
 v8::PropertyDescriptor::~PropertyDescriptor() {
-  UNIMPLEMENTED(4116);
+  delete reinterpret_cast<PrivateData*>(private_);
 }
 
 v8::Local<Value> v8::PropertyDescriptor::value() const {
-  UNIMPLEMENTED(4118);
-  return Local<Value>();
+  return private_->value;
 }
 
 v8::Local<Value> v8::PropertyDescriptor::get() const {
@@ -1634,61 +1659,53 @@ v8::Local<Value> v8::PropertyDescriptor::get() const {
 }
 
 v8::Local<Value> v8::PropertyDescriptor::set() const {
-  UNIMPLEMENTED(4128);
-  return Local<Value>();
+  return private_->get;
 }
 
 bool v8::PropertyDescriptor::has_value() const {
-  UNIMPLEMENTED(4133);
-  return false;
+  return !private_->value.IsEmpty();
 }
 
 bool v8::PropertyDescriptor::has_get() const {
-  UNIMPLEMENTED(4136);
-  return false;
+  return !private_->get.IsEmpty();
 }
 
 bool v8::PropertyDescriptor::has_set() const {
-  UNIMPLEMENTED(4139);
-  return false;
+  return !private_->set.IsEmpty();
 }
 
 bool v8::PropertyDescriptor::writable() const {
-  UNIMPLEMENTED(4143);
-  return false;
+  return private_->writable;
 }
 
 bool v8::PropertyDescriptor::has_writable() const {
-  UNIMPLEMENTED(4148);
-  return false;
+  return private_->has_writable;
 }
 
 void v8::PropertyDescriptor::set_enumerable(bool enumerable) {
-  UNIMPLEMENTED(4152);
+  private_->enumerable = enumerable;
+  private_->has_enumerable = true;
 }
 
 bool v8::PropertyDescriptor::enumerable() const {
-  UNIMPLEMENTED(4156);
-  return false;
+  return private_->enumerable;
 }
 
 bool v8::PropertyDescriptor::has_enumerable() const {
-  UNIMPLEMENTED(4161);
-  return false;
+  return private_->has_enumerable;
 }
 
 void v8::PropertyDescriptor::set_configurable(bool configurable) {
-  UNIMPLEMENTED(4165);
+  private_->configurable = configurable;
+  private_->has_configurable = true;
 }
 
 bool v8::PropertyDescriptor::configurable() const {
-  UNIMPLEMENTED(4169);
-  return false;
+  return private_->configurable;
 }
 
 bool v8::PropertyDescriptor::has_configurable() const {
-  UNIMPLEMENTED(4174);
-  return false;
+  return private_->has_configurable;
 }
 
 Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
@@ -1839,8 +1856,11 @@ MaybeLocal<Array> v8::Object::GetPropertyNames(
     Local<Context> context, KeyCollectionMode mode,
     PropertyFilter property_filter, IndexFilter index_filter,
     KeyConversionMode key_conversion) {
-  UNIMPLEMENTED(4368);
-  return MaybeLocal<Array>();
+  V8_CALL_TRACE();
+  JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+
+  JerryValue* names = jobject->GetAdvancedPropertyNames(mode, property_filter, index_filter, key_conversion);
+  RETURN_HANDLE(Array, context->GetIsolate(), names);
 }
 
 MaybeLocal<Array> v8::Object::GetOwnPropertyNames(Local<Context> context) {

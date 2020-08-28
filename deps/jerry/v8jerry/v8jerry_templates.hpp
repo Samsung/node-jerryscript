@@ -150,6 +150,8 @@ enum JerryV8ProxyHandlerType {
     DELETE,
     QUERY,
     ENUMERATE,
+    DEFINE_PROPERTY,
+    GET_OWN_PROPERTY_DESC,
 };
 
 struct JerryV8ProxyHandlerData {

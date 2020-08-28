@@ -8,7 +8,7 @@
 #include "v8jerry_value.hpp"
 
 // /* Remove the comments to enable trace macros */
-#define USE_TRACE
+// #define USE_TRACE
 
 #if defined(USE_TRACE)
 #include <iostream>

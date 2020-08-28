@@ -429,6 +429,23 @@ jerry_value_t JerryV8ProxyHandler(
             }
             break;
         }
+        case DEFINE_PROPERTY:
+        {
+            MAKE_NAME(args_p[1]);
+            JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
+
+            // TODO how to make v8::PropertyDescriptor from jerry_value?
+            // data->configuration->definer (__name.AsLocal<v8::Name>(), v8_value, info);
+            break;
+        }
+        case GET_OWN_PROPERTY_DESC:
+        {
+            MAKE_NAME(args_p[1]);
+            JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
+
+            data->configuration->descriptor(__name.AsLocal<v8::Name>(), info);
+            break;
+        }
     }
 
     return jret;
