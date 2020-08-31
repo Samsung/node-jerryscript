@@ -60,6 +60,9 @@ checkSyntax ("[()] = []");
 checkSyntax ("try { let [$] = $;");
 checkSyntax ("let a, [ b.c ] = [6];");
 checkSyntax ("let [(a)] = [1]");
+checkSyntax ("[...a = []] = [1]");
+checkSyntax ("[...[a] = []] = [1]");
+checkSyntax ("[...[a, [...b] = []] = []] = [1]");
 
 mustThrow ("var [a] = 4");
 mustThrow ("var [a] = 5");
@@ -276,6 +279,54 @@ function __createIterableObject (arr, methods) {
   assert (closed === true);
   assert (a === 1);
   assert (b === 2);
+}) ();
+
+(function () {
+  var value = { y: "42" };
+  var x = {};
+  var assignmentResult, iterationResult, iter;
+
+  iter = (function*() {
+    assignmentResult = { y: x[yield] } = value;
+  }());
+
+  iterationResult = iter.next();
+
+  assert (assignmentResult === undefined);
+  assert (iterationResult.value === undefined);
+  assert (iterationResult.done === false);
+  assert (x.prop === undefined);
+
+  iterationResult = iter.next('prop');
+
+  assert (assignmentResult === value);
+  assert (iterationResult.value === undefined);
+  assert (iterationResult.done === true);
+  assert (x.prop === "42");
+}) ();
+
+(function () {
+  var value = { foo: "42" };
+  var x = {};
+  var assignmentResult, iterationResult, iter;
+
+  iter = (function*() {
+    assignmentResult = { ['f' + 'o' + 'o']: x[yield] } = value;
+  }());
+
+  iterationResult = iter.next();
+
+  assert (assignmentResult === undefined);
+  assert (iterationResult.value === undefined);
+  assert (iterationResult.done === false);
+  assert (x.prop === undefined);
+
+  iterationResult = iter.next('prop');
+
+  assert (assignmentResult === value);
+  assert (iterationResult.value === undefined);
+  assert (iterationResult.done === true);
+  assert (x.prop === "42");
 }) ();
 
 mustThrow ("var iter = __createIterableObject([], "

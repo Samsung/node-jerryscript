@@ -46,18 +46,19 @@ typedef enum
   ECMA_TO_NUMERIC_ALLOW_BIGINT = (1 << 0), /**< allow BigInt values (ignored if BigInts are disabled) */
 } ecma_to_numeric_options_t;
 
-ecma_value_t ecma_op_check_object_coercible (ecma_value_t value);
+bool ecma_op_require_object_coercible (ecma_value_t value);
 bool ecma_op_same_value (ecma_value_t x, ecma_value_t y);
 #if ENABLED (JERRY_BUILTIN_MAP)
-bool ecma_op_same_value_zero (ecma_value_t x, ecma_value_t y);
+bool ecma_op_same_value_zero (ecma_value_t x, ecma_value_t y, bool strict_equality);
 #endif /* ENABLED (JERRY_BUILTIN_MAP) */
 ecma_value_t ecma_op_to_primitive (ecma_value_t value, ecma_preferred_type_hint_t preferred_type);
 bool ecma_op_to_boolean (ecma_value_t value);
-ecma_value_t ecma_op_to_number (ecma_value_t value, ecma_to_numeric_options_t options);
+ecma_value_t ecma_op_to_number (ecma_value_t value, ecma_number_t *number_p);
 ecma_value_t ecma_op_to_numeric (ecma_value_t value, ecma_number_t *number_p, ecma_to_numeric_options_t options);
 ecma_string_t *ecma_op_to_string (ecma_value_t value);
 ecma_string_t *ecma_op_to_property_key (ecma_value_t value);
 ecma_value_t ecma_op_to_object (ecma_value_t value);
+bool ecma_op_is_integer (ecma_number_t value);
 ecma_value_t ecma_op_to_integer (ecma_value_t value, ecma_number_t *number_p);
 ecma_value_t ecma_op_to_length (ecma_value_t value, ecma_length_t *length);
 #if ENABLED (JERRY_ESNEXT)

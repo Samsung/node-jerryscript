@@ -255,12 +255,10 @@ vm_op_delete_prop (ecma_value_t object, /**< base object */
   }
 #endif /* !ENABLED (JERRY_ESNEXT) */
 
-  ecma_value_t check_coercible = ecma_op_check_object_coercible (object);
-  if (ECMA_IS_VALUE_ERROR (check_coercible))
+  if (!ecma_op_require_object_coercible (object))
   {
-    return check_coercible;
+    return ECMA_VALUE_ERROR;
   }
-  JERRY_ASSERT (check_coercible == ECMA_VALUE_EMPTY);
 
   ecma_string_t *name_string_p = ecma_op_to_property_key (property);
 
@@ -270,7 +268,7 @@ vm_op_delete_prop (ecma_value_t object, /**< base object */
   }
 
   ecma_value_t obj_value = ecma_op_to_object (object);
-  /* The ecma_op_check_object_coercible call already checked the op_to_object error cases. */
+  /* The ecma_op_require_object_coercible call already checked the op_to_object error cases. */
   JERRY_ASSERT (!ECMA_IS_VALUE_ERROR (obj_value));
   JERRY_ASSERT (ecma_is_value_object (obj_value));
   ecma_object_t *obj_p = ecma_get_object_from_value (obj_value);
@@ -324,28 +322,46 @@ vm_op_delete_var (ecma_value_t name_literal, /**< name literal */
 /**
  * 'for-in' opcode handler
  *
+ *  Note: from ES2015 (ES6) the for-in can trigger error when
+ *        the property names are not available (ex.: via Proxy ownKeys).
+ *        In these cases an error must be returned.
+ *
+ *        This error is returned as the `result_obj_p` and the
+ *        function's return value is NULL.
+ *
  * See also:
  *          ECMA-262 v5, 12.6.4
  *
- * @return chain list of property names
+ * @return - chain list of property names
+ *         - In case of error: NULL is returned and the `result_obj_p`
+ *           must be checked.
  */
 ecma_collection_t *
-opfunc_for_in (ecma_value_t left_value, /**< left value */
+opfunc_for_in (ecma_value_t iterable_value, /**< ideally an iterable value */
                ecma_value_t *result_obj_p) /**< expression object */
 {
   /* 3. */
-  if (ecma_is_value_undefined (left_value)
-      || ecma_is_value_null (left_value))
+  if (ecma_is_value_undefined (iterable_value)
+      || ecma_is_value_null (iterable_value))
   {
     return NULL;
   }
 
   /* 4. */
-  ecma_value_t obj_expr_value = ecma_op_to_object (left_value);
+  ecma_value_t obj_expr_value = ecma_op_to_object (iterable_value);
   /* ecma_op_to_object will only raise error on null/undefined values but those are handled above. */
   JERRY_ASSERT (!ECMA_IS_VALUE_ERROR (obj_expr_value));
   ecma_object_t *obj_p = ecma_get_object_from_value (obj_expr_value);
   ecma_collection_t *prop_names_p = ecma_op_object_enumerate (obj_p);
+
+#if ENABLED (JERRY_ESNEXT)
+  if (JERRY_UNLIKELY (prop_names_p == NULL))
+  {
+    ecma_deref_object (obj_p);
+    *result_obj_p = ECMA_VALUE_ERROR;
+    return NULL;
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
 
   if (prop_names_p->item_count != 0)
   {
@@ -1376,7 +1392,7 @@ opfunc_form_super_reference (ecma_value_t **vm_stack_top_p, /**< current vm stac
     return ecma_raise_type_error (ECMA_ERR_MSG ("Cannot invoke nullable super method."));
   }
 
-  if (ECMA_IS_VALUE_ERROR (ecma_op_check_object_coercible (parent)))
+  if (!ecma_op_require_object_coercible (parent))
   {
     return ECMA_VALUE_ERROR;
   }

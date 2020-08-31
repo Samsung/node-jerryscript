@@ -2142,9 +2142,7 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
         }
         case VM_OC_ITERATOR_STEP:
         {
-          JERRY_ASSERT (opcode >= CBC_EXT_ITERATOR_STEP && opcode <= CBC_EXT_ITERATOR_STEP_3);
-          const uint8_t index = (uint8_t) (1 + (opcode - CBC_EXT_ITERATOR_STEP));
-          result = ecma_op_iterator_step (stack_top_p[-index], ECMA_VALUE_EMPTY);
+          result = ecma_op_iterator_step (stack_top_p[-1], ECMA_VALUE_EMPTY);
 
           if (ECMA_IS_VALUE_ERROR (result))
           {
@@ -2194,10 +2192,8 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
         }
         case VM_OC_REST_INITIALIZER:
         {
-          JERRY_ASSERT (opcode >= CBC_EXT_REST_INITIALIZER && opcode <= CBC_EXT_REST_INITIALIZER_3);
-          const uint8_t iterator_index = (uint8_t) (1 + (opcode - CBC_EXT_REST_INITIALIZER));
           ecma_object_t *array_p = ecma_op_new_fast_array_object (0);
-          ecma_value_t iterator = stack_top_p[-iterator_index];
+          ecma_value_t iterator = stack_top_p[-1];
           uint32_t index = 0;
 
           while (true)
@@ -2244,6 +2240,21 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
 
           *stack_top_p++ = result;
           goto free_left_value;
+        }
+        case VM_OC_MOVE:
+        {
+          JERRY_ASSERT (opcode >= CBC_EXT_MOVE && opcode <= CBC_EXT_MOVE_3);
+          const uint8_t index = (uint8_t) (1 + (opcode - CBC_EXT_MOVE));
+
+          ecma_value_t element = stack_top_p[-index];
+
+          for (int32_t i = -index; i < -1; i++)
+          {
+            stack_top_p[i] = stack_top_p[i + 1];
+          }
+
+          stack_top_p[-1] = element;
+          continue;
         }
         case VM_OC_SPREAD_ARGUMENTS:
         {
@@ -2478,10 +2489,9 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
         }
         case VM_OC_REQUIRE_OBJECT_COERCIBLE:
         {
-          result = ecma_op_check_object_coercible (stack_top_p[-1]);
-
-          if (ECMA_IS_VALUE_ERROR (result))
+          if (!ecma_op_require_object_coercible (stack_top_p[-1]))
           {
+            result = ECMA_VALUE_ERROR;
             goto error;
           }
           continue;
@@ -3737,6 +3747,14 @@ vm_loop (vm_frame_ctx_t *frame_ctx_p) /**< frame context */
 
           if (prop_names_p == NULL)
           {
+#if ENABLED (JERRY_ESNEXT)
+            if (JERRY_UNLIKELY (ECMA_IS_VALUE_ERROR (expr_obj_value)))
+            {
+              result = expr_obj_value;
+              goto error;
+            }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
             /* The collection is already released */
             byte_code_p = byte_code_start_p + branch_offset;
             continue;

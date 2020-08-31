@@ -3091,10 +3091,7 @@ parser_pattern_get_target (parser_context_t *context_p, /**< context */
     }
     else
     {
-      if (context_p->next_scanner_info_p->type != SCANNER_TYPE_INITIALIZER)
-      {
-        parser_raise_error (context_p, PARSER_ERR_INVALID_DESTRUCTURING_PATTERN);
-      }
+      JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_INITIALIZER);
       scanner_get_location (&start_location, context_p);
 
       scanner_set_location (context_p, &((scanner_location_info_t *) context_p->next_scanner_info_p)->location);
@@ -3195,17 +3192,14 @@ parser_pattern_form_assignment (parser_context_t *context_p, /**< context */
   parser_stack_push_uint8 (context_p, LEXER_EXPRESSION_START);
   uint8_t assign_opcode = parser_append_binary_single_assignment_token (context_p, flags);
 
-  if (flags & PARSER_PATTERN_ARRAY)
-  {
-    int32_t stack_adjustment = (CBC_STACK_ADJUST_BASE - (cbc_flags[assign_opcode] >> CBC_STACK_ADJUST_SHIFT));
-    JERRY_ASSERT (stack_adjustment >= 1 && stack_adjustment <= 3);
+  int32_t stack_adjustment = (CBC_STACK_ADJUST_BASE - (cbc_flags[assign_opcode] >> CBC_STACK_ADJUST_SHIFT));
+  JERRY_ASSERT (stack_adjustment >= 1 && stack_adjustment <= 3);
 
-    rhs_opcode = (uint16_t) (rhs_opcode + stack_adjustment - 1);
-  }
+  rhs_opcode = (uint16_t) (rhs_opcode + stack_adjustment - 1);
 
   parser_pattern_emit_rhs (context_p, rhs_opcode, literal_index);
 
-  if (context_p->token.type == LEXER_ASSIGN)
+  if (context_p->token.type == LEXER_ASSIGN && !(flags & PARSER_PATTERN_REST_ELEMENT))
   {
     parser_branch_t skip_init;
     lexer_next_token (context_p);
@@ -3273,12 +3267,23 @@ parser_pattern_process_nested_pattern (parser_context_t *context_p, /**< context
                                                 | PARSER_PATTERN_LET
                                                 | PARSER_PATTERN_CONST
                                                 | PARSER_PATTERN_LOCAL
-                                                | PARSER_PATTERN_REST_ELEMENT
                                                 | PARSER_PATTERN_ARGUMENTS)));
 
-  if (context_p->next_scanner_info_p->source_p == context_p->source_p)
+  JERRY_ASSERT (context_p->next_scanner_info_p->source_p != context_p->source_p
+                || context_p->next_scanner_info_p->type == SCANNER_TYPE_INITIALIZER
+                || context_p->next_scanner_info_p->type == SCANNER_TYPE_OBJECT_LITERAL_WITH_SUPER);
+
+  if (context_p->next_scanner_info_p->source_p == context_p->source_p
+      && context_p->next_scanner_info_p->type == SCANNER_TYPE_INITIALIZER)
   {
-    options |= PARSER_PATTERN_TARGET_DEFAULT;
+    if (!(flags & PARSER_PATTERN_REST_ELEMENT))
+    {
+      options |= PARSER_PATTERN_TARGET_DEFAULT;
+    }
+    else
+    {
+      scanner_release_next (context_p, sizeof (scanner_location_info_t));
+    }
   }
 
   parser_pattern_emit_rhs (context_p, rhs_opcode, literal_index);
@@ -3358,6 +3363,9 @@ parser_pattern_process_assignment (parser_context_t *context_p, /**< context */
   }
   else
   {
+    /* RHS should be evaulated first */
+    parser_pattern_emit_rhs (context_p, rhs_opcode, literal_index);
+
     parser_flush_cbc (context_p);
     parser_parse_expression (context_p, PARSE_EXPR_NO_COMMA | PARSE_EXPR_LEFT_HAND_SIDE);
 
@@ -3365,6 +3373,9 @@ parser_pattern_process_assignment (parser_context_t *context_p, /**< context */
     {
       parser_raise_error (context_p, PARSER_ERR_INVALID_DESTRUCTURING_PATTERN);
     }
+
+    rhs_opcode = CBC_EXT_MOVE;
+    literal_index = PARSER_PATTERN_RHS_NO_LIT;
   }
 
   parser_pattern_form_assignment (context_p, flags, rhs_opcode, literal_index, ident_line_counter);
@@ -3378,7 +3389,6 @@ parser_parse_array_initializer (parser_context_t *context_p, /**< context */
                                 parser_pattern_flags_t flags) /**< flags */
 {
   parser_pattern_end_marker_t end_pos = parser_pattern_get_target (context_p, flags);
-  flags |= PARSER_PATTERN_ARRAY;
 
   lexer_next_token (context_p);
   parser_emit_cbc_ext (context_p, CBC_EXT_GET_ITERATOR);

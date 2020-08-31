@@ -71,7 +71,7 @@ ecma_op_dataview_create (const ecma_value_t *arguments_list_p, /**< arguments li
   if (arguments_list_len > 1)
   {
     ecma_number_t number_offset, offset_num;
-    if (ECMA_IS_VALUE_ERROR (ecma_op_to_numeric (arguments_list_p[1], &number_offset, ECMA_TO_NUMERIC_NO_OPTS)))
+    if (ECMA_IS_VALUE_ERROR (ecma_op_to_number (arguments_list_p[1], &number_offset)))
     {
       return ECMA_VALUE_ERROR;
     }
@@ -311,12 +311,18 @@ ecma_op_dataview_get_set_view_value (ecma_value_t view, /**< the operation's 'vi
     JERRY_VLA (lit_utf8_byte_t, swap_block_p, element_size);
     memcpy (swap_block_p, block_p, element_size * sizeof (lit_utf8_byte_t));
     ecma_dataview_swap_order (system_is_little_endian, is_little_endian, element_size, swap_block_p);
-    return ecma_make_number_value (ecma_get_typedarray_element (swap_block_p, id));
+    return ecma_get_typedarray_element (swap_block_p, id);
   }
 
   if (ecma_is_value_number (value_to_set))
   {
-    ecma_set_typedarray_element (block_p, ecma_get_number_from_value (value_to_set), id);
+    ecma_value_t set_element = ecma_set_typedarray_element (block_p, value_to_set, id);
+
+    if (ECMA_IS_VALUE_ERROR (set_element))
+    {
+      return set_element;
+    }
+
     ecma_dataview_swap_order (system_is_little_endian, is_little_endian, element_size, block_p);
   }
 

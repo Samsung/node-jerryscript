@@ -2426,49 +2426,81 @@ ecma_string_substr (const ecma_string_t *string_p, /**< pointer to an ecma strin
  * Helper function for trimming.
  *
  * Used by:
- *        - ecma_string_trim
- *        - ecma_utf8_string_to_number
+ *        - ecma_string_trim_helper
  *        - ecma_builtin_global_object_parse_int
  *        - ecma_builtin_global_object_parse_float
+ *
+ * @return position of the first non whitespace character.
  */
-void
-ecma_string_trim_helper (const lit_utf8_byte_t **utf8_str_p, /**< [in, out] current string position */
-                         lit_utf8_size_t *utf8_str_size) /**< [in, out] size of the given string */
+const lit_utf8_byte_t *
+ecma_string_trim_front (const lit_utf8_byte_t *start_p, /**< current string's start position */
+                        const lit_utf8_byte_t *end_p)  /**< current string's end position */
 {
   ecma_char_t ch;
-  lit_utf8_size_t read_size;
-  const lit_utf8_byte_t *nonws_start_p = *utf8_str_p + *utf8_str_size;
-  const lit_utf8_byte_t *current_p = *utf8_str_p;
 
-  while (current_p < nonws_start_p)
+  while (start_p < end_p)
   {
-    read_size = lit_read_code_unit_from_utf8 (current_p, &ch);
-
-    if (!lit_char_is_white_space (ch))
-    {
-      nonws_start_p = current_p;
-      break;
-    }
-
-    current_p += read_size;
-  }
-
-  current_p = *utf8_str_p + *utf8_str_size;
-
-  while (current_p > nonws_start_p)
-  {
-    read_size = lit_read_prev_code_unit_from_utf8 (current_p, &ch);
+    lit_utf8_size_t read_size = lit_read_code_unit_from_utf8 (start_p, &ch);
 
     if (!lit_char_is_white_space (ch))
     {
       break;
     }
 
-    current_p -= read_size;
+    start_p += read_size;
   }
 
-  *utf8_str_p = nonws_start_p;
-  *utf8_str_size = (lit_utf8_size_t) (current_p - nonws_start_p);
+  return start_p;
+} /* ecma_string_trim_front */
+
+/**
+ * Helper function for trimming.
+ *
+ * Used by:
+ *        - ecma_string_trim_helper
+ *
+ * @return position of the last non whitespace character.
+ */
+const lit_utf8_byte_t *
+ecma_string_trim_back (const lit_utf8_byte_t *start_p, /**< current string's start position */
+                       const lit_utf8_byte_t *end_p)  /**< current string's end position */
+{
+  ecma_char_t ch;
+
+  while (end_p > start_p)
+  {
+    lit_utf8_size_t read_size = lit_read_prev_code_unit_from_utf8 (end_p, &ch);
+
+    if (!lit_char_is_white_space (ch))
+    {
+      break;
+    }
+
+    end_p -= read_size;
+  }
+
+  return end_p;
+} /* ecma_string_trim_back */
+
+/**
+ * Helper function for trimming.
+ *
+ * Used by:
+ *        - ecma_string_trim
+ *        - ecma_utf8_string_to_number
+ */
+inline void JERRY_ATTR_ALWAYS_INLINE
+ecma_string_trim_helper (const lit_utf8_byte_t **utf8_str_p, /**< [in, out] current string position */
+                         lit_utf8_size_t *utf8_str_size)  /**< [in, out] size of the given string */
+{
+  const lit_utf8_byte_t *end_p = *utf8_str_p + *utf8_str_size;
+  const lit_utf8_byte_t *start_p = *utf8_str_p;
+
+  const lit_utf8_byte_t *new_start_p = ecma_string_trim_front (start_p, end_p);
+  const lit_utf8_byte_t *new_end_p = ecma_string_trim_back (new_start_p, end_p);
+
+  *utf8_str_size = (lit_utf8_size_t) (new_end_p - new_start_p);
+  *utf8_str_p = new_start_p;
 } /* ecma_string_trim_helper */
 
 /**
@@ -2580,11 +2612,12 @@ ecma_string_pad (ecma_value_t original_string_p, /**< Input ecma string */
   uint32_t remaining = fill_len - (prepend_count * filler_length);
 
   ECMA_STRING_TO_UTF8_STRING (filler_p, start_p, utf8_str_size);
+  const lit_utf8_byte_t *temp_start_p = start_p;
   while (remaining > 0)
   {
-    read_size = lit_read_code_unit_from_utf8 (start_p, &ch);
+    read_size = lit_read_code_unit_from_utf8 (temp_start_p, &ch);
     ecma_stringbuilder_append_char (&builder, ch);
-    start_p += read_size;
+    temp_start_p += read_size;
     remaining--;
   }
   ECMA_FINALIZE_UTF8_STRING (start_p, utf8_str_size);

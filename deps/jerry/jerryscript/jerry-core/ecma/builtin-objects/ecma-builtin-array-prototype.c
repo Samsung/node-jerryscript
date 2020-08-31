@@ -1077,7 +1077,7 @@ ecma_builtin_array_prototype_object_sort_compare_helper (ecma_value_t lhs, /**< 
     {
       ecma_number_t ret_num;
 
-      if (ECMA_IS_VALUE_ERROR (ecma_op_to_numeric (call_value, &ret_num, ECMA_TO_NUMERIC_NO_OPTS)))
+      if (ECMA_IS_VALUE_ERROR (ecma_op_to_number (call_value, &ret_num)))
       {
         ecma_free_value (call_value);
         return ECMA_VALUE_ERROR;
@@ -2543,6 +2543,7 @@ ecma_builtin_array_prototype_object_copy_within (const ecma_value_t args[], /**<
     {
       if (obj_p->u1.property_list_cp != JMEM_CP_NULL)
       {
+        count = JERRY_MIN (ext_obj_p->u.array.length, count);
         ecma_value_t *buffer_p = ECMA_GET_NON_NULL_POINTER (ecma_value_t, obj_p->u1.property_list_cp);
 
         for (; count > 0; count--)
@@ -2664,7 +2665,7 @@ ecma_builtin_array_prototype_includes (const ecma_value_t args[], /**< arguments
 
         while (from_index < len)
         {
-          if (ecma_op_same_value_zero (buffer_p[from_index], args[0]))
+          if (ecma_op_same_value_zero (buffer_p[from_index], args[0], false))
           {
             return ECMA_VALUE_TRUE;
           }
@@ -2687,7 +2688,7 @@ ecma_builtin_array_prototype_includes (const ecma_value_t args[], /**< arguments
       return element;
     }
 
-    if (ecma_op_same_value_zero (element, args[0]))
+    if (ecma_op_same_value_zero (element, args[0], false))
     {
       ecma_free_value (element);
       return ECMA_VALUE_TRUE;
