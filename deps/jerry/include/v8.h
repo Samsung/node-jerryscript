@@ -347,6 +347,7 @@ class Local {
   friend class Int16Array;
   friend class Uint32Array;
   friend class Int32Array;
+  friend class BigInt64Array;
   friend class BigUint64Array;
   friend class Float32Array;
   friend class Float64Array;

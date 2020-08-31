@@ -245,15 +245,16 @@ Local<Uint32Array> Uint32Array::New(Local<ArrayBuffer> array_buffer,
 
 Local<BigInt64Array> BigInt64Array::New(Local<ArrayBuffer> array_buffer,
                                         size_t byte_offset, size_t length) {
-  UNIMPLEMENTED(-1);
-  return Local<BigInt64Array>();
+  V8_CALL_TRACE();
+  JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
+  RETURN_HANDLE(BigInt64Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_BIGINT64));
 }
 
 Local<BigUint64Array> BigUint64Array::New(Local<ArrayBuffer> array_buffer,
                                           size_t byte_offset, size_t length) {
   V8_CALL_TRACE();
   JerryValue *jarray_buffer = reinterpret_cast<JerryValue*>(*array_buffer);
-  RETURN_HANDLE(BigUint64Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_FLOAT64));
+  RETURN_HANDLE(BigUint64Array, JerryIsolate::toV8(JerryIsolate::GetCurrent()), JerryValue::NewTypedArray(jarray_buffer, byte_offset, length, JERRY_TYPEDARRAY_BIGUINT64));
 }
 
 Local<Float32Array> Float32Array::New(Local<ArrayBuffer> array_buffer,
