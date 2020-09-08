@@ -268,11 +268,11 @@ Value* V8::Eternalize(Isolate* v8_isolate, Value* value) {
 }
 
 void V8::FromJustIsNothing() {
-  UNIMPLEMENTED(1132);
+  V8_CALL_TRACE();
 }
 
 void V8::ToLocalEmpty() {
-  UNIMPLEMENTED(1136);
+  V8_CALL_TRACE();
 }
 
 HandleScope::HandleScope(Isolate* isolate)
@@ -969,90 +969,113 @@ v8::Isolate* Message::GetIsolate() const {
 }
 
 ScriptOrigin Message::GetScriptOrigin() const {
-  UNIMPLEMENTED(2859);
-  return ScriptOrigin(Local<v8::Value>());
+  V8_CALL_TRACE();
+
+  JerryValue* arr[] = {
+    new JerryValue(jerry_create_undefined()),
+    new JerryValue(jerry_create_number(0)),
+    new JerryValue(jerry_create_number(0)),
+    new JerryValue(jerry_create_boolean(false)),
+    new JerryValue(jerry_create_number(0)),
+    new JerryValue(jerry_create_undefined()),
+    new JerryValue(jerry_create_boolean(false)),
+    new JerryValue(jerry_create_boolean(false)),
+    new JerryValue(jerry_create_boolean(false)),
+    new JerryValue(jerry_create_array(0)),
+  };
+
+  return ScriptOrigin(arr[0]->AsLocal<Value>(),
+                      arr[1]->AsLocal<Integer>(),
+                      arr[2]->AsLocal<Integer>(),
+                      arr[3]->AsLocal<Boolean>(),
+                      arr[4]->AsLocal<Integer>(),
+                      arr[5]->AsLocal<Value>(),
+                      arr[6]->AsLocal<Boolean>(),
+                      arr[7]->AsLocal<Boolean>(),
+                      arr[8]->AsLocal<Boolean>(),
+                      arr[9]->AsLocal<PrimitiveArray>());
 }
 
 v8::Local<Value> Message::GetScriptResourceName() const {
-  UNIMPLEMENTED(2867);
+  V8_CALL_TRACE();
   return v8::Local<Value>();
 }
 
 v8::Local<v8::StackTrace> Message::GetStackTrace() const {
-  UNIMPLEMENTED(2871);
+  V8_CALL_TRACE();
   return Local<v8::StackTrace>();
 }
 
 Maybe<int> Message::GetLineNumber(Local<Context> context) const {
-  UNIMPLEMENTED(2882);
+  V8_CALL_TRACE();
   return Just(0);
 }
 
 int Message::ErrorLevel() const {
   V8_CALL_TRACE();
-  return 0;
+  return v8::Isolate::MessageErrorLevel::kMessageError;
 }
 
 Maybe<int> Message::GetStartColumn(Local<Context> context) const {
-  UNIMPLEMENTED(2943);
+  V8_CALL_TRACE();
   return Just(0);
 }
 
 Maybe<int> Message::GetEndColumn(Local<Context> context) const {
-  UNIMPLEMENTED(2960);
+  V8_CALL_TRACE();
   return Just(0);
 }
 
 MaybeLocal<String> Message::GetSourceLine(Local<Context> context) const {
-  UNIMPLEMENTED(2978);
+  V8_CALL_TRACE();
   return MaybeLocal<String>();
 }
 
 Local<StackFrame> StackTrace::GetFrame(Isolate* v8_isolate,
                                        uint32_t index) const {
-  UNIMPLEMENTED(2995);
+  V8_CALL_TRACE();
   return Local<StackFrame>();
 }
 
 int StackTrace::GetFrameCount() const {
-  UNIMPLEMENTED(3005);
+  V8_CALL_TRACE();
   return 0;
 }
 
 Local<StackTrace> StackTrace::CurrentStackTrace(Isolate* isolate,
                                                 int frame_limit,
                                                 StackTraceOptions options) {
-  UNIMPLEMENTED(3009);
+  V8_CALL_TRACE();
   return Local<StackTrace>();
 }
 
 int StackFrame::GetLineNumber() const {
-  UNIMPLEMENTED(3021);
+  V8_CALL_TRACE();
   return 0;
 }
 
 int StackFrame::GetColumn() const {
-  UNIMPLEMENTED(3025);
+  V8_CALL_TRACE();
   return 0;
 }
 
 int StackFrame::GetScriptId() const {
-  UNIMPLEMENTED(3029);
+  V8_CALL_TRACE();
   return 0;
 }
 
 Local<String> StackFrame::GetScriptName() const {
-  UNIMPLEMENTED(3033);
+  V8_CALL_TRACE();
   return Local<String>();
 }
 
 Local<String> StackFrame::GetFunctionName() const {
-  UNIMPLEMENTED(3054);
+  V8_CALL_TRACE();
   return Local<String>();
 }
 
 bool StackFrame::IsEval() const {
-  UNIMPLEMENTED(3064);
+  V8_CALL_TRACE();
   return false;
 }
 
@@ -3392,8 +3415,24 @@ EXCEPTION_ERROR(TypeError, JERRY_ERROR_TYPE);
 Local<Message> Exception::CreateMessage(Isolate* isolate,
                                         Local<Value> exception) {
   V8_CALL_TRACE();
-  // TODO?
-  return Local<Message>();
+  JerryValue* jexception = reinterpret_cast<JerryValue*>(*exception);
+
+  jerry_value_t to_string = jerry_value_to_string (jexception->value());
+
+  JerryValue *message;
+
+  if (jerry_value_is_error (to_string))
+  {
+    jerry_release_value (to_string);
+    message = new JerryValue(jerry_create_string((jerry_char_t*) "Unknown error"));
+  }
+  else
+  {
+    message = new JerryValue(to_string);
+  }
+
+  RETURN_HANDLE(Message, isolate, message);
+  //return Local<Message>();
 }
 
 v8::MaybeLocal<v8::Array> v8::Object::PreviewEntries(bool* is_key_value) {
