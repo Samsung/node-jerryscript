@@ -30,8 +30,6 @@ static void _LogTrace(int line, std::string file_name, std::string func_name) {
 #define V8_CALL_TRACE()
 #endif
 
-#define UNIMPLEMENTED(line) abort()
-
 #define RETURN_HANDLE(T, ISOLATE, HANDLE) \
 do {                                                                    \
     JerryHandle *__handle = HANDLE;                                    \
@@ -45,153 +43,152 @@ namespace v8 {
 // Other functions
 
 bool v8::Value::IsArgumentsObject() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_ARGUMENTS;
 }
 
 bool v8::Value::IsAsyncFunction() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_value_is_async_function (value);
 }
 
 bool v8::Value::IsBooleanObject() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_BOOLEAN;
 }
 
 bool v8::Value::IsBigIntObject() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_BIGINT;
 }
 
 bool v8::Value::IsDate() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_DATE;
 }
 
 bool v8::Value::IsGeneratorFunction() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_function_get_type (value) == JERRY_FUNCTION_TYPE_GENERATOR;
 }
 
 bool v8::Value::IsGeneratorObject() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_GENERATOR;
 }
 
 bool v8::Value::IsMap() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_container_type (value) == JERRY_CONTAINER_TYPE_MAP;
 }
 
 bool v8::Value::IsMapIterator() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_iterator_get_type (value) == JERRY_ITERATOR_TYPE_MAP;
 }
 
 bool v8::Value::IsNumberObject() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_NUMBER;
 }
 
 bool v8::Value::IsRegExp() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_REGEXP;
 }
 
 bool v8::Value::IsSharedArrayBuffer() const {
-  UNIMPLEMENTED(-1);
   return false;
 }
 
 bool v8::Value::IsSet() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_container_type (value) == JERRY_CONTAINER_TYPE_SET;
 }
 
 bool v8::Value::IsSetIterator() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_iterator_get_type (value) == JERRY_ITERATOR_TYPE_SET;
 }
 
 bool v8::Value::IsStringObject() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_STRING;
 }
 
 bool v8::Value::IsSymbolObject() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_SYMBOL;
 }
 
 bool v8::Value::IsTypedArray() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_TYPEDARRAY;
 }
 
 bool v8::Value::IsWeakMap() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_container_type (value) == JERRY_CONTAINER_TYPE_WEAKMAP;
 }
 
 bool v8::Value::IsWeakSet() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_container_type (value) == JERRY_CONTAINER_TYPE_WEAKSET;
 }
 
 bool v8::Value::IsInt8Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_INT8;
 }
 
 bool v8::Value::IsUint8Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_UINT8;
 }
 
 bool v8::Value::IsUint8ClampedArray() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_UINT8CLAMPED;
 }
 
 bool v8::Value::IsInt16Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_INT16;
 }
 
 bool v8::Value::IsUint16Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_UINT16;
 }
 
 bool v8::Value::IsInt32Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_INT32;
 }
 
 bool v8::Value::IsUint32Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_UINT32;
 }
 
 bool v8::Value::IsFloat32Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_FLOAT32;
 }
 
 bool v8::Value::IsFloat64Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_FLOAT64;
 }
 
 bool v8::Value::IsBigInt64Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_BIGINT64;
 }
 
 bool v8::Value::IsBigUint64Array() const {
-  UNIMPLEMENTED(-1);
-  return false;
+  jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
+  return jerry_get_typedarray_type (value) == JERRY_TYPEDARRAY_BIGUINT64;
 }
 
 Local<Int8Array> Int8Array::New(Local<ArrayBuffer> array_buffer,
@@ -272,23 +269,21 @@ Local<Float64Array> Float64Array::New(Local<ArrayBuffer> array_buffer,
 }
 
 Local<v8::Symbol> Symbol::GetIterator(Isolate* isolate) {
-  UNIMPLEMENTED(-1);
-  return Local<v8::Symbol>();
+  V8_CALL_TRACE();
+  jerry_value_t symbol = jerry_get_well_known_symbol (JERRY_SYMBOL_ITERATOR);
+
+  RETURN_HANDLE(v8::Symbol, isolate, new JerryValue(symbol));
 }
 
 void Uint8Array::CheckCast(v8::Value* that) {
-  UNIMPLEMENTED(-1);
 }
 
 void Uint32Array::CheckCast(v8::Value* that) {
-  UNIMPLEMENTED(-1);
 }
 void Float64Array::CheckCast(v8::Value* that) {
-  UNIMPLEMENTED(-1);
 }
 
 void BigUint64Array::CheckCast(v8::Value* that) {
-  UNIMPLEMENTED(-1);
 }
 
 }
