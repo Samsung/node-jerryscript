@@ -335,6 +335,7 @@ class Local {
 
   // [[V8_API_CHANGE]]
   friend class Script;
+  friend class Module;
   friend class String;
   friend class Symbol;
   friend class Array;
@@ -11310,7 +11311,9 @@ AccessorSignature* AccessorSignature::Cast(Data* data) {
 }
 
 Local<Value> Object::GetInternalField(int index) {
-#ifndef V8_ENABLE_CHECKS
+// [[V8_API_CHANGE]]
+//#ifndef V8_ENABLE_CHECKS
+#if 0
   typedef internal::Address A;
   typedef internal::Internals I;
   A obj = *reinterpret_cast<A*>(this);
@@ -11338,7 +11341,9 @@ Local<Value> Object::GetInternalField(int index) {
 
 
 void* Object::GetAlignedPointerFromInternalField(int index) {
-#ifndef V8_ENABLE_CHECKS
+// [[V8_API_CHANGE]]
+//#ifndef V8_ENABLE_CHECKS
+#if 0
   typedef internal::Address A;
   typedef internal::Internals I;
   A obj = *reinterpret_cast<A*>(this);
@@ -11414,7 +11419,9 @@ String::ExternalStringResourceBase* String::GetExternalStringResourceBase(
 
 
 bool Value::IsUndefined() const {
-#ifdef V8_ENABLE_CHECKS
+// [[V8_API_CHANGE]]
+//#ifdef V8_ENABLE_CHECKS
+#if 1
   return FullIsUndefined();
 #else
   return QuickIsUndefined();
@@ -11432,7 +11439,9 @@ bool Value::QuickIsUndefined() const {
 
 
 bool Value::IsNull() const {
-#ifdef V8_ENABLE_CHECKS
+// [[V8_API_CHANGE]]
+//#ifdef V8_ENABLE_CHECKS
+#if 1
   return FullIsNull();
 #else
   return QuickIsNull();
@@ -11449,7 +11458,9 @@ bool Value::QuickIsNull() const {
 }
 
 bool Value::IsNullOrUndefined() const {
-#ifdef V8_ENABLE_CHECKS
+// [[V8_API_CHANGE]]
+//#ifdef V8_ENABLE_CHECKS
+#if 1
   return FullIsNull() || FullIsUndefined();
 #else
   return QuickIsNullOrUndefined();
@@ -11467,7 +11478,9 @@ bool Value::QuickIsNullOrUndefined() const {
 }
 
 bool Value::IsString() const {
-#ifdef V8_ENABLE_CHECKS
+// [[V8_API_CHANGE]]
+//#ifdef V8_ENABLE_CHECKS
+#if 1
   return FullIsString();
 #else
   return QuickIsString();
@@ -11970,7 +11983,9 @@ int64_t Isolate::AdjustAmountOfExternalAllocatedMemory(
 }
 
 Local<Value> Context::GetEmbedderData(int index) {
-#ifndef V8_ENABLE_CHECKS
+// [[V8_API_CHANGE]]
+//#ifndef V8_ENABLE_CHECKS
+#if 0
   typedef internal::Address A;
   typedef internal::Internals I;
   A ctx = *reinterpret_cast<const A*>(this);
@@ -11996,7 +12011,9 @@ Local<Value> Context::GetEmbedderData(int index) {
 
 
 void* Context::GetAlignedPointerFromEmbedderData(int index) {
-#ifndef V8_ENABLE_CHECKS
+// [[V8_API_CHANGE]]
+//#ifndef V8_ENABLE_CHECKS
+#if 0
   typedef internal::Address A;
   typedef internal::Internals I;
   A ctx = *reinterpret_cast<const A*>(this);

@@ -593,14 +593,35 @@ ScriptCompiler::CachedData::~CachedData() {
   V8_CALL_TRACE();
 }
 
+struct UnboundScriptData {
+  UnboundScriptData(Isolate* isolate) : isolate(isolate) {}
+
+  Isolate* isolate;
+};
+
+void unboundScriptFreeCallback(void *native_p) {
+  delete (UnboundScriptData*)native_p;
+}
+
+static jerry_object_native_info_t unboundScriptInfo {
+  .free_cb = unboundScriptFreeCallback
+};
+
 Local<Script> UnboundScript::BindToCurrentContext() {
-  UNIMPLEMENTED(2064);
-  return Local<Script>();
+  V8_CALL_TRACE();
+  const JerryValue* unboundScript = reinterpret_cast<const JerryValue*>(this);
+  void* unboundScriptData;
+  jerry_get_object_native_pointer(unboundScript->value(), &unboundScriptData, &unboundScriptInfo);
+  RETURN_HANDLE(Script, ((UnboundScriptData*)unboundScriptData)->isolate, new JerryValue(jerry_acquire_value(unboundScript->value())));
 }
 
 MaybeLocal<Value> Script::Run(Local<Context> context) {
-  UNIMPLEMENTED(2137);
-  return MaybeLocal<Value>();
+  V8_CALL_TRACE();
+  const JerryValue* script = reinterpret_cast<const JerryValue*>(this);
+
+  jerry_value_t result = jerry_run(script->value());
+
+  RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(result));
 }
 
 Local<PrimitiveArray> ScriptOrModule::GetHostDefinedOptions() {
@@ -680,34 +701,44 @@ Local<UnboundModuleScript> Module::GetUnboundModuleScript() {
 }
 
 int Module::GetIdentityHash() const {
-  UNIMPLEMENTED(2309);
-  return 0;
+  V8_CALL_TRACE();
+  const JerryValue* module = reinterpret_cast<const JerryValue*>(this);
+  return (int)module->value();
 }
 
 Maybe<bool> Module::InstantiateModule(Local<Context> context,
                                       Module::ResolveCallback callback) {
-  UNIMPLEMENTED(2311);
-  return Just(false);
+  V8_CALL_TRACE();
+  return Just(true);
 }
 
 MaybeLocal<Value> Module::Evaluate(Local<Context> context) {
-  UNIMPLEMENTED(2322);
-  return MaybeLocal<Value>();
+  V8_CALL_TRACE();
+  RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(jerry_create_undefined()));
 }
 
 Local<Module> Module::CreateSyntheticModule(
     Isolate* isolate, Local<String> module_name,
     const std::vector<Local<v8::String>>& export_names,
     v8::Module::SyntheticModuleEvaluationSteps evaluation_steps) {
-  UNIMPLEMENTED(2341);
-  return Local<Module>();
+  V8_CALL_TRACE();
+  String::Utf8Value fileName(isolate, module_name);
+
+  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
+                                              module_name->Utf8Length(isolate),
+                                              (const jerry_char_t*)"",
+                                              0,
+                                              JERRY_PARSE_NO_OPTS | 2); // [[TODO]] propagete ECMA_PARSE_MODULE to api
+
+  JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
+  RETURN_HANDLE(Module, isolate, result);
 }
 
 Maybe<bool> Module::SetSyntheticModuleExport(Isolate* isolate,
                                              Local<String> export_name,
                                              Local<v8::Value> export_value) {
-  UNIMPLEMENTED(2359);
-  return Just(false);
+  V8_CALL_TRACE();
+  return Just(true);
 }
 
 MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
@@ -745,6 +776,10 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
                                               JERRY_PARSE_NO_OPTS);
 
   JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(v8_isolate), scriptFunction);
+
+  UnboundScriptData *unboundScriptData = new UnboundScriptData(v8_isolate);
+  jerry_set_object_native_pointer(scriptFunction, unboundScriptData, &unboundScriptInfo);
+
   RETURN_HANDLE(UnboundScript, v8_isolate, result);
 }
 
