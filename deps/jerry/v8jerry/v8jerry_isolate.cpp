@@ -11,7 +11,7 @@
 #include "v8jerry_templates.hpp"
 #include "v8jerry_utils.hpp"
 
-#define DEBUG_PRINT 1
+#define DEBUG_PRINT 0
 
 JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
 
@@ -281,7 +281,7 @@ void JerryIsolate::Dispose(void) {
         delete m_hidden_object_template;
     }
 
-    JerryForceCleanup();
+    //JerryForceCleanup();
 
     jerry_cleanup();
 

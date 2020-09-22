@@ -166,7 +166,9 @@ struct V8Platform {
 
   inline tracing::AgentWriterHandle* GetTracingAgentWriter() { return nullptr; }
 
-  inline NodePlatform* Platform() { return nullptr; }
+  // [[V8API_CHANGE]]
+  // inline NodePlatform* Platform() { return nullptr; }
+  inline NodePlatform* Platform() { return new NodePlatform(8, nullptr); }
 #endif  // !NODE_USE_V8_PLATFORM
 };
 

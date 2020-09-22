@@ -440,10 +440,56 @@ jerry_value_t JerryV8ProxyHandler(
         }
         case GET_OWN_PROPERTY_DESC:
         {
-            MAKE_NAME(args_p[1]);
-            JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
+            if (data->configuration->descriptor) {
+                MAKE_NAME(args_p[1]);
+                JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
 
-            data->configuration->descriptor(__name.AsLocal<v8::Name>(), info);
+                data->configuration->descriptor(__name.AsLocal<v8::Name>(), info);
+                JerryIsolate* iso = JerryIsolate::GetCurrent();
+                if (!iso->HasError()) {
+                    v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+
+                    // Again: dragons!
+                    JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+
+                    jret = jerry_acquire_value(retVal->value());
+                } else {
+                    JerryValue* jerror = iso->GetRawError();
+                    jret = jerry_create_error_from_value(jerror->value(), false);
+                    iso->ClearError();
+                }
+            } else {
+                jerry_property_descriptor_t prop_desc;
+                jerry_init_property_descriptor_fields(&prop_desc);
+                jret = jerry_get_own_property_descriptor (args_p[0], args_p[1], &prop_desc);
+
+                if (jerry_value_is_boolean(jret))
+                {
+                    if (jerry_get_boolean_value (jret))
+                    {
+                        jerry_value_t obj = jerry_create_object();
+
+                        if (prop_desc.is_value_defined || prop_desc.is_writable_defined)
+                        {
+                            // set value/writable
+                        }
+                        else if (prop_desc.is_get_defined || prop_desc.is_set_defined)
+                        {
+                            // set get/set
+                        }
+
+                        // set enumerable/configurable
+
+                        jret = obj;
+                    }
+                    else
+                    {
+                        jret = jerry_create_undefined ();
+                    }
+                }
+
+                jerry_free_property_descriptor_fields (&prop_desc);
+            }
             break;
         }
     }
