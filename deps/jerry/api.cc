@@ -452,7 +452,7 @@ void FunctionTemplate::Inherit(v8::Local<FunctionTemplate> value) {
   V8_CALL_TRACE();
   JerryFunctionTemplate* func = reinterpret_cast<JerryFunctionTemplate*>(this);
   JerryFunctionTemplate* parent = reinterpret_cast<JerryFunctionTemplate*>(*value);
-  func->Inherit(parent->PrototypeTemplate());
+  func->Inherit(parent);
 }
 
 void FunctionTemplate::SetCallHandler(FunctionCallback callback,
@@ -1577,8 +1577,24 @@ void v8::Date::CheckCast(v8::Value* that) {
 }
 
 Maybe<double> Value::NumberValue(Local<Context> context) const {
-  UNIMPLEMENTED(3905);
-  return Just((double) 0);
+  V8_CALL_TRACE();
+  const JerryValue* jthis = reinterpret_cast<const JerryValue*>(this);
+
+  jerry_value_t tonumber = jerry_value_to_number (jthis->value());
+
+  double number = 0.0;
+
+  if (jerry_value_is_error (tonumber))
+  {
+    jerry_release_value (tonumber);
+  }
+  else
+  {
+    number = jerry_get_number_value (tonumber);
+    jerry_release_value (tonumber);
+  }
+
+  return Just(number);
 }
 
 Maybe<int64_t> Value::IntegerValue(Local<Context> context) const {
@@ -2916,9 +2932,7 @@ Local<ArrayBuffer> v8::ArrayBufferView::Buffer() {
 }
 
 size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
-  UNIMPLEMENTED(7539);
-  return 0;
-
+  V8_CALL_TRACE();
   const JerryValue* jarray = reinterpret_cast<const JerryValue*> (this);
   jerry_value_t buffer;
 

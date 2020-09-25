@@ -190,8 +190,8 @@ JerryObjectTemplate* JerryFunctionTemplate::PrototypeTemplate(void) {
     return m_prototype_template;
 }
 
-void JerryFunctionTemplate::Inherit(JerryObjectTemplate* parent) {
-    m_prototype_template = parent;
+void JerryFunctionTemplate::Inherit(JerryFunctionTemplate* parent) {
+    m_parent_template = parent;
 }
 
 JerryObjectTemplate* JerryFunctionTemplate::InstanceTemplate(void) {
@@ -241,6 +241,14 @@ JerryValue* JerryFunctionTemplate::GetFunction(void) {
             JerryValue proto_string(jerry_create_string((const jerry_char_t*)"prototype"));
 
             m_function->SetProperty(&proto_string, new_instance);
+
+            if (m_parent_template)
+            {
+                // TODO: handle potential error?
+                jerry_value_t proto = m_parent_template->GetFunction()->GetProperty(&proto_string)->value();
+                jerry_set_prototype (new_instance->value(), proto);
+                jerry_release_value (proto);
+            }
             delete new_instance;
         }
     }

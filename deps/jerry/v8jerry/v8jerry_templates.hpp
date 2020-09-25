@@ -255,6 +255,7 @@ public:
         , m_external(jerry_create_undefined())
         , m_function(NULL)
         , m_signature(NULL)
+        , m_parent_template(NULL)
     {
     }
 
@@ -266,7 +267,7 @@ public:
     }
 
     JerryObjectTemplate* PrototypeTemplate(void);
-    void Inherit(JerryObjectTemplate* parent);
+    void Inherit(JerryFunctionTemplate* parent);
     JerryObjectTemplate* InstanceTemplate(void);
 
     bool HasInstanceTemplate(void) const { return m_instance_template != NULL; }
@@ -285,6 +286,7 @@ public:
 private:
     JerryObjectTemplate* m_prototype_template;
     JerryObjectTemplate* m_instance_template;
+    JerryFunctionTemplate* m_parent_template;
     v8::FunctionCallback m_callback;
     jerry_value_t m_external;
     JerryValue* m_function;

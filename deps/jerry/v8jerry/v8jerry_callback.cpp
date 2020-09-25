@@ -312,6 +312,18 @@ jerry_value_t JerryV8FunctionHandler(
     return jret;
 }
 
+static void setPropertyDescriptorHelperBoolean(jerry_value_t object, const char *name, bool value)
+{
+    setPropertyDescriptorHelperBoolean(object, name, jerry_create_boolean (value));
+}
+
+static void setPropertyDescriptorHelper(jerry_value_t object, const char *name, jerry_value_t value)
+{
+    jerry_value_t prop_name = jerry_create_string ((const jerry_char_t *) name);
+    jerry_set_property (object, prop_name, value);
+    jerry_release_value (prop_name);
+}
+
 jerry_value_t JerryV8ProxyHandler(
     const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
 
@@ -461,31 +473,32 @@ jerry_value_t JerryV8ProxyHandler(
             } else {
                 jerry_property_descriptor_t prop_desc;
                 jerry_init_property_descriptor_fields(&prop_desc);
-                jret = jerry_get_own_property_descriptor (args_p[0], args_p[1], &prop_desc);
+                bool status = jerry_get_own_property_descriptor (args_p[0], args_p[1], &prop_desc);
 
-                if (jerry_value_is_boolean(jret))
+                if (status)
                 {
-                    if (jerry_get_boolean_value (jret))
+                    jerry_value_t obj = jerry_create_object();
+
+                    if (prop_desc.is_value_defined || prop_desc.is_writable_defined)
                     {
-                        jerry_value_t obj = jerry_create_object();
-
-                        if (prop_desc.is_value_defined || prop_desc.is_writable_defined)
-                        {
-                            // set value/writable
-                        }
-                        else if (prop_desc.is_get_defined || prop_desc.is_set_defined)
-                        {
-                            // set get/set
-                        }
-
-                        // set enumerable/configurable
-
-                        jret = obj;
+                        setPropertyDescriptorHelperBoolean(obj, "writable", prop_desc.is_writable);
+                        setPropertyDescriptorHelper(obj, "value", jerry_acquire_value (prop_desc.value));
                     }
-                    else
+                    else if (prop_desc.is_get_defined || prop_desc.is_set_defined)
                     {
-                        jret = jerry_create_undefined ();
+                        setPropertyDescriptorHelper(obj, "get", jerry_acquire_value (prop_desc.getter));
+                        setPropertyDescriptorHelper(obj, "set", jerry_acquire_value (prop_desc.setter));
                     }
+
+                    setPropertyDescriptorHelperBoolean(obj, "enumerable", prop_desc.is_enumerable);
+                    setPropertyDescriptorHelperBoolean(obj, "configurable", prop_desc.is_configurable);
+
+                    jret = obj;
+
+                }
+                else
+                {
+                    jret = jerry_create_undefined ();
                 }
 
                 jerry_free_property_descriptor_fields (&prop_desc);

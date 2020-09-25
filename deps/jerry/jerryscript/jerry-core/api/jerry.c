@@ -4177,7 +4177,7 @@ jerry_create_arraybuffer_external (const jerry_length_t size, /**< size of the b
 
   if (JERRY_UNLIKELY (size == 0 || buffer_p == NULL))
   {
-    arraybuffer = ecma_arraybuffer_new_object_external (0, NULL, (ecma_object_native_free_callback_t) free_cb);
+    arraybuffer = ecma_arraybuffer_new_object_external (0, UINTPTR_MAX, (ecma_object_native_free_callback_t) free_cb);
   }
   else
   {

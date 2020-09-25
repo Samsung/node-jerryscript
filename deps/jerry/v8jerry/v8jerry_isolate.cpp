@@ -11,7 +11,7 @@
 #include "v8jerry_templates.hpp"
 #include "v8jerry_utils.hpp"
 
-#define DEBUG_PRINT 0
+#define DEBUG_PRINT 1
 
 JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
 
@@ -121,10 +121,14 @@ jerryx_handler_register_global (const jerry_char_t *name_p, /**< name of the fun
   jerry_value_t global_obj_val = jerry_get_global_object ();
   jerry_value_t function_name_val = jerry_create_string (name_p);
   jerry_value_t function_val = jerry_create_external_function (handler_p);
+  jerry_property_descriptor_t desc;
+  jerry_init_property_descriptor_fields(&desc);
+  desc.is_value_defined = true;
+  desc.value = function_val;
 
-  jerry_value_t result_val = jerry_set_property (global_obj_val, function_name_val, function_val);
+  jerry_value_t result_val = jerry_define_own_property (global_obj_val, function_name_val, &desc);
 
-  jerry_release_value (function_val);
+  jerry_free_property_descriptor_fields (&desc);
   jerry_release_value (function_name_val);
   jerry_release_value (global_obj_val);
 
