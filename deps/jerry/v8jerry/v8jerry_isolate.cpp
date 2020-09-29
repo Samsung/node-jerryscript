@@ -23,12 +23,12 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
 }
 
 #if DEBUG_PRINT
-jerry_value_t
-jerryx_handler_print (const jerry_value_t func_obj_val, /**< function object */
-                      const jerry_value_t this_p, /**< this arg */
-                      const jerry_value_t args_p[], /**< function arguments */
-                      const jerry_length_t args_cnt) /**< number of function arguments */
-{
+
+static jerry_value_t
+jerryx_handler_print (const jerry_value_t func_obj_val,
+                      const jerry_value_t this_p,
+                      const jerry_value_t args_p[],
+                      const jerry_length_t args_cnt) {
   (void) func_obj_val; /* unused */
   (void) this_p; /* unused */
 
@@ -112,13 +112,22 @@ jerryx_handler_print (const jerry_value_t func_obj_val, /**< function object */
   }
 
   return ret_val;
-} /* jerryx_handler_print */
+}
 
-jerry_value_t
-jerryx_handler_register_global (const jerry_char_t *name_p, /**< name of the function */
-                                jerry_external_handler_t handler_p) /**< function callback */
-{
-  jerry_value_t global_obj_val = jerry_get_global_object ();
+static jerry_value_t
+jerryx_handler_string_normalize (const jerry_value_t func_obj_val,
+                                 const jerry_value_t this_p,
+                                 const jerry_value_t args_p[],
+                                 const jerry_length_t args_cnt) {
+  (void) func_obj_val; /* unused */
+  (void) args_p; /* unused */
+  (void) args_cnt; /* unused */
+
+  return jerry_acquire_value(this_p);
+}
+
+static void jerryx_handler_register (const jerry_char_t *name_p, jerry_value_t object_value,
+                                     jerry_external_handler_t handler_p) {
   jerry_value_t function_name_val = jerry_create_string (name_p);
   jerry_value_t function_val = jerry_create_external_function (handler_p);
   jerry_property_descriptor_t desc;
@@ -126,41 +135,52 @@ jerryx_handler_register_global (const jerry_char_t *name_p, /**< name of the fun
   desc.is_value_defined = true;
   desc.value = function_val;
 
-  jerry_value_t result_val = jerry_define_own_property (global_obj_val, function_name_val, &desc);
+  jerry_value_t result_val = jerry_define_own_property (object_value, function_name_val, &desc);
 
   jerry_free_property_descriptor_fields (&desc);
   jerry_release_value (function_name_val);
-  jerry_release_value (global_obj_val);
-
-  return result_val;
-} /* jerryx_handler_register_global */
-
-/**
- * Register a JavaScript function in the global object.
- */
-static void
-register_js_function (const char *name_p, /**< name of the function */
-                      jerry_external_handler_t handler_p) /**< function callback */
-{
-  jerry_value_t result_val = jerryx_handler_register_global ((const jerry_char_t *) name_p, handler_p);
 
   if (jerry_value_is_error (result_val))
   {
     jerry_port_log (JERRY_LOG_LEVEL_WARNING, "Warning: failed to register '%s' method.", name_p);
-    result_val = jerry_get_value_from_error (result_val, true);
   }
 
   jerry_release_value (result_val);
-} /* register_js_function */
-#endif
+}
 
+static void jerryx_handler_register_global (const jerry_char_t *name_p,
+                                            jerry_external_handler_t handler_p) {
+  jerry_value_t global_obj_val = jerry_get_global_object();
+  jerryx_handler_register(name_p, global_obj_val, handler_p);
+  jerry_release_value(global_obj_val);
+}
+
+static void jerryx_handler_register_string (const jerry_char_t *name_p,
+                                            jerry_external_handler_t handler_p) {
+  jerry_value_t global_obj_val = jerry_get_global_object();
+  jerry_value_t name_val = jerry_create_string((const jerry_char_t *) "String");
+  jerry_value_t string_val = jerry_get_property(global_obj_val, name_val);
+  jerry_release_value (name_val);
+  jerry_release_value (global_obj_val);
+
+  name_val = jerry_create_string((const jerry_char_t *) "prototype");
+  jerry_value_t prototype_val = jerry_get_property(string_val, name_val);
+  jerry_release_value (name_val);
+  jerry_release_value (string_val);
+
+  jerryx_handler_register (name_p, prototype_val, handler_p);
+  jerry_release_value (prototype_val);
+}
+
+#endif
 
 void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& params) {
     m_terminated = false;
     jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
 #if DEBUG_PRINT
-    register_js_function ("print", jerryx_handler_print);
+    jerryx_handler_register_global((const jerry_char_t *)"print", jerryx_handler_print);
 #endif
+    jerryx_handler_register_string((const jerry_char_t *)"normalize", jerryx_handler_string_normalize);
 
     m_fatalErrorCallback = nullptr;
 

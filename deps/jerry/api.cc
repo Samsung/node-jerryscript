@@ -725,10 +725,10 @@ Local<Module> Module::CreateSyntheticModule(
   String::Utf8Value fileName(isolate, module_name);
 
   jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
-                                              module_name->Utf8Length(isolate),
-                                              (const jerry_char_t*)"",
-                                              0,
-                                              JERRY_PARSE_NO_OPTS | 2); // [[TODO]] propagete ECMA_PARSE_MODULE to api
+                                             fileName.length(),
+                                             (const jerry_char_t*)"",
+                                             0,
+                                             JERRY_PARSE_NO_OPTS | 2); // [[TODO]] propagete ECMA_PARSE_MODULE to api
 
   JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
   RETURN_HANDLE(Module, isolate, result);
@@ -770,10 +770,10 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
   String::Utf8Value fileName(v8_isolate,file);
 
   jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
-                                              file->Utf8Length(v8_isolate),
-                                              (const jerry_char_t*)*text,
-                                              source->source_string->Utf8Length(v8_isolate),
-                                              JERRY_PARSE_NO_OPTS);
+                                             fileName.length(),
+                                             (const jerry_char_t*)*text,
+                                             text.length(),
+                                             JERRY_PARSE_NO_OPTS);
 
   JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(v8_isolate), scriptFunction);
 
@@ -812,10 +812,10 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
   String::Utf8Value fileName(isolate, file);
 
   jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
-                                              file->Utf8Length(isolate),
-                                              (const jerry_char_t*)*text,
-                                              source->source_string->Utf8Length(isolate),
-                                              JERRY_PARSE_NO_OPTS | 2); // [[TODO]] propagete ECMA_PARSE_MODULE to api
+                                             fileName.length(),
+                                             (const jerry_char_t*)*text,
+                                             text.length(),
+                                             JERRY_PARSE_NO_OPTS | 2); // [[TODO]] propagete ECMA_PARSE_MODULE to api
 
   JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
   RETURN_HANDLE(Module, isolate, result);
@@ -854,21 +854,32 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
 
   for (size_t i = 0; i < arguments_count; i++) {
     String::Utf8Value arg(isolate, arguments[i]);
-    args.append((const char*)*arg, (size_t) arguments[i]->Utf8Length(isolate));
+    args.append((const char*)*arg, (size_t) arg.length());
     if (i != arguments_count - 1) {
       args.append(",", 1);
     }
   }
 
-  String::Utf8Value text(isolate, source->source_string);
+  String::Utf8Value source_string(isolate, source->source_string);
   String::Utf8Value fileName(isolate, file);
 
+  const char* source_raw_string = *source_string;
+  int source_raw_length = source_string.length();
+
+  if (source_raw_length >= 1 && *source_raw_string == '#') {
+    // Cut she-bang
+    while (source_raw_length > 0 && *source_raw_string != '\r' && *source_raw_string != '\n') {
+      source_raw_length--;
+      source_raw_string++;
+    }
+  }
+
   jerry_value_t scriptFunction = jerry_parse_function((const jerry_char_t*)*fileName,
-                                                      file->Utf8Length(isolate),
+                                                      fileName.length(),
                                                       (const jerry_char_t*) args.c_str(),
                                                       args.length(),
-                                                      (const jerry_char_t*)*text,
-                                                      source->source_string->Utf8Length(isolate),
+                                                      (const jerry_char_t*)source_raw_string,
+                                                      source_raw_length,
                                                       JERRY_PARSE_NO_OPTS);
 
   if (script_or_module_out != nullptr) {
@@ -2572,10 +2583,21 @@ bool FunctionTemplate::HasInstance(v8::Local<v8::Value> value) {
   }
 
   JerryV8FunctionHandlerData* data = JerryGetFunctionHandlerData(object->value());
-  // TODO: the prototype chain should be traversed
 
-  // TODO: do a better check not just a simple address check
-  return data->function_template == reinterpret_cast<JerryFunctionTemplate*>(this);
+  if (data == NULL) {
+    return false;
+  }
+
+  JerryFunctionTemplate* function_template = data->function_template;
+
+  do {
+    if (function_template == reinterpret_cast<JerryFunctionTemplate*>(this)) {
+      return true;
+    }
+    function_template = function_template->protoTemplate();
+  } while (function_template != NULL);
+
+  return false;
 }
 
 Local<External> v8::External::New(Isolate* isolate, void* value) {
@@ -3390,8 +3412,8 @@ String::Utf8Value::Utf8Value(v8::Isolate* isolate, v8::Local<v8::Value> obj)
       value = jvalue->value();
   }
 
-  length_ = jerry_get_utf8_string_length(value);
-  uint32_t size = (uint32_t)jerry_get_utf8_string_size(value);
+  jerry_size_t size = jerry_get_utf8_string_size(value);
+  length_ = (int)size;
 
   str_ = new char[size + 1];
 
