@@ -22,8 +22,9 @@
 #include "ecma-helpers.h"
 #include "ecma-function-object.h"
 #include "ecma-lex-env.h"
+#include "ecma-lcache.h"
 #include "ecma-string-object.h"
-#include "ecma-objects-arguments.h"
+#include "ecma-arguments-object.h"
 #include "ecma-objects-general.h"
 #include "ecma-objects.h"
 #include "ecma-proxy-object.h"
@@ -32,7 +33,6 @@
 #if ENABLED (JERRY_BUILTIN_TYPEDARRAY)
 #include "ecma-typedarray-object.h"
 #include "ecma-arraybuffer-object.h"
-#include "ecma-try-catch-macro.h"
 #endif /* ENABLED (JERRY_BUILTIN_TYPEDARRAY) */
 
 /** \addtogroup ecma ECMA
@@ -81,7 +81,6 @@ ecma_op_object_get_own_property (ecma_object_t *object_p, /**< the object */
 #endif /* ENABLED (JERRY_BUILTIN_PROXY) */
   JERRY_ASSERT (property_name_p != NULL);
   JERRY_ASSERT (options == ECMA_PROPERTY_GET_NO_OPTIONS
-                || options == ECMA_PROPERTY_GET_HAS_OWN_PROP
                 || property_ref_p != NULL);
 
   ecma_object_type_t type = ecma_get_object_type (object_p);
@@ -246,51 +245,78 @@ ecma_op_object_get_own_property (ecma_object_t *object_p, /**< the object */
       {
         property_p = ecma_builtin_routine_try_to_instantiate_property (object_p, property_name_p);
       }
+#if ENABLED (JERRY_ESNEXT)
+      else if (type == ECMA_OBJECT_TYPE_NATIVE_FUNCTION)
+      {
+        property_p = ecma_op_native_handler_try_to_lazy_instantiate_property (object_p, property_name_p);
+      }
+#endif /* !ENABLED (JERRY_ESNEXT) */
       else
       {
         property_p = ecma_builtin_try_to_instantiate_property (object_p, property_name_p);
       }
     }
-    else if (type == ECMA_OBJECT_TYPE_FUNCTION)
+    else
     {
-#if !ENABLED (JERRY_ESNEXT)
-      if (ecma_string_is_length (property_name_p))
+      switch (type)
       {
-        if (options & ECMA_PROPERTY_GET_VALUE)
+        case ECMA_OBJECT_TYPE_FUNCTION:
         {
-          /* Get length virtual property. */
-          ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) object_p;
-          const ecma_compiled_code_t *bytecode_data_p = ecma_op_function_get_compiled_code (ext_func_p);
-
-          uint32_t len;
-          if (bytecode_data_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
+#if !ENABLED (JERRY_ESNEXT)
+          if (ecma_string_is_length (property_name_p))
           {
-            cbc_uint16_arguments_t *args_p = (cbc_uint16_arguments_t *) bytecode_data_p;
-            len = args_p->argument_end;
-          }
-          else
-          {
-            cbc_uint8_arguments_t *args_p = (cbc_uint8_arguments_t *) bytecode_data_p;
-            len = args_p->argument_end;
-          }
+            if (options & ECMA_PROPERTY_GET_VALUE)
+            {
+              /* Get length virtual property. */
+              ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) object_p;
+              const ecma_compiled_code_t *bytecode_data_p = ecma_op_function_get_compiled_code (ext_func_p);
 
-          property_ref_p->virtual_value = ecma_make_uint32_value (len);
+              uint32_t len;
+              if (bytecode_data_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
+              {
+                cbc_uint16_arguments_t *args_p = (cbc_uint16_arguments_t *) bytecode_data_p;
+                len = args_p->argument_end;
+              }
+              else
+              {
+                cbc_uint8_arguments_t *args_p = (cbc_uint8_arguments_t *) bytecode_data_p;
+                len = args_p->argument_end;
+              }
+
+              property_ref_p->virtual_value = ecma_make_uint32_value (len);
+            }
+
+            return ECMA_PROPERTY_TYPE_VIRTUAL;
+          }
+  #endif /* !ENABLED (JERRY_ESNEXT) */
+
+          /* Get prototype physical property. */
+          property_p = ecma_op_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          break;
         }
-
-        return ECMA_PROPERTY_TYPE_VIRTUAL;
+        case ECMA_OBJECT_TYPE_NATIVE_FUNCTION:
+        {
+          property_p = ecma_op_external_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          break;
+        }
+        case ECMA_OBJECT_TYPE_BOUND_FUNCTION:
+        {
+          property_p = ecma_op_bound_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          break;
+        }
+        case ECMA_OBJECT_TYPE_PSEUDO_ARRAY:
+        {
+          if (((ecma_extended_object_t *) object_p)->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS)
+          {
+            property_p = ecma_op_arguments_object_try_to_lazy_instantiate_property (object_p, property_name_p);
+          }
+          break;
+        }
+        default:
+        {
+          break;
+        }
       }
-#endif /* !ENABLED (JERRY_ESNEXT) */
-
-      /* Get prototype physical property. */
-      property_p = ecma_op_function_try_to_lazy_instantiate_property (object_p, property_name_p);
-    }
-    else if (type == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION)
-    {
-      property_p = ecma_op_external_function_try_to_lazy_instantiate_property (object_p, property_name_p);
-    }
-    else if (type == ECMA_OBJECT_TYPE_BOUND_FUNCTION)
-    {
-      property_p = ecma_op_bound_function_try_to_lazy_instantiate_property (object_p, property_name_p);
     }
 
     if (property_p == NULL)
@@ -299,36 +325,47 @@ ecma_op_object_get_own_property (ecma_object_t *object_p, /**< the object */
     }
   }
   else if (type == ECMA_OBJECT_TYPE_PSEUDO_ARRAY
-           && (options & ECMA_PROPERTY_GET_HAS_OWN_PROP))
+           && ((ecma_extended_object_t *) object_p)->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS
+           && (((ecma_extended_object_t *) object_p)->u.pseudo_array.extra_info & ECMA_ARGUMENTS_OBJECT_MAPPED))
   {
     ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) object_p;
 
-    if (ext_object_p->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS)
+    uint32_t index = ecma_string_get_array_index (property_name_p);
+
+    if (index < ext_object_p->u.pseudo_array.u1.formal_params_number)
     {
-      uint32_t index = ecma_string_get_array_index (property_name_p);
+      ecma_mapped_arguments_t *mapped_arguments_p = (ecma_mapped_arguments_t *) ext_object_p;
 
-      if (index != ECMA_STRING_NOT_ARRAY_INDEX
-          && index < ext_object_p->u.pseudo_array.u1.length)
+      ecma_value_t *argv_p = (ecma_value_t *) (mapped_arguments_p + 1);
+
+      if (!ecma_is_value_empty (argv_p[index]))
       {
-        ecma_value_t *arg_Literal_p = (ecma_value_t *) (ext_object_p + 1);
-
-        if (arg_Literal_p[index] != ECMA_VALUE_EMPTY)
+#if ENABLED (JERRY_LCACHE)
+        /* Mapped arguments initialized properties MUST not be lcached */
+        if (ecma_is_property_lcached (property_p))
         {
-          ecma_string_t *arg_name_p = ecma_get_string_from_value (arg_Literal_p[index]);
+          jmem_cpointer_t prop_name_cp;
 
-          ecma_object_t *lex_env_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_object_t,
-                                                                      ext_object_p->u.pseudo_array.u2.lex_env_cp);
-
-          JERRY_ASSERT (lex_env_p != NULL
-                        && ecma_is_lexical_environment (lex_env_p));
-
-          ecma_value_t binding_value = ecma_op_get_binding_value (lex_env_p, arg_name_p, true);
-
-          ecma_named_data_property_assign_value (object_p,
-                                                 ECMA_PROPERTY_VALUE_PTR (property_p),
-                                                 binding_value);
-          ecma_free_value (binding_value);
+          if (JERRY_UNLIKELY (ECMA_IS_DIRECT_STRING (property_name_p)))
+          {
+            prop_name_cp = (jmem_cpointer_t) ECMA_GET_DIRECT_STRING_VALUE (property_name_p);
+          }
+          else
+          {
+            ECMA_SET_NON_NULL_POINTER (prop_name_cp, property_name_p);
+          }
+          ecma_lcache_invalidate (object_p, prop_name_cp, property_p);
         }
+#endif /* ENABLED (JERRY_LCACHE) */
+        ecma_string_t *name_p = ecma_op_arguments_object_get_formal_parameter (mapped_arguments_p, index);
+        ecma_object_t *lex_env_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_object_t, mapped_arguments_p->lex_env);
+
+        ecma_value_t binding_value = ecma_op_get_binding_value (lex_env_p, name_p, true);
+
+        ecma_named_data_property_assign_value (object_p,
+                                               ECMA_PROPERTY_VALUE_PTR (property_p),
+                                               binding_value);
+        ecma_free_value (binding_value);
       }
     }
   }
@@ -475,26 +512,23 @@ ecma_op_object_find_own (ecma_value_t base_value, /**< base value */
     {
       ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) object_p;
 
-      if (ext_object_p->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS)
+      if (ext_object_p->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS
+          && ext_object_p->u.pseudo_array.extra_info & ECMA_ARGUMENTS_OBJECT_MAPPED)
       {
         uint32_t index = ecma_string_get_array_index (property_name_p);
 
-        if (index != ECMA_STRING_NOT_ARRAY_INDEX
-            && index < ext_object_p->u.pseudo_array.u1.length)
+        if (index < ext_object_p->u.pseudo_array.u1.formal_params_number)
         {
-          ecma_value_t *arg_Literal_p = (ecma_value_t *) (ext_object_p + 1);
+          ecma_mapped_arguments_t *mapped_arguments_p = (ecma_mapped_arguments_t *) ext_object_p;
 
-          if (arg_Literal_p[index] != ECMA_VALUE_EMPTY)
+          ecma_value_t *argv_p = (ecma_value_t *) (mapped_arguments_p + 1);
+
+          if (!ecma_is_value_empty (argv_p[index]))
           {
-            ecma_string_t *arg_name_p = ecma_get_string_from_value (arg_Literal_p[index]);
+            ecma_string_t *name_p = ecma_op_arguments_object_get_formal_parameter (mapped_arguments_p, index);
+            ecma_object_t *lex_env_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_object_t, mapped_arguments_p->lex_env);
 
-            ecma_object_t *lex_env_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_object_t,
-                                                                        ext_object_p->u.pseudo_array.u2.lex_env_cp);
-
-            JERRY_ASSERT (lex_env_p != NULL
-                          && ecma_is_lexical_environment (lex_env_p));
-
-            return ecma_op_get_binding_value (lex_env_p, arg_name_p, true);
+            return ecma_op_get_binding_value (lex_env_p, name_p, true);
           }
         }
       }
@@ -556,46 +590,73 @@ ecma_op_object_find_own (ecma_value_t base_value, /**< base value */
       {
         property_p = ecma_builtin_routine_try_to_instantiate_property (object_p, property_name_p);
       }
+#if ENABLED (JERRY_ESNEXT)
+      else if (type == ECMA_OBJECT_TYPE_NATIVE_FUNCTION)
+      {
+        property_p = ecma_op_native_handler_try_to_lazy_instantiate_property (object_p, property_name_p);
+      }
+#endif /* !ENABLED (JERRY_ESNEXT) */
       else
       {
         property_p = ecma_builtin_try_to_instantiate_property (object_p, property_name_p);
       }
     }
-    else if (type == ECMA_OBJECT_TYPE_FUNCTION)
+    else
     {
-#if !ENABLED (JERRY_ESNEXT)
-      if (ecma_string_is_length (property_name_p))
+      switch (type)
       {
-        /* Get length virtual property. */
-        ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) object_p;
-        const ecma_compiled_code_t *bytecode_data_p = ecma_op_function_get_compiled_code (ext_func_p);
-
-        uint32_t len;
-        if (bytecode_data_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
+        case ECMA_OBJECT_TYPE_FUNCTION:
         {
-          cbc_uint16_arguments_t *args_p = (cbc_uint16_arguments_t *) bytecode_data_p;
-          len = args_p->argument_end;
-        }
-        else
-        {
-          cbc_uint8_arguments_t *args_p = (cbc_uint8_arguments_t *) bytecode_data_p;
-          len = args_p->argument_end;
-        }
+#if !ENABLED (JERRY_ESNEXT)
+          if (ecma_string_is_length (property_name_p))
+          {
+            /* Get length virtual property. */
+            ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) object_p;
+            const ecma_compiled_code_t *bytecode_data_p = ecma_op_function_get_compiled_code (ext_func_p);
 
-        return ecma_make_uint32_value (len);
-      }
+            uint32_t len;
+            if (bytecode_data_p->status_flags & CBC_CODE_FLAGS_UINT16_ARGUMENTS)
+            {
+              cbc_uint16_arguments_t *args_p = (cbc_uint16_arguments_t *) bytecode_data_p;
+              len = args_p->argument_end;
+            }
+            else
+            {
+              cbc_uint8_arguments_t *args_p = (cbc_uint8_arguments_t *) bytecode_data_p;
+              len = args_p->argument_end;
+            }
+
+            return ecma_make_uint32_value (len);
+          }
 #endif /* !ENABLED (JERRY_ESNEXT) */
 
-      /* Get prototype physical property. */
-      property_p = ecma_op_function_try_to_lazy_instantiate_property (object_p, property_name_p);
-    }
-    else if (type == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION)
-    {
-      property_p = ecma_op_external_function_try_to_lazy_instantiate_property (object_p, property_name_p);
-    }
-    else if (type == ECMA_OBJECT_TYPE_BOUND_FUNCTION)
-    {
-      property_p = ecma_op_bound_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          /* Get prototype physical property. */
+          property_p = ecma_op_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          break;
+        }
+        case ECMA_OBJECT_TYPE_NATIVE_FUNCTION:
+        {
+          property_p = ecma_op_external_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          break;
+        }
+        case ECMA_OBJECT_TYPE_BOUND_FUNCTION:
+        {
+          property_p = ecma_op_bound_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          break;
+        }
+        case ECMA_OBJECT_TYPE_PSEUDO_ARRAY:
+        {
+          if (((ecma_extended_object_t *) object_p)->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS)
+          {
+            property_p = ecma_op_arguments_object_try_to_lazy_instantiate_property (object_p, property_name_p);
+          }
+          break;
+        }
+        default:
+        {
+          break;
+        }
+      }
     }
 
     if (property_p == NULL)
@@ -1083,7 +1144,14 @@ ecma_op_object_put_apply_receiver (ecma_value_t receiver, /**< receiver */
   if (ECMA_OBJECT_IS_PROXY (receiver_obj_p))
   {
     ecma_property_descriptor_t desc;
-    desc.flags = ECMA_NAME_DATA_PROPERTY_DESCRIPTOR_BITS;
+    /* Based on: ES6 9.1.9 [[Set]] 4.d.i. / ES11 9.1.9.2 OrdinarySetWithOwnDescriptor 2.c.i. */
+    desc.flags = (ECMA_PROP_IS_CONFIGURABLE
+                  | ECMA_PROP_IS_CONFIGURABLE_DEFINED
+                  | ECMA_PROP_IS_ENUMERABLE
+                  | ECMA_PROP_IS_ENUMERABLE_DEFINED
+                  | ECMA_PROP_IS_WRITABLE
+                  | ECMA_PROP_IS_WRITABLE_DEFINED
+                  | ECMA_PROP_IS_VALUE_DEFINED);
     desc.value = value;
     return ecma_proxy_object_define_own_property (receiver_obj_p, property_name_p, &desc);
   }
@@ -1140,7 +1208,7 @@ ecma_op_object_put_with_receiver (ecma_object_t *object_p, /**< the object */
 #if ENABLED (JERRY_BUILTIN_PROXY)
   if (ECMA_OBJECT_IS_PROXY (object_p))
   {
-    return ecma_proxy_object_set (object_p, property_name_p, value, receiver);
+    return ecma_proxy_object_set (object_p, property_name_p, value, receiver, is_throw);
   }
 #endif /* ENABLED (JERRY_BUILTIN_PROXY) */
 
@@ -1189,26 +1257,22 @@ ecma_op_object_put_with_receiver (ecma_object_t *object_p, /**< the object */
     {
       ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) object_p;
 
-      if (ext_object_p->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS)
+      if (ext_object_p->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS
+          && (ext_object_p->u.pseudo_array.extra_info & ECMA_ARGUMENTS_OBJECT_MAPPED))
       {
         uint32_t index = ecma_string_get_array_index (property_name_p);
 
-        if (index != ECMA_STRING_NOT_ARRAY_INDEX
-            && index < ext_object_p->u.pseudo_array.u1.length)
+        if (index < ext_object_p->u.pseudo_array.u1.formal_params_number)
         {
-          ecma_value_t *arg_Literal_p = (ecma_value_t *) (ext_object_p + 1);
+          ecma_mapped_arguments_t *mapped_arguments_p = (ecma_mapped_arguments_t *) ext_object_p;
 
-          if (arg_Literal_p[index] != ECMA_VALUE_EMPTY)
+          ecma_value_t *argv_p = (ecma_value_t *) (mapped_arguments_p + 1);
+
+          if (!ecma_is_value_empty (argv_p[index]))
           {
-            ecma_string_t *arg_name_p = ecma_get_string_from_value (arg_Literal_p[index]);
-
-            ecma_object_t *lex_env_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_object_t,
-                                                                        ext_object_p->u.pseudo_array.u2.lex_env_cp);
-
-            JERRY_ASSERT (lex_env_p != NULL
-                          && ecma_is_lexical_environment (lex_env_p));
-
-            ecma_op_set_mutable_binding (lex_env_p, arg_name_p, value, true);
+            ecma_string_t *name_p = ecma_op_arguments_object_get_formal_parameter (mapped_arguments_p, index);
+            ecma_object_t *lex_env_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_object_t, mapped_arguments_p->lex_env);
+            ecma_op_set_mutable_binding (lex_env_p, name_p, value, true);
             return ECMA_VALUE_TRUE;
           }
         }
@@ -1264,64 +1328,91 @@ ecma_op_object_put_with_receiver (ecma_object_t *object_p, /**< the object */
 
   if (property_p == NULL)
   {
-    if (type == ECMA_OBJECT_TYPE_CLASS)
-    {
-      ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) object_p;
-
-      if (ext_object_p->u.class_prop.class_id == LIT_MAGIC_STRING_STRING_UL)
-      {
-        uint32_t index = ecma_string_get_array_index (property_name_p);
-
-        if (index != ECMA_STRING_NOT_ARRAY_INDEX)
-        {
-          ecma_value_t prim_value_p = ext_object_p->u.class_prop.u.value;
-          ecma_string_t *prim_value_str_p = ecma_get_string_from_value (prim_value_p);
-
-          if (index < ecma_string_get_length (prim_value_str_p))
-          {
-            return ecma_reject (is_throw);
-          }
-        }
-      }
-    }
-
     if (ecma_get_object_is_builtin (object_p))
     {
       if (type == ECMA_OBJECT_TYPE_FUNCTION && ecma_builtin_function_is_routine (object_p))
       {
         property_p = ecma_builtin_routine_try_to_instantiate_property (object_p, property_name_p);
       }
+#if ENABLED (JERRY_ESNEXT)
+      else if (type == ECMA_OBJECT_TYPE_NATIVE_FUNCTION)
+      {
+        property_p = ecma_op_native_handler_try_to_lazy_instantiate_property (object_p, property_name_p);
+      }
+#endif /* !ENABLED (JERRY_ESNEXT) */
       else
       {
         property_p = ecma_builtin_try_to_instantiate_property (object_p, property_name_p);
       }
     }
-    else if (type == ECMA_OBJECT_TYPE_FUNCTION)
+    else
     {
-#if ENABLED (JERRY_ESNEXT)
-      /* Uninitialized 'length' property is non-writable (ECMA-262 v6, 19.2.4.1) */
-      if ((ecma_string_is_length (property_name_p))
-          && (!ECMA_GET_FIRST_BIT_FROM_POINTER_TAG (((ecma_extended_object_t *) object_p)->u.function.scope_cp)))
+      switch (type)
       {
-        return ecma_reject (is_throw);
-      }
-#else /* !ENABLED (JERRY_ESNEXT) */
-      if (ecma_string_is_length (property_name_p))
-      {
-        return ecma_reject (is_throw);
-      }
-#endif /* ENABLED (JERRY_ESNEXT) */
+        case ECMA_OBJECT_TYPE_CLASS:
+        {
+          ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) object_p;
 
-      /* Get prototype physical property. */
-      property_p = ecma_op_function_try_to_lazy_instantiate_property (object_p, property_name_p);
-    }
-    else if (type == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION)
-    {
-      property_p = ecma_op_external_function_try_to_lazy_instantiate_property (object_p, property_name_p);
-    }
-    else if (type == ECMA_OBJECT_TYPE_BOUND_FUNCTION)
-    {
-      property_p = ecma_op_bound_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          if (ext_object_p->u.class_prop.class_id == LIT_MAGIC_STRING_STRING_UL)
+          {
+            uint32_t index = ecma_string_get_array_index (property_name_p);
+
+            if (index != ECMA_STRING_NOT_ARRAY_INDEX)
+            {
+              ecma_value_t prim_value_p = ext_object_p->u.class_prop.u.value;
+              ecma_string_t *prim_value_str_p = ecma_get_string_from_value (prim_value_p);
+
+              if (index < ecma_string_get_length (prim_value_str_p))
+              {
+                return ecma_reject (is_throw);
+              }
+            }
+          }
+          break;
+        }
+        case ECMA_OBJECT_TYPE_FUNCTION:
+        {
+  #if ENABLED (JERRY_ESNEXT)
+          /* Uninitialized 'length' property is non-writable (ECMA-262 v6, 19.2.4.1) */
+          if ((ecma_string_is_length (property_name_p))
+              && (!ECMA_GET_FIRST_BIT_FROM_POINTER_TAG (((ecma_extended_object_t *) object_p)->u.function.scope_cp)))
+          {
+            return ecma_reject (is_throw);
+          }
+  #else /* !ENABLED (JERRY_ESNEXT) */
+          if (ecma_string_is_length (property_name_p))
+          {
+            return ecma_reject (is_throw);
+          }
+  #endif /* ENABLED (JERRY_ESNEXT) */
+
+          /* Get prototype physical property. */
+          property_p = ecma_op_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          break;
+        }
+        case ECMA_OBJECT_TYPE_NATIVE_FUNCTION:
+        {
+          property_p = ecma_op_external_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          break;
+        }
+        case ECMA_OBJECT_TYPE_BOUND_FUNCTION:
+        {
+          property_p = ecma_op_bound_function_try_to_lazy_instantiate_property (object_p, property_name_p);
+          break;
+        }
+        case ECMA_OBJECT_TYPE_PSEUDO_ARRAY:
+        {
+          if (((ecma_extended_object_t *) object_p)->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS)
+          {
+            property_p = ecma_op_arguments_object_try_to_lazy_instantiate_property (object_p, property_name_p);
+          }
+          break;
+        }
+        default:
+        {
+          break;
+        }
+      }
     }
   }
 
@@ -1416,7 +1507,8 @@ ecma_op_object_put_with_receiver (ecma_object_t *object_p, /**< the object */
       {
         ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) object_p;
 
-        if (ext_object_p->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS)
+        if (ext_object_p->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS
+            && ext_object_p->u.pseudo_array.extra_info & ECMA_ARGUMENTS_OBJECT_MAPPED)
         {
           return ecma_builtin_helper_def_prop (object_p,
                                                property_name_p,
@@ -1577,7 +1669,7 @@ ecma_op_object_default_value (ecma_object_t *obj_p, /**< the object */
    *   [ECMA_OBJECT_TYPE_GENERAL]           = &ecma_op_general_object_default_value,
    *   [ECMA_OBJECT_TYPE_CLASS]             = &ecma_op_general_object_default_value,
    *   [ECMA_OBJECT_TYPE_FUNCTION]          = &ecma_op_general_object_default_value,
-   *   [ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION] = &ecma_op_general_object_default_value,
+   *   [ECMA_OBJECT_TYPE_NATIVE_FUNCTION]   = &ecma_op_general_object_default_value,
    *   [ECMA_OBJECT_TYPE_ARRAY]             = &ecma_op_general_object_default_value,
    *   [ECMA_OBJECT_TYPE_BOUND_FUNCTION]    = &ecma_op_general_object_default_value,
    *   [ECMA_OBJECT_TYPE_PSEUDO_ARRAY]      = &ecma_op_general_object_default_value
@@ -1622,7 +1714,7 @@ ecma_op_object_define_own_property (ecma_object_t *obj_p, /**< the object */
     case ECMA_OBJECT_TYPE_GENERAL:
     case ECMA_OBJECT_TYPE_CLASS:
     case ECMA_OBJECT_TYPE_FUNCTION:
-    case ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION:
+    case ECMA_OBJECT_TYPE_NATIVE_FUNCTION:
     case ECMA_OBJECT_TYPE_BOUND_FUNCTION:
     {
       return ecma_op_general_object_define_own_property (obj_p,
@@ -2016,6 +2108,12 @@ ecma_object_list_lazy_property_names (ecma_object_t *obj_p, /**< object */
     {
       ecma_builtin_routine_list_lazy_property_names (obj_p, prop_names_p, prop_counter_p);
     }
+#if ENABLED (JERRY_ESNEXT)
+    else if (type == ECMA_OBJECT_TYPE_NATIVE_FUNCTION)
+    {
+      ecma_op_native_handler_list_lazy_property_names (obj_p, prop_names_p, prop_counter_p);
+    }
+#endif /* !ENABLED (JERRY_ESNEXT) */
     else
     {
       ecma_builtin_list_lazy_property_names (obj_p, prop_names_p, prop_counter_p);
@@ -2027,6 +2125,10 @@ ecma_object_list_lazy_property_names (ecma_object_t *obj_p, /**< object */
     {
       case ECMA_OBJECT_TYPE_PSEUDO_ARRAY:
       {
+        if (((ecma_extended_object_t *) obj_p)->u.pseudo_array.type == ECMA_PSEUDO_ARRAY_ARGUMENTS)
+        {
+          ecma_op_arguments_object_list_lazy_property_names (obj_p, prop_names_p, prop_counter_p);
+        }
 #if ENABLED (JERRY_BUILTIN_TYPEDARRAY)
         if (ecma_object_is_typedarray (obj_p))
         {
@@ -2040,7 +2142,7 @@ ecma_object_list_lazy_property_names (ecma_object_t *obj_p, /**< object */
         ecma_op_function_list_lazy_property_names (obj_p, prop_names_p, prop_counter_p);
         break;
       }
-      case ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION:
+      case ECMA_OBJECT_TYPE_NATIVE_FUNCTION:
       {
         ecma_op_external_function_list_lazy_property_names (obj_p, prop_names_p, prop_counter_p);
         break;
@@ -2544,7 +2646,7 @@ ecma_object_get_class_name (ecma_object_t *obj_p) /**< object */
       break;
     }
     case ECMA_OBJECT_TYPE_FUNCTION:
-    case ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION:
+    case ECMA_OBJECT_TYPE_NATIVE_FUNCTION:
     case ECMA_OBJECT_TYPE_BOUND_FUNCTION:
     {
       return LIT_MAGIC_STRING_FUNCTION_UL;
@@ -2917,6 +3019,16 @@ ecma_op_ordinary_object_set_prototype_of (ecma_object_t *obj_p, /**< base object
   /* 1. */
   JERRY_ASSERT (ecma_is_value_object (proto) || ecma_is_value_null (proto));
 
+  /**
+   * If the prototype of a fast array changes it is required to fall back to
+   * a "normal" array object. This ensures that all [[Get]]/[[Set]]/etc. calls
+   * works as expected.
+   */
+  if (ecma_op_object_is_fast_array (obj_p))
+  {
+    ecma_fast_array_convert_to_normal (obj_p);
+  }
+
   /* 3. */
   ecma_object_t *current_proto_p = ECMA_GET_POINTER (ecma_object_t, ecma_op_ordinary_object_get_prototype_of (obj_p));
   ecma_object_t *new_proto_p = ecma_is_value_null (proto) ? NULL : ecma_get_object_from_value (proto);
@@ -3012,7 +3124,7 @@ ecma_op_ordinary_object_has_own_property (ecma_object_t *object_p, /**< the obje
   ecma_property_t property = ecma_op_object_get_own_property (object_p,
                                                               property_name_p,
                                                               NULL,
-                                                              ECMA_PROPERTY_GET_HAS_OWN_PROP);
+                                                              ECMA_PROPERTY_GET_NO_OPTIONS);
 
   return property != ECMA_PROPERTY_TYPE_NOT_FOUND && property != ECMA_PROPERTY_TYPE_NOT_FOUND_AND_STOP;
 } /* ecma_op_ordinary_object_has_own_property */

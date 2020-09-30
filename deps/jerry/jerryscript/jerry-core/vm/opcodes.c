@@ -28,7 +28,6 @@
 #include "ecma-objects.h"
 #include "ecma-promise-object.h"
 #include "ecma-proxy-object.h"
-#include "ecma-try-catch-macro.h"
 #include "jcontext.h"
 #include "opcodes.h"
 #include "vm-defines.h"
@@ -652,7 +651,7 @@ vm_executable_object_t *
 opfunc_create_executable_object (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
                                  vm_create_executable_object_type_t type) /**< executable object type */
 {
-  const ecma_compiled_code_t *bytecode_header_p = frame_ctx_p->bytecode_header_p;
+  const ecma_compiled_code_t *bytecode_header_p = frame_ctx_p->shared_p->bytecode_header_p;
   size_t size, register_end;
 
   ecma_bytecode_ref ((ecma_compiled_code_t *) bytecode_header_p);
@@ -680,13 +679,15 @@ opfunc_create_executable_object (vm_frame_ctx_t *frame_ctx_p, /**< frame context
   {
     ecma_builtin_id_t default_proto_id = ECMA_BUILTIN_ID_GENERATOR_PROTOTYPE;
 
-    if (CBC_FUNCTION_GET_TYPE (frame_ctx_p->bytecode_header_p->status_flags) == CBC_FUNCTION_ASYNC_GENERATOR)
+    if (CBC_FUNCTION_GET_TYPE (bytecode_header_p->status_flags) == CBC_FUNCTION_ASYNC_GENERATOR)
     {
       default_proto_id = ECMA_BUILTIN_ID_ASYNC_GENERATOR_PROTOTYPE;
       class_id = LIT_MAGIC_STRING_ASYNC_GENERATOR_UL;
     }
 
-    proto_p = ecma_op_get_prototype_from_constructor (JERRY_CONTEXT (current_function_obj_p), default_proto_id);
+    JERRY_ASSERT (frame_ctx_p->shared_p->status_flags & VM_FRAME_CTX_SHARED_NON_ARROW_FUNC);
+    proto_p = ecma_op_get_prototype_from_constructor (VM_FRAME_CTX_GET_FUNCTION_OBJECT (frame_ctx_p),
+                                                      default_proto_id);
   }
 
   ecma_object_t *object_p = ecma_create_object (proto_p,
@@ -704,10 +705,15 @@ opfunc_create_executable_object (vm_frame_ctx_t *frame_ctx_p, /**< frame context
   executable_object_p->extended_object.u.class_prop.extra_info = 0;
   ECMA_SET_INTERNAL_VALUE_ANY_POINTER (executable_object_p->extended_object.u.class_prop.u.head, NULL);
 
-  JERRY_ASSERT (!frame_ctx_p->is_eval_code);
+  JERRY_ASSERT (!(frame_ctx_p->status_flags & VM_FRAME_CTX_DIRECT_EVAL));
+
+  /* Copy shared data and frame context. */
+  vm_frame_ctx_shared_t *new_shared_p = &(executable_object_p->shared);
+  *new_shared_p = *(frame_ctx_p->shared_p);
 
   vm_frame_ctx_t *new_frame_ctx_p = &(executable_object_p->frame_ctx);
   *new_frame_ctx_p = *frame_ctx_p;
+  new_frame_ctx_p->shared_p = new_shared_p;
 
   /* The old register values are discarded. */
   ecma_value_t *new_registers_p = VM_GET_REGISTERS (new_frame_ctx_p);
@@ -782,7 +788,7 @@ ecma_value_t
 opfunc_resume_executable_object (vm_executable_object_t *executable_object_p, /**< executable object */
                                  ecma_value_t value) /**< value pushed onto the stack (takes the reference) */
 {
-  const ecma_compiled_code_t *bytecode_header_p = executable_object_p->frame_ctx.bytecode_header_p;
+  const ecma_compiled_code_t *bytecode_header_p = executable_object_p->shared.bytecode_header_p;
   ecma_value_t *register_p = VM_GET_REGISTERS (&executable_object_p->frame_ctx);
   ecma_value_t *register_end_p;
 
@@ -926,8 +932,9 @@ opfunc_async_create_and_await (vm_frame_ctx_t *frame_ctx_p, /**< frame context *
                                uint16_t extra_flags) /**< extra flags */
 {
   JERRY_ASSERT (frame_ctx_p->block_result == ECMA_VALUE_UNDEFINED);
-  JERRY_ASSERT (CBC_FUNCTION_GET_TYPE (frame_ctx_p->bytecode_header_p->status_flags) == CBC_FUNCTION_ASYNC
-                || CBC_FUNCTION_GET_TYPE (frame_ctx_p->bytecode_header_p->status_flags) == CBC_FUNCTION_ASYNC_ARROW);
+  JERRY_ASSERT (CBC_FUNCTION_GET_TYPE (frame_ctx_p->shared_p->bytecode_header_p->status_flags) == CBC_FUNCTION_ASYNC
+                || (CBC_FUNCTION_GET_TYPE (frame_ctx_p->shared_p->bytecode_header_p->status_flags)
+                    == CBC_FUNCTION_ASYNC_ARROW));
 
   ecma_object_t *promise_p = ecma_builtin_get (ECMA_BUILTIN_ID_PROMISE);
   ecma_value_t result = ecma_promise_reject_or_resolve (ecma_make_object_value (promise_p), value, true);
@@ -960,6 +967,147 @@ opfunc_async_create_and_await (vm_frame_ctx_t *frame_ctx_p, /**< frame context *
 } /* opfunc_async_create_and_await */
 
 /**
+ * Initialize class fields.
+ *
+ * @return ECMA_VALUE_ERROR - initialization fails
+ *         ECMA_VALUE_UNDEFINED - otherwise
+ */
+ecma_value_t
+opfunc_init_class_fields (ecma_value_t class_object, /**< the function itself */
+                          ecma_value_t this_val) /**< this_arg of the function */
+{
+  JERRY_ASSERT (ecma_is_value_object (class_object));
+  JERRY_ASSERT (ecma_is_value_object (this_val));
+
+  ecma_string_t *name_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_CLASS_FIELD_INIT);
+  ecma_object_t *class_object_p = ecma_get_object_from_value (class_object);
+  ecma_property_t *property_p = ecma_find_named_property (class_object_p, name_p);
+
+  if (property_p == NULL)
+  {
+    return ECMA_VALUE_UNDEFINED;
+  }
+
+  vm_frame_ctx_shared_class_fields_t shared_class_fields;
+  shared_class_fields.header.status_flags = VM_FRAME_CTX_SHARED_HAS_CLASS_FIELDS;
+  shared_class_fields.computed_class_fields_p = NULL;
+
+  name_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_CLASS_FIELD_COMPUTED);
+  ecma_property_t *class_field_property_p = ecma_find_named_property (class_object_p, name_p);
+
+  if (class_field_property_p != NULL)
+  {
+    ecma_value_t value = ECMA_PROPERTY_VALUE_PTR (class_field_property_p)->value;
+    shared_class_fields.computed_class_fields_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_value_t, value);
+  }
+
+  ecma_property_value_t *property_value_p = ECMA_PROPERTY_VALUE_PTR (property_p);
+  JERRY_ASSERT (ecma_op_is_callable (property_value_p->value));
+
+  ecma_extended_object_t *ext_function_p;
+  ext_function_p = (ecma_extended_object_t *) ecma_get_object_from_value (property_value_p->value);
+  shared_class_fields.header.bytecode_header_p = ecma_op_function_get_compiled_code (ext_function_p);
+
+  ecma_object_t *scope_p = ECMA_GET_NON_NULL_POINTER_FROM_POINTER_TAG (ecma_object_t,
+                                                                       ext_function_p->u.function.scope_cp);
+
+  ecma_value_t result = vm_run (&shared_class_fields.header, this_val, scope_p);
+
+  JERRY_ASSERT (ECMA_IS_VALUE_ERROR (result) || result == ECMA_VALUE_UNDEFINED);
+  return result;
+} /* opfunc_init_class_fields */
+
+/**
+ * Initialize static class fields.
+ *
+ * @return ECMA_VALUE_ERROR - initialization fails
+ *         ECMA_VALUE_UNDEFINED - otherwise
+ */
+ecma_value_t
+opfunc_init_static_class_fields (ecma_value_t function_object, /**< the function itself */
+                                 ecma_value_t this_val) /**< this_arg of the function */
+{
+  JERRY_ASSERT (ecma_op_is_callable (function_object));
+  JERRY_ASSERT (ecma_is_value_object (this_val));
+
+  vm_frame_ctx_shared_class_fields_t shared_class_fields;
+  shared_class_fields.header.status_flags = VM_FRAME_CTX_SHARED_HAS_CLASS_FIELDS;
+  shared_class_fields.computed_class_fields_p = NULL;
+
+  ecma_string_t *name_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_CLASS_FIELD_COMPUTED);
+  ecma_object_t *function_object_p = ecma_get_object_from_value (function_object);
+  ecma_property_t *class_field_property_p = ecma_find_named_property (function_object_p, name_p);
+
+  if (class_field_property_p != NULL)
+  {
+    ecma_value_t value = ECMA_PROPERTY_VALUE_PTR (class_field_property_p)->value;
+    shared_class_fields.computed_class_fields_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_value_t, value);
+  }
+
+  ecma_extended_object_t *ext_function_p;
+  ext_function_p = (ecma_extended_object_t *) ecma_get_object_from_value (function_object);
+  shared_class_fields.header.bytecode_header_p = ecma_op_function_get_compiled_code (ext_function_p);
+
+  ecma_object_t *scope_p = ECMA_GET_NON_NULL_POINTER_FROM_POINTER_TAG (ecma_object_t,
+                                                                       ext_function_p->u.function.scope_cp);
+
+  ecma_value_t result = vm_run (&shared_class_fields.header, this_val, scope_p);
+
+  JERRY_ASSERT (ECMA_IS_VALUE_ERROR (result) || result == ECMA_VALUE_UNDEFINED);
+  return result;
+} /* opfunc_init_static_class_fields */
+
+/**
+ * Add the name of a computed field to a name list
+ *
+ * @return ECMA_VALUE_ERROR - name is not a valid property name
+ *         ECMA_VALUE_UNDEFINED - otherwise
+ */
+ecma_value_t
+opfunc_add_computed_field (ecma_value_t class_object, /**< class object */
+                           ecma_value_t name) /**< name of the property */
+{
+  ecma_string_t *prop_name_p = ecma_op_to_property_key (name);
+
+  if (JERRY_UNLIKELY (prop_name_p == NULL))
+  {
+    return ECMA_VALUE_ERROR;
+  }
+
+  if (ecma_prop_name_is_symbol (prop_name_p))
+  {
+    name = ecma_make_symbol_value (prop_name_p);
+  }
+  else
+  {
+    name = ecma_make_string_value (prop_name_p);
+  }
+
+  ecma_string_t *name_p = ecma_get_magic_string (LIT_INTERNAL_MAGIC_STRING_CLASS_FIELD_COMPUTED);
+  ecma_object_t *class_object_p = ecma_get_object_from_value (class_object);
+
+  ecma_property_t *property_p = ecma_find_named_property (class_object_p, name_p);
+  ecma_value_t *compact_collection_p;
+  ecma_property_value_t *property_value_p;
+
+  if (property_p == NULL)
+  {
+    property_value_p = ecma_create_named_data_property (class_object_p, name_p, ECMA_PROPERTY_FIXED, &property_p);
+    ECMA_CONVERT_DATA_PROPERTY_TO_INTERNAL_PROPERTY (property_p);
+    compact_collection_p = ecma_new_compact_collection ();
+  }
+  else
+  {
+    property_value_p = ECMA_PROPERTY_VALUE_PTR (property_p);
+    compact_collection_p = ECMA_GET_INTERNAL_VALUE_POINTER (ecma_value_t, property_value_p->value);
+  }
+
+  compact_collection_p = ecma_compact_collection_push_back (compact_collection_p, name);
+  ECMA_SET_INTERNAL_VALUE_POINTER (property_value_p->value, compact_collection_p);
+  return ECMA_VALUE_UNDEFINED;
+} /* opfunc_add_computed_field */
+
+/**
  * Implicit class constructor handler when the classHeritage is not present.
  *
  * See also: ECMAScript v6, 14.5.14.10.b.i
@@ -973,14 +1121,14 @@ ecma_op_implicit_constructor_handler_cb (const ecma_value_t function_obj, /**< t
                                          const ecma_value_t args_p[], /**< argument list */
                                          const uint32_t args_count) /**< argument number */
 {
-  JERRY_UNUSED_4 (function_obj, this_val, args_p, args_count);
+  JERRY_UNUSED_2 (args_p, args_count);
 
   if (JERRY_CONTEXT (current_new_target) == NULL)
   {
     return ecma_raise_type_error (ECMA_ERR_MSG ("Class constructor cannot be invoked without 'new'."));
   }
 
-  return ECMA_VALUE_UNDEFINED;
+  return opfunc_init_class_fields (function_obj, this_val);
 } /* ecma_op_implicit_constructor_handler_cb */
 
 /**
@@ -997,7 +1145,7 @@ ecma_op_implicit_constructor_handler_heritage_cb (const ecma_value_t function_ob
                                                   const ecma_value_t args_p[], /**< argument list */
                                                   const uint32_t args_count) /**< argument number */
 {
-  JERRY_UNUSED_4 (function_obj, this_val, args_p, args_count);
+  JERRY_UNUSED (this_val);
 
   if (JERRY_CONTEXT (current_new_target) == NULL)
   {
@@ -1028,10 +1176,21 @@ ecma_op_implicit_constructor_handler_heritage_cb (const ecma_value_t function_ob
       ecma_free_value (result);
       result = ECMA_VALUE_ERROR;
     }
-    else if (ecma_is_value_object (proto_value))
+    else
     {
-      ECMA_SET_POINTER (ecma_get_object_from_value (result)->u2.prototype_cp,
-                        ecma_get_object_from_value (proto_value));
+      if (ecma_is_value_object (proto_value))
+      {
+        ECMA_SET_POINTER (ecma_get_object_from_value (result)->u2.prototype_cp,
+                          ecma_get_object_from_value (proto_value));
+      }
+
+      ecma_value_t fields_value = opfunc_init_class_fields (function_obj, result);
+
+      if (ECMA_IS_VALUE_ERROR (fields_value))
+      {
+        ecma_free_value (result);
+        result = ECMA_VALUE_ERROR;
+      }
     }
     ecma_free_value (proto_value);
   }
@@ -1054,7 +1213,7 @@ opfunc_create_implicit_class_constructor (uint8_t opcode) /**< current cbc opcod
   /* 8. */
   ecma_object_t *func_obj_p = ecma_create_object (ecma_builtin_get (ECMA_BUILTIN_ID_FUNCTION_PROTOTYPE),
                                                   sizeof (ecma_extended_object_t),
-                                                  ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION);
+                                                  ECMA_OBJECT_TYPE_NATIVE_FUNCTION);
 
   ecma_extended_object_t *ext_func_obj_p = (ecma_extended_object_t *) func_obj_p;
 
@@ -1110,16 +1269,17 @@ opfunc_push_class_environment (vm_frame_ctx_t *frame_ctx_p, /**< frame context *
                                ecma_value_t **vm_stack_top, /**< VM stack top */
                                ecma_value_t class_name) /**< class name */
 {
-  JERRY_ASSERT (ecma_is_value_undefined (class_name) || ecma_is_value_string (class_name));
+  JERRY_ASSERT (ecma_is_value_string (class_name));
   ecma_object_t *class_env_p = ecma_create_decl_lex_env (frame_ctx_p->lex_env_p);
 
   /* 4.a */
-  if (!ecma_is_value_undefined (class_name))
-  {
-    ecma_op_create_immutable_binding (class_env_p,
-                                      ecma_get_string_from_value (class_name),
-                                      ECMA_VALUE_UNINITIALIZED);
-  }
+  ecma_property_value_t *property_value_p;
+  property_value_p = ecma_create_named_data_property (class_env_p,
+                                                      ecma_get_string_from_value (class_name),
+                                                      ECMA_PROPERTY_FLAG_ENUMERABLE,
+                                                      NULL);
+
+  property_value_p->value = ECMA_VALUE_UNINITIALIZED;
   frame_ctx_p->lex_env_p = class_env_p;
 
   *(*vm_stack_top)++ = ECMA_VALUE_RELEASE_LEX_ENV;
@@ -1302,10 +1462,9 @@ opfunc_set_class_attributes (ecma_object_t *obj_p, /**< object */
       }
       else
       {
-        JERRY_ASSERT (ECMA_PROPERTY_GET_TYPE (property) == ECMA_PROPERTY_TYPE_SPECIAL);
-
-        JERRY_ASSERT (property == ECMA_PROPERTY_TYPE_HASHMAP
-                      || property == ECMA_PROPERTY_TYPE_DELETED);
+        JERRY_ASSERT (ECMA_PROPERTY_GET_TYPE (property) == ECMA_PROPERTY_TYPE_SPECIAL
+                      || (ECMA_PROPERTY_GET_TYPE (property) == ECMA_PROPERTY_TYPE_INTERNAL
+                          && property_pair_p->names_cp[index] == LIT_INTERNAL_MAGIC_STRING_CLASS_FIELD_COMPUTED));
       }
     }
 
@@ -1360,13 +1519,17 @@ opfunc_finalize_class (vm_frame_ctx_t *frame_ctx_p, /**< frame context */
 
   ecma_deref_object (proto_env_p);
   ecma_deref_object (ctor_env_p);
-
-  opfunc_pop_lexical_environment (frame_ctx_p);
-
   ecma_deref_object (proto_p);
 
+  JERRY_ASSERT ((ecma_is_value_undefined (class_name) ? stack_top_p[-3] == ECMA_VALUE_UNDEFINED
+                                                      : stack_top_p[-3] == ECMA_VALUE_RELEASE_LEX_ENV));
+
   /* only the current class remains on the stack */
-  JERRY_ASSERT (stack_top_p[-3] == ECMA_VALUE_RELEASE_LEX_ENV);
+  if (stack_top_p[-3] == ECMA_VALUE_RELEASE_LEX_ENV)
+  {
+    opfunc_pop_lexical_environment (frame_ctx_p);
+  }
+
   stack_top_p[-3] = stack_top_p[-2];
   *vm_stack_top_p -= 2;
 } /* opfunc_finalize_class */
@@ -1469,7 +1632,7 @@ opfunc_assign_super_reference (ecma_value_t **vm_stack_top_p, /**< vm stack top 
     return ECMA_VALUE_ERROR;
   }
 
-  bool is_strict = (frame_ctx_p->bytecode_header_p->status_flags & CBC_CODE_FLAGS_STRICT_MODE) != 0;
+  bool is_strict = (frame_ctx_p->status_flags & VM_FRAME_CTX_IS_STRICT) != 0;
 
   ecma_value_t result = ecma_op_object_put_with_receiver (base_obj_p,
                                                           prop_name_p,

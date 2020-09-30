@@ -790,6 +790,126 @@ parser_set_continues_to_current_position (parser_context_t *context_p, /**< cont
   }
 } /* parser_set_continues_to_current_position */
 
+#if ENABLED (JERRY_ESNEXT)
+
+/**
+ * Return the size of internal record corresponding to a class field
+ *
+ * @return internal record size
+ */
+static size_t
+parser_get_class_field_info_size (uint8_t class_field_type) /**< class field type */
+{
+  if (class_field_type & PARSER_CLASS_FIELD_INITIALIZED)
+  {
+    return sizeof (scanner_range_t) + 1;
+  }
+
+  if (class_field_type & PARSER_CLASS_FIELD_NORMAL)
+  {
+    return sizeof (scanner_location_t) + 1;
+  }
+
+  return 1;
+} /* parser_get_class_field_info_size */
+
+/**
+ * Reverse the field list of a class
+ */
+void
+parser_reverse_class_fields (parser_context_t *context_p, /**< context */
+                             size_t fields_size) /**< size of consumed memory */
+{
+  uint8_t *data_p = (uint8_t *) parser_malloc (context_p, fields_size);
+  uint8_t *data_end_p = data_p + fields_size;
+  uint8_t *current_p = data_p;
+  bool has_fields = false;
+  parser_stack_iterator_t iterator;
+
+  JERRY_ASSERT (!(context_p->stack_top_uint8 & PARSER_CLASS_FIELD_END));
+
+  parser_stack_iterator_init (context_p, &iterator);
+
+  do
+  {
+    uint8_t class_field_type = parser_stack_iterator_read_uint8 (&iterator);
+    size_t info_size = parser_get_class_field_info_size (class_field_type);
+
+    parser_stack_iterator_read (&iterator, current_p, info_size);
+    parser_stack_iterator_skip (&iterator, info_size);
+    current_p += info_size;
+
+    if (!(class_field_type & PARSER_CLASS_FIELD_STATIC))
+    {
+      has_fields = true;
+      context_p->stack_top_uint8 = class_field_type;
+    }
+  }
+  while (current_p < data_end_p);
+
+  parser_stack_iterator_init (context_p, &iterator);
+  current_p = data_end_p;
+
+  bool has_static_fields = false;
+
+  if (has_fields)
+  {
+    do
+    {
+      uint8_t class_field_type = current_p[-1];
+
+      size_t info_size = parser_get_class_field_info_size (class_field_type);
+
+      if (!(class_field_type & PARSER_CLASS_FIELD_STATIC))
+      {
+        current_p -= info_size;
+        parser_stack_iterator_write (&iterator, current_p, info_size);
+        parser_stack_iterator_skip (&iterator, info_size);
+        continue;
+      }
+
+      if (!has_static_fields)
+      {
+        has_static_fields = true;
+        current_p[-1] |= PARSER_CLASS_FIELD_END;
+      }
+      current_p -= info_size;
+    }
+    while (current_p > data_p);
+  }
+  else
+  {
+    /* All class fields are static. */
+    has_static_fields = true;
+    JERRY_ASSERT (data_end_p[-1] & PARSER_CLASS_FIELD_STATIC);
+    context_p->stack_top_uint8 = data_end_p[-1];
+  }
+
+  if (has_static_fields)
+  {
+    current_p = data_end_p;
+
+    do
+    {
+      uint8_t class_field_type = current_p[-1];
+
+      size_t info_size = parser_get_class_field_info_size (class_field_type);
+      current_p -= info_size;
+
+      if (class_field_type & PARSER_CLASS_FIELD_STATIC)
+      {
+        parser_stack_iterator_write (&iterator, current_p, info_size);
+        parser_stack_iterator_skip (&iterator, info_size);
+      }
+    }
+    while (current_p > data_p);
+  }
+
+  parser_free (data_p, fields_size);
+} /* parser_reverse_class_fields */
+
+#endif /* ENABLED (JERRY_ESNEXT) */
+
 #if ENABLED (JERRY_ERROR_MESSAGES)
 /**
  * Returns with the string representation of the error
@@ -931,6 +1051,12 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Octal escape sequences are not allowed in strict mode.";
     }
+#if ENABLED (JERRY_ESNEXT)
+    case PARSER_ERR_TEMPLATE_STR_OCTAL_ESCAPE:
+    {
+      return "Octal escape sequences are not allowed in template strings.";
+    }
+#endif /* ENABLED (JERRY_ESNEXT) */
     case PARSER_ERR_STRICT_IDENT_NOT_ALLOWED:
     {
       return "Identifier name is reserved in strict mode.";
@@ -1170,9 +1296,9 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Class constructor may not be an accessor.";
     }
-    case PARSER_ERR_CLASS_CONSTRUCTOR_AS_GENERATOR:
+    case PARSER_ERR_INVALID_CLASS_CONSTRUCTOR:
     {
-      return "Class constructor may not be a generator.";
+      return "Class constructor may not be a generator or async function.";
     }
     case PARSER_ERR_CLASS_STATIC_PROTOTYPE:
     {
@@ -1181,6 +1307,14 @@ parser_error_to_string (parser_error_t error) /**< error code */
     case PARSER_ERR_UNEXPECTED_SUPER_KEYWORD:
     {
       return "Super is not allowed to be used here.";
+    }
+    case PARSER_ERR_TOO_MANY_CLASS_FIELDS:
+    {
+      return "Too many computed class fields are declared.";
+    }
+    case PARSER_ERR_ARGUMENTS_IN_CLASS_FIELD:
+    {
+      return "In class field declarations 'arguments' is not allowed.";
     }
     case PARSER_ERR_RIGHT_BRACE_EXPECTED:
     {

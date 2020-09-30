@@ -555,13 +555,6 @@ parse_print_literal (ecma_compiled_code_t *compiled_code_p, /**< compiled code *
     ident_end = args_p->ident_end;
   }
 
-#if ENABLED (JERRY_ESNEXT)
-  if (compiled_code_p->status_flags & CBC_CODE_FLAGS_REST_PARAMETER)
-  {
-    argument_end++;
-  }
-#endif /* ENABLED (JERRY_ESNEXT) */
-
   if (literal_index < argument_end)
   {
     JERRY_DEBUG_MSG (" arg:%d", literal_index);
@@ -1437,11 +1430,6 @@ parser_post_processing (parser_context_t *context_p) /**< context */
     function_type = CBC_FUNCTION_TO_TYPE_BITS (CBC_FUNCTION_NORMAL);
   }
 
-  if (context_p->status_flags & PARSER_FUNCTION_HAS_REST_PARAM)
-  {
-    compiled_code_p->status_flags |= CBC_CODE_FLAGS_REST_PARAMETER;
-  }
-
   if (context_p->tagged_template_literal_cp != JMEM_CP_NULL)
   {
     compiled_code_p->status_flags |= CBC_CODE_FLAGS_HAS_TAGGED_LITERALS;
@@ -1870,9 +1858,16 @@ parser_parse_function_arguments (parser_context_t *context_p, /**< context */
 
       context_p->status_flags |= PARSER_FUNCTION_HAS_COMPLEX_ARGUMENT;
 
-      parser_emit_cbc_literal (context_p,
-                               CBC_PUSH_LITERAL,
-                               (uint16_t) (PARSER_REGISTER_START + context_p->argument_count));
+      if (!(context_p->status_flags & PARSER_FUNCTION_HAS_REST_PARAM))
+      {
+        parser_emit_cbc_literal (context_p,
+                                 CBC_PUSH_LITERAL,
+                                 (uint16_t) (PARSER_REGISTER_START + context_p->argument_count));
+      }
+      else
+      {
+        parser_emit_cbc_ext (context_p, CBC_EXT_PUSH_REST_OBJECT);
+      }
 
       uint32_t flags = (PARSER_PATTERN_BINDING
                         | PARSER_PATTERN_TARGET_ON_STACK
@@ -1990,11 +1985,29 @@ parser_parse_function_arguments (parser_context_t *context_p, /**< context */
 
       if (literal_index >= PARSER_REGISTER_START)
       {
-        opcode = CBC_ASSIGN_SET_IDENT;
+        opcode = CBC_MOV_IDENT;
       }
       else if (!scanner_literal_is_created (context_p, literal_index))
       {
         opcode = CBC_INIT_ARG_OR_CATCH;
+      }
+
+      parser_emit_cbc_literal (context_p, opcode, literal_index);
+    }
+    else if (context_p->status_flags & PARSER_FUNCTION_HAS_REST_PARAM)
+    {
+      parser_emit_cbc_ext (context_p, CBC_EXT_PUSH_REST_OBJECT);
+
+      uint16_t opcode = CBC_MOV_IDENT;
+
+      if (literal_index < PARSER_REGISTER_START)
+      {
+        opcode = CBC_INIT_ARG_OR_CATCH;
+
+        if (scanner_literal_is_created (context_p, literal_index))
+        {
+          opcode = CBC_ASSIGN_LET_CONST;
+        }
       }
 
       parser_emit_cbc_literal (context_p, opcode, literal_index);
@@ -2578,6 +2591,13 @@ parser_parse_function (parser_context_t *context_p, /**< context */
     parser_raise_error (context_p, PARSER_ERR_ONE_ARGUMENT_EXPECTED);
   }
 
+#if ENABLED (JERRY_ESNEXT)
+  if ((context_p->status_flags & (PARSER_CLASS_CONSTRUCTOR | PARSER_ALLOW_SUPER_CALL)) == PARSER_CLASS_CONSTRUCTOR)
+  {
+    parser_emit_cbc_ext (context_p, CBC_EXT_RUN_FIELD_INIT);
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
 #if ENABLED (JERRY_PARSER_DUMP_BYTE_CODE)
   if (context_p->is_show_opcodes
       && (context_p->status_flags & PARSER_HAS_NON_STRICT_ARG))
@@ -2711,6 +2731,153 @@ parser_parse_arrow_function (parser_context_t *context_p, /**< context */
 
   return compiled_code_p;
 } /* parser_parse_arrow_function */
+
+/**
+ * Parse class fields
+ *
+ * @return compiled code
+ */
+ecma_compiled_code_t *
+parser_parse_class_fields (parser_context_t *context_p) /**< context */
+{
+  parser_saved_context_t saved_context;
+  ecma_compiled_code_t *compiled_code_p;
+
+  uint32_t extra_status_flags = context_p->status_flags & PARSER_INSIDE_WITH;
+
+  parser_save_context (context_p, &saved_context);
+  context_p->status_flags |= (PARSER_IS_FUNCTION
+                              | PARSER_ALLOW_SUPER
+                              | PARSER_INSIDE_CLASS_FIELD
+                              | PARSER_ALLOW_NEW_TARGET
+                              | extra_status_flags);
+
+#if ENABLED (JERRY_PARSER_DUMP_BYTE_CODE)
+  if (context_p->is_show_opcodes)
+  {
+    JERRY_DEBUG_MSG ("\n--- Class fields parsing start ---\n\n");
+  }
+#endif /* ENABLED (JERRY_PARSER_DUMP_BYTE_CODE) */
+
+#if ENABLED (JERRY_DEBUGGER)
+  if (JERRY_CONTEXT (debugger_flags) & JERRY_DEBUGGER_CONNECTED)
+  {
+    jerry_debugger_send_parse_function (context_p->token.line, context_p->token.column);
+  }
+#endif /* ENABLED (JERRY_DEBUGGER) */
+
+  const uint8_t *source_end_p = context_p->source_end_p;
+  bool first_computed_class_field = true;
+  scanner_location_t end_location;
+  scanner_get_location (&end_location, context_p);
+
+  do
+  {
+    uint8_t class_field_type = context_p->stack_top_uint8;
+    parser_stack_pop_uint8 (context_p);
+
+    scanner_range_t range;
+
+    if (class_field_type & PARSER_CLASS_FIELD_INITIALIZED)
+    {
+      parser_stack_pop (context_p, &range, sizeof (scanner_range_t));
+    }
+    else if (class_field_type & PARSER_CLASS_FIELD_NORMAL)
+    {
+      parser_stack_pop (context_p, &range.start_location, sizeof (scanner_location_t));
+    }
+
+    uint16_t literal_index = 0;
+
+    if (class_field_type & PARSER_CLASS_FIELD_NORMAL)
+    {
+      scanner_set_location (context_p, &range.start_location);
+      context_p->source_end_p = source_end_p;
+      scanner_seek (context_p);
+
+      lexer_expect_object_literal_id (context_p, LEXER_OBJ_IDENT_ONLY_IDENTIFIERS);
+
+      literal_index = context_p->lit_object.index;
+
+      if (class_field_type & PARSER_CLASS_FIELD_INITIALIZED)
+      {
+        lexer_next_token (context_p);
+        JERRY_ASSERT (context_p->token.type == LEXER_ASSIGN);
+      }
+    }
+    else if (first_computed_class_field)
+    {
+      parser_emit_cbc (context_p, CBC_PUSH_NUMBER_0);
+      first_computed_class_field = false;
+    }
+
+    if (class_field_type & PARSER_CLASS_FIELD_INITIALIZED)
+    {
+      if (!(class_field_type & PARSER_CLASS_FIELD_NORMAL))
+      {
+        scanner_set_location (context_p, &range.start_location);
+        scanner_seek (context_p);
+      }
+
+      context_p->source_end_p = range.source_end_p;
+      lexer_next_token (context_p);
+      parser_parse_expression (context_p, PARSE_EXPR_NO_COMMA);
+
+      if (context_p->token.type != LEXER_EOS)
+      {
+        parser_raise_error (context_p, PARSER_ERR_SEMICOLON_EXPECTED);
+      }
+    }
+    else
+    {
+      parser_emit_cbc (context_p, CBC_PUSH_UNDEFINED);
+    }
+
+    if (class_field_type & PARSER_CLASS_FIELD_NORMAL)
+    {
+      parser_emit_cbc_literal (context_p, CBC_ASSIGN_PROP_THIS_LITERAL, literal_index);
+    }
+    else
+    {
+      parser_flush_cbc (context_p);
+
+      /* The next opcode pushes two more temporary values onto the stack */
+      if (context_p->stack_depth + 1 > context_p->stack_limit)
+      {
+        context_p->stack_limit = (uint16_t) (context_p->stack_depth + 1);
+        if (context_p->stack_limit > PARSER_MAXIMUM_STACK_LIMIT)
+        {
+          parser_raise_error (context_p, PARSER_ERR_STACK_LIMIT_REACHED);
+        }
+      }
+
+      parser_emit_cbc_ext (context_p, CBC_EXT_SET_NEXT_COMPUTED_FIELD);
+    }
+  }
+  while (!(context_p->stack_top_uint8 & PARSER_CLASS_FIELD_END));
+
+  if (!first_computed_class_field)
+  {
+    parser_emit_cbc (context_p, CBC_POP);
+  }
+
+  parser_flush_cbc (context_p);
+  context_p->source_end_p = source_end_p;
+  scanner_set_location (context_p, &end_location);
+
+  compiled_code_p = parser_post_processing (context_p);
+
+#if ENABLED (JERRY_PARSER_DUMP_BYTE_CODE)
+  if (context_p->is_show_opcodes)
+  {
+    JERRY_DEBUG_MSG ("\n--- Class fields parsing end ---\n\n");
+  }
+#endif /* ENABLED (JERRY_PARSER_DUMP_BYTE_CODE) */
+
+  parser_restore_context (context_p, &saved_context);
+
+  return compiled_code_p;
+} /* parser_parse_class_fields */
 
 /**
  * Check whether the last emitted cbc opcode was an anonymous function declaration

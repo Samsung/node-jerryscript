@@ -113,17 +113,21 @@ typedef enum
   ECMA_PARSE_DIRECT_EVAL = (1u << 3), /**< eval is called directly (ECMA-262 v5, 15.1.2.1.1) */
   ECMA_PARSE_CLASS_CONSTRUCTOR = (1u << 4), /**< a class constructor is being parsed */
 
-  /* These four status flags must be in this order. The first three are also parser status flags.
+  /* These five status flags must be in this order. The first four are also parser status flags.
    * See PARSER_SAVE_STATUS_FLAGS / PARSER_RESTORE_STATUS_FLAGS. */
   ECMA_PARSE_ALLOW_SUPER = (1u << 5), /**< allow super property access */
   ECMA_PARSE_ALLOW_SUPER_CALL = (1u << 6), /**< allow super constructor call */
-  ECMA_PARSE_ALLOW_NEW_TARGET = (1u << 7), /**< allow new.target access */
-  ECMA_PARSE_FUNCTION_CONTEXT = (1u << 8), /**< function context is present (ECMA_PARSE_DIRECT_EVAL must be set) */
+  ECMA_PARSE_INSIDE_CLASS_FIELD = (1u << 7), /**< a class field is being parsed */
+  ECMA_PARSE_ALLOW_NEW_TARGET = (1u << 8), /**< allow new.target access */
+  ECMA_PARSE_FUNCTION_CONTEXT = (1u << 9), /**< function context is present (ECMA_PARSE_DIRECT_EVAL must be set) */
 
-  ECMA_PARSE_GENERATOR_FUNCTION = (1u << 9), /**< generator function is parsed */
-  ECMA_PARSE_ASYNC_FUNCTION = (1u << 10), /**< async function is parsed */
+  ECMA_PARSE_GENERATOR_FUNCTION = (1u << 10), /**< generator function is parsed */
+  ECMA_PARSE_ASYNC_FUNCTION = (1u << 11), /**< async function is parsed */
 
   /* These flags are internally used by the parser. */
+#if ENABLED (JERRY_ESNEXT)
+  ECMA_PARSE_INTERNAL_PRE_SCANNING = (1u << 12),
+#endif /* ENABLED (JERRY_ESNEXT) */
 #ifndef JERRY_NDEBUG
   /**
    * This flag represents an error in for in/of statements, which cannot be set
@@ -211,6 +215,7 @@ enum
                                                      *   or function call argument list */
   ECMA_VALUE_SYNC_ITERATOR = ECMA_MAKE_VALUE (12), /**< option for ecma_op_get_iterator: sync iterator is requested */
   ECMA_VALUE_ASYNC_ITERATOR = ECMA_MAKE_VALUE (13), /**< option for ecma_op_get_iterator: async iterator is requested */
+  ECMA_VALUE_INITIALIZED = ECMA_MAKE_VALUE (14), /**< represents initialized mapped arguments formal parameter */
 };
 
 #if !ENABLED (JERRY_NUMBER_TYPE_FLOAT64)
@@ -286,10 +291,10 @@ typedef ecma_value_t (*ecma_vm_exec_stop_callback_t) (void *user_p);
 /**
  * Type of an external function handler.
  */
-typedef ecma_value_t (*ecma_external_handler_t) (const ecma_value_t function_obj,
-                                                 const ecma_value_t this_val,
-                                                 const ecma_value_t args_p[],
-                                                 const uint32_t args_count);
+typedef ecma_value_t (*ecma_native_handler_t) (const ecma_value_t function_obj,
+                                               const ecma_value_t this_val,
+                                               const ecma_value_t args_p[],
+                                               const uint32_t args_count);
 
 /**
  * Native free callback of an object.
@@ -644,7 +649,6 @@ typedef enum
   ECMA_PROPERTY_GET_NO_OPTIONS = 0, /**< no option flags for ecma_op_object_get_property */
   ECMA_PROPERTY_GET_VALUE = 1u << 0, /**< fill virtual_value field for virtual properties */
   ECMA_PROPERTY_GET_EXT_REFERENCE = 1u << 1, /**< get extended reference to the property */
-  ECMA_PROPERTY_GET_HAS_OWN_PROP = 1u << 2, /**< internal [[HasOwnProperty]] method */
 } ecma_property_get_option_bits_t;
 
 /**
@@ -660,7 +664,7 @@ typedef enum
   /* Note: these 4 types must be in this order. See IsCallable operation.  */
   ECMA_OBJECT_TYPE_FUNCTION = 5, /**< Function objects (15.3), created through 13.2 routine */
   ECMA_OBJECT_TYPE_BOUND_FUNCTION = 6, /**< Function objects (15.3), created through 15.3.4.5 routine */
-  ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION = 7, /**< External (host) function object */
+  ECMA_OBJECT_TYPE_NATIVE_FUNCTION = 7, /**< Native function object */
   /* Types between 13-15 cannot have a built-in flag. See ecma_lexical_environment_type_t. */
 
   ECMA_OBJECT_TYPE__MAX /**< maximum value */
@@ -933,13 +937,13 @@ typedef struct
                            *        [[IterationKind]] property for %Iterator% */
       union
       {
-        uint16_t length; /**< for arguments: length of names */
+        uint16_t formal_params_number; /**< for arguments: formal parameters number */
         uint16_t class_id; /**< for typedarray: the specific class name id */
         uint16_t iterator_index; /**< for %Iterator%: [[%Iterator%NextIndex]] property */
       } u1;
       union
       {
-        ecma_value_t lex_env_cp; /**< for arguments: lexical environment */
+        uint32_t arguments_number; /**< for arguments: arguments number */
         ecma_value_t arraybuffer; /**< for typedarray: internal arraybuffer */
         ecma_value_t iterated_value; /**< for %Iterator%: [[IteratedObject]] property */
         ecma_value_t spread_value; /**< for spread object: spreaded element */
@@ -955,7 +959,16 @@ typedef struct
       ecma_value_t args_len_or_this; /**< length of arguments or this value */
     } bound_function;
 
-    ecma_external_handler_t external_handler_cb; /**< external function */
+    /**
+     * Description of a built-in native handler object.
+     */
+    struct
+    {
+      uint32_t id;    /**< handler id */
+      uint32_t flags; /**< handler flags */
+    } native_handler;
+
+    ecma_native_handler_t external_handler_cb; /**< external function */
   } u;
 } ecma_extended_object_t;
 
@@ -1438,6 +1451,17 @@ typedef struct
  * Initial allocated size of an ecma-collection
  */
 #define ECMA_COLLECTION_INITIAL_SIZE ECMA_COLLECTION_ALLOCATED_SIZE (ECMA_COLLECTION_INITIAL_CAPACITY)
+
+/**
+ * Size shift of a compact collection
+ */
+#define ECMA_COMPACT_COLLECTION_SIZE_SHIFT 3
+
+/**
+ * Get the size of the compact collection
+ */
+#define ECMA_COMPACT_COLLECTION_GET_SIZE(compact_collection_p) \
+  ((compact_collection_p)[0] >> ECMA_COMPACT_COLLECTION_SIZE_SHIFT)
 
 /**
  * Direct string types (2 bit).
@@ -2158,6 +2182,45 @@ typedef struct
   uint32_t symbol_named_props; /**< number of symbol named properties */
   uint32_t lazy_string_named_props; /**< number of lazy instantiated properties */
 } ecma_property_counter_t;
+
+/**
+ * Arguments object related status flags
+ */
+typedef enum
+{
+  ECMA_ARGUMENTS_OBJECT_NO_FLAGS = 0,                    /* unmapped arguments object */
+  ECMA_ARGUMENTS_OBJECT_MAPPED = (1 << 0),               /* mapped arguments object */
+  ECMA_ARGUMENTS_OBJECT_STATIC_BYTECODE = (1 << 1),      /* static mapped arguments object */
+  ECMA_ARGUMENTS_OBJECT_CALLEE_INITIALIZED = (1 << 2),   /* 'callee' property has been lazy initialized */
+  ECMA_ARGUMENTS_OBJECT_CALLER_INITIALIZED = (1 << 3),   /* 'caller' property has been lazy initialized */
+  ECMA_ARGUMENTS_OBJECT_LENGTH_INITIALIZED = (1 << 4),   /* 'length' property has been lazy initialized */
+  ECMA_ARGUMENTS_OBJECT_ITERATOR_INITIALIZED = (1 << 5), /* 'Symbol.iterator' property has been lazy initialized */
+} ecma_arguments_object_flags_t;
+
+/**
+ * Definition of unmapped arguments object
+ */
+typedef struct
+{
+  ecma_extended_object_t header; /**< object header */
+  ecma_value_t callee; /**< 'callee' property */
+} ecma_unmapped_arguments_t;
+
+/**
+ * Definition of mapped arguments object
+ */
+typedef struct
+{
+  ecma_unmapped_arguments_t unmapped; /**< unmapped arguments object header */
+  ecma_value_t lex_env; /**< environment reference */
+  union
+  {
+    ecma_value_t byte_code; /**< callee's compiled code */
+#if ENABLED (JERRY_SNAPSHOT_EXEC)
+    ecma_compiled_code_t *byte_code_p; /**< real byte code pointer */
+#endif /* ENABLED (JERRY_SNAPSHOT_EXEC) */
+  } u;
+} ecma_mapped_arguments_t;
 
 /**
  * @}

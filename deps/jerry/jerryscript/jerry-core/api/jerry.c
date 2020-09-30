@@ -242,6 +242,10 @@ jerry_cleanup (void)
     }
   }
 
+#if ENABLED (JERRY_MODULE_SYSTEM)
+  ecma_module_cleanup ();
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
+
 #if ENABLED (JERRY_BUILTIN_PROMISE)
   ecma_free_all_enqueued_jobs ();
 #endif /* ENABLED (JERRY_BUILTIN_PROMISE) */
@@ -1001,7 +1005,7 @@ jerry_object_get_type (const jerry_value_t value) /**< input value to check */
   {
     case ECMA_OBJECT_TYPE_FUNCTION:
     case ECMA_OBJECT_TYPE_BOUND_FUNCTION:
-    case ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION:
+    case ECMA_OBJECT_TYPE_NATIVE_FUNCTION:
     {
       return JERRY_OBJECT_TYPE_FUNCTION;
     }
@@ -1145,7 +1149,7 @@ jerry_function_get_type (const jerry_value_t value) /**< input value to check */
       {
         return JERRY_FUNCTION_TYPE_BOUND;
       }
-      case ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION:
+      case ECMA_OBJECT_TYPE_NATIVE_FUNCTION:
       {
         return JERRY_FUNCTION_TYPE_GENERIC;
       }
@@ -3692,19 +3696,13 @@ jerry_resolve_or_reject_promise (jerry_value_t promise, /**< the promise value *
     return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (error_value_msg_p)));
   }
 
-  lit_magic_string_id_t prop_name = (is_resolve ? LIT_INTERNAL_MAGIC_STRING_RESOLVE_FUNCTION
-                                                : LIT_INTERNAL_MAGIC_STRING_REJECT_FUNCTION);
+  ecma_promise_object_t *promise_p = (ecma_promise_object_t *) ecma_get_object_from_value (promise);
+  ecma_value_t function = is_resolve ? promise_p->resolve : promise_p->reject;
 
-  ecma_value_t function = ecma_op_object_get_by_magic_id (ecma_get_object_from_value (promise), prop_name);
-
-  ecma_value_t ret = ecma_op_function_call (ecma_get_object_from_value (function),
-                                            ECMA_VALUE_UNDEFINED,
-                                            &argument,
-                                            1);
-
-  ecma_free_value (function);
-
-  return ret;
+  return ecma_op_function_call (ecma_get_object_from_value (function),
+                                ECMA_VALUE_UNDEFINED,
+                                &argument,
+                                1);
 #else /* !ENABLED (JERRY_BUILTIN_PROMISE) */
   JERRY_UNUSED (promise);
   JERRY_UNUSED (argument);
@@ -3795,6 +3793,35 @@ jerry_get_well_known_symbol (jerry_well_known_symbol_t symbol) /**< jerry_well_k
   return ECMA_VALUE_UNDEFINED;
 #endif /* ENABLED (JERRY_ESNEXT) */
 } /** jerry_get_well_known_symbol */
+
+/**
+ * Returns the description internal property of a symbol.
+ *
+ * Note:
+ *      returned value must be freed with jerry_release_value, when it is no longer needed.
+ *
+ * @return string or undefined value containing the symbol's description - if success
+ *         thrown error - otherwise
+ */
+jerry_value_t
+jerry_get_symbol_description (const jerry_value_t symbol) /**< symbol value */
+{
+  jerry_assert_api_available ();
+
+#if ENABLED (JERRY_ESNEXT)
+  if (!ecma_is_value_symbol (symbol))
+  {
+    return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG (wrong_args_msg_p)));
+  }
+
+  /* Note: This operation cannot throw an error */
+  return ecma_get_symbol_description (ecma_get_symbol_from_value (symbol));
+#else /* !ENABLED (JERRY_ESNEXT) */
+  JERRY_UNUSED (symbol);
+
+  return jerry_throw (ecma_raise_type_error (ECMA_ERR_MSG ("Symbol is not supported.")));
+#endif /* ENABLED (JERRY_ESNEXT) */
+} /* jerry_get_symbol_description */
 
 /**
  * Call the SymbolDescriptiveString ecma builtin operation on the symbol value.
@@ -4061,7 +4088,7 @@ jerry_get_resource_name (const jerry_value_t value) /**< jerry api value */
   {
     if (JERRY_CONTEXT (vm_top_context_p) != NULL)
     {
-      return ecma_copy_value (ecma_get_resource_name (JERRY_CONTEXT (vm_top_context_p)->bytecode_header_p));
+      return ecma_copy_value (ecma_get_resource_name (JERRY_CONTEXT (vm_top_context_p)->shared_p->bytecode_header_p));
     }
   }
   else if (ecma_is_value_object (value))
@@ -4177,7 +4204,7 @@ jerry_create_arraybuffer_external (const jerry_length_t size, /**< size of the b
 
   if (JERRY_UNLIKELY (size == 0 || buffer_p == NULL))
   {
-    arraybuffer = ecma_arraybuffer_new_object_external (0, UINTPTR_MAX, (ecma_object_native_free_callback_t) free_cb);
+    arraybuffer = ecma_arraybuffer_new_object_external (0, NULL, (ecma_object_native_free_callback_t) free_cb);
   }
   else
   {

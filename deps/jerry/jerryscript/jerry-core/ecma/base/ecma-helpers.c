@@ -784,7 +784,8 @@ ecma_free_property (ecma_object_t *object_p, /**< object the property belongs to
 
       /* Must be a native pointer. */
       JERRY_ASSERT (ECMA_PROPERTY_GET_NAME_TYPE (*property_p) == ECMA_DIRECT_STRING_MAGIC
-                    && name_cp >= LIT_FIRST_INTERNAL_MAGIC_STRING);
+                    && name_cp >= LIT_INTERNAL_MAGIC_STRING_FIRST_DATA
+                    && name_cp < LIT_MAGIC_STRING__COUNT);
       break;
     }
   }
@@ -1497,23 +1498,6 @@ ecma_bytecode_deref (ecma_compiled_code_t *bytecode_p) /**< byte code pointer */
                         ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG);
 } /* ecma_bytecode_deref */
 
-#if ENABLED (JERRY_ESNEXT)
-/**
- * Get the tagged template collection of the compiled code
- *
- * @return pointer to the tagged template collection
- */
-ecma_collection_t *
-ecma_compiled_code_get_tagged_template_collection (const ecma_compiled_code_t *bytecode_header_p) /**< compiled code */
-{
-  JERRY_ASSERT (bytecode_header_p != NULL);
-  JERRY_ASSERT (bytecode_header_p->status_flags & CBC_CODE_FLAGS_HAS_TAGGED_LITERALS);
-
-  ecma_value_t *base_p = ecma_compiled_code_resolve_function_name (bytecode_header_p);
-
-  return ECMA_GET_INTERNAL_VALUE_POINTER (ecma_collection_t, base_p[-1]);
-} /* ecma_compiled_code_get_tagged_template_collection */
-
 /**
  * Get the number of formal parameters of the compiled code
  *
@@ -1550,6 +1534,23 @@ ecma_compiled_code_resolve_arguments_start (const ecma_compiled_code_t *bytecode
 
   return ((ecma_value_t *) byte_p) - ecma_compiled_code_get_formal_params (bytecode_header_p);
 } /* ecma_compiled_code_resolve_arguments_start */
+
+#if ENABLED (JERRY_ESNEXT)
+/**
+ * Get the tagged template collection of the compiled code
+ *
+ * @return pointer to the tagged template collection
+ */
+ecma_collection_t *
+ecma_compiled_code_get_tagged_template_collection (const ecma_compiled_code_t *bytecode_header_p) /**< compiled code */
+{
+  JERRY_ASSERT (bytecode_header_p != NULL);
+  JERRY_ASSERT (bytecode_header_p->status_flags & CBC_CODE_FLAGS_HAS_TAGGED_LITERALS);
+
+  ecma_value_t *base_p = ecma_compiled_code_resolve_function_name (bytecode_header_p);
+
+  return ECMA_GET_INTERNAL_VALUE_POINTER (ecma_collection_t, base_p[-1]);
+} /* ecma_compiled_code_get_tagged_template_collection */
 
 /**
  * Resolve the position of the function name of the compiled code

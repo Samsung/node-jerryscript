@@ -15,6 +15,7 @@
 
 #include "ecma-alloc.h"
 #include "ecma-builtin-helpers.h"
+#include "ecma-builtin-handlers.h"
 #include "ecma-exceptions.h"
 #include "ecma-function-object.h"
 #include "ecma-gc.h"
@@ -24,10 +25,9 @@
 #include "ecma-lex-env.h"
 #include "ecma-objects.h"
 #include "ecma-objects-general.h"
-#include "ecma-objects-arguments.h"
+#include "ecma-arguments-object.h"
 #include "ecma-proxy-object.h"
 #include "ecma-symbol-object.h"
-#include "ecma-try-catch-macro.h"
 #include "jcontext.h"
 
 /** \addtogroup ecma ECMA
@@ -142,6 +142,11 @@ ecma_object_is_constructor (ecma_object_t *obj_p) /**< ecma object */
 
   ecma_object_type_t type = ecma_get_object_type (obj_p);
 
+  if (type < ECMA_OBJECT_TYPE_PROXY)
+  {
+    return false;
+  }
+
   while (type == ECMA_OBJECT_TYPE_BOUND_FUNCTION)
   {
     ecma_bound_function_t *bound_func_p = (ecma_bound_function_t *) obj_p;
@@ -164,7 +169,8 @@ ecma_object_is_constructor (ecma_object_t *obj_p) /**< ecma object */
     return (!ecma_get_object_is_builtin (obj_p) || !ecma_builtin_function_is_routine (obj_p));
   }
 
-  return (type >= ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION);
+  JERRY_ASSERT (type == ECMA_OBJECT_TYPE_NATIVE_FUNCTION);
+  return !ecma_get_object_is_builtin (obj_p);
 } /* ecma_object_is_constructor */
 
 /**
@@ -559,17 +565,17 @@ ecma_op_create_arrow_function_object (ecma_object_t *scope_p, /**< function's sc
  * @return pointer to newly created external function object
  */
 ecma_object_t *
-ecma_op_create_external_function_object (ecma_external_handler_t handler_cb) /**< pointer to external native handler */
+ecma_op_create_external_function_object (ecma_native_handler_t handler_cb) /**< pointer to external native handler */
 {
   ecma_object_t *prototype_obj_p = ecma_builtin_get (ECMA_BUILTIN_ID_FUNCTION_PROTOTYPE);
 
   ecma_object_t *function_obj_p;
   function_obj_p = ecma_create_object (prototype_obj_p,
                                        sizeof (ecma_extended_object_t),
-                                       ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION);
+                                       ECMA_OBJECT_TYPE_NATIVE_FUNCTION);
 
   /*
-   * [[Class]] property is not stored explicitly for objects of ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION type.
+   * [[Class]] property is not stored explicitly for objects of ECMA_OBJECT_TYPE_NATIVE_FUNCTION type.
    *
    * See also: ecma_object_get_class_name
    */
@@ -579,6 +585,31 @@ ecma_op_create_external_function_object (ecma_external_handler_t handler_cb) /**
 
   return function_obj_p;
 } /* ecma_op_create_external_function_object */
+
+#if ENABLED (JERRY_ESNEXT)
+/**
+ * Create built-in native handler object.
+ *
+ * @return pointer to newly created native handler object
+ */
+ecma_object_t *
+ecma_op_create_native_handler (ecma_native_handler_id_t id, /**< handler id */
+                               size_t object_size) /**< created object size */
+{
+  ecma_object_t *prototype_obj_p = ecma_builtin_get (ECMA_BUILTIN_ID_FUNCTION_PROTOTYPE);
+
+  ecma_object_t *function_obj_p = ecma_create_object (prototype_obj_p,
+                                                      object_size,
+                                                      ECMA_OBJECT_TYPE_NATIVE_FUNCTION);
+  ecma_set_object_is_builtin (function_obj_p);
+
+  ecma_extended_object_t *ext_func_obj_p = (ecma_extended_object_t *) function_obj_p;
+  ext_func_obj_p->u.native_handler.id = id;
+  ext_func_obj_p->u.native_handler.flags = ECMA_NATIVE_HANDLER_FLAGS_NONE;
+
+  return function_obj_p;
+} /* ecma_op_create_native_handler */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Get compiled code of a function object.
@@ -659,7 +690,7 @@ ecma_op_function_has_instance (ecma_object_t *func_obj_p, /**< Function object *
   }
 
   JERRY_ASSERT (ecma_get_object_type (func_obj_p) == ECMA_OBJECT_TYPE_FUNCTION
-                || ecma_get_object_type (func_obj_p) == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION
+                || ecma_get_object_type (func_obj_p) == ECMA_OBJECT_TYPE_NATIVE_FUNCTION
                 || ECMA_OBJECT_IS_PROXY (func_obj_p));
 
   ecma_object_t *v_obj_p = ecma_get_object_from_value (value);
@@ -846,6 +877,14 @@ ecma_op_function_call_simple (ecma_object_t *func_obj_p, /**< Function object */
     return ecma_builtin_dispatch_call (func_obj_p, this_arg_value, arguments_list_p, arguments_list_len);
   }
 
+  vm_frame_ctx_shared_args_t shared_args;
+  shared_args.header.status_flags = VM_FRAME_CTX_SHARED_HAS_ARG_LIST;
+  shared_args.arg_list_p = arguments_list_p;
+  shared_args.arg_list_len = arguments_list_len;
+#if ENABLED (JERRY_ESNEXT)
+  shared_args.function_object_p = func_obj_p;
+#endif /* ENABLED (JERRY_ESNEXT) */
+
   /* Entering Function Code (ECMA-262 v5, 10.4.3) */
   ecma_extended_object_t *ext_func_p = (ecma_extended_object_t *) func_obj_p;
 
@@ -854,25 +893,14 @@ ecma_op_function_call_simple (ecma_object_t *func_obj_p, /**< Function object */
 
   /* 8. */
   ecma_value_t this_binding = this_arg_value;
-  bool free_this_binding = false;
 
   const ecma_compiled_code_t *bytecode_data_p = ecma_op_function_get_compiled_code (ext_func_p);
   uint16_t status_flags = bytecode_data_p->status_flags;
 
-#if ENABLED (JERRY_ESNEXT)
-  uint16_t function_type = CBC_FUNCTION_GET_TYPE (status_flags);
-
-  if (JERRY_UNLIKELY (function_type == CBC_FUNCTION_CONSTRUCTOR)
-      && JERRY_CONTEXT (current_new_target) == NULL)
-  {
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Class constructor cannot be invoked without 'new'."));
-  }
-#endif /* ENABLED (JERRY_ESNEXT) */
+  shared_args.header.bytecode_header_p = bytecode_data_p;
 
   /* 1. */
 #if ENABLED (JERRY_ESNEXT)
-  ecma_object_t *old_function_object_p = JERRY_CONTEXT (current_function_obj_p);
-
   if (JERRY_UNLIKELY (CBC_FUNCTION_IS_ARROW (status_flags)))
   {
     ecma_arrow_function_t *arrow_func_p = (ecma_arrow_function_t *) func_obj_p;
@@ -889,8 +917,9 @@ ecma_op_function_call_simple (ecma_object_t *func_obj_p, /**< Function object */
   }
   else
   {
-    JERRY_CONTEXT (current_function_obj_p) = func_obj_p;
+    shared_args.header.status_flags |= VM_FRAME_CTX_SHARED_NON_ARROW_FUNC;
 #endif /* ENABLED (JERRY_ESNEXT) */
+
     if (!(status_flags & CBC_CODE_FLAGS_STRICT_MODE))
     {
       if (ecma_is_value_undefined (this_binding)
@@ -903,7 +932,7 @@ ecma_op_function_call_simple (ecma_object_t *func_obj_p, /**< Function object */
       {
         /* 3., 4. */
         this_binding = ecma_op_to_object (this_binding);
-        free_this_binding = true;
+        shared_args.header.status_flags |= VM_FRAME_CTX_SHARED_FREE_THIS;
 
         JERRY_ASSERT (!ECMA_IS_VALUE_ERROR (this_binding));
       }
@@ -913,45 +942,45 @@ ecma_op_function_call_simple (ecma_object_t *func_obj_p, /**< Function object */
 #endif /* ENABLED (JERRY_ESNEXT) */
 
   /* 5. */
-  ecma_object_t *local_env_p;
-  if (status_flags & CBC_CODE_FLAGS_LEXICAL_ENV_NOT_NEEDED)
+  if (!(status_flags & CBC_CODE_FLAGS_LEXICAL_ENV_NOT_NEEDED))
   {
-    local_env_p = scope_p;
+    shared_args.header.status_flags |= VM_FRAME_CTX_SHARED_FREE_LOCAL_ENV;
+    scope_p = ecma_create_decl_lex_env (scope_p);
+
+    if (JERRY_UNLIKELY (status_flags & CBC_CODE_FLAGS_IS_ARGUMENTS_NEEDED))
+    {
+      ecma_op_create_arguments_object (func_obj_p, scope_p, &shared_args);
+    }
   }
-  else
-  {
-    local_env_p = ecma_create_decl_lex_env (scope_p);
-    if (bytecode_data_p->status_flags & CBC_CODE_FLAGS_IS_ARGUMENTS_NEEDED)
-    {
-      ecma_op_create_arguments_object (func_obj_p,
-                                       local_env_p,
-                                       arguments_list_p,
-                                       arguments_list_len,
-                                       bytecode_data_p);
-    }
+
+  ecma_value_t ret_value;
+
 #if ENABLED (JERRY_ESNEXT)
-    // ECMAScript v6, 9.2.2.8
-    if (JERRY_UNLIKELY (function_type == CBC_FUNCTION_CONSTRUCTOR))
+  if (JERRY_UNLIKELY (CBC_FUNCTION_GET_TYPE (status_flags) == CBC_FUNCTION_CONSTRUCTOR))
+  {
+    if (JERRY_CONTEXT (current_new_target) == NULL)
     {
-      ecma_value_t lexical_this;
-      lexical_this = (ECMA_GET_THIRD_BIT_FROM_POINTER_TAG (ext_func_p->u.function.scope_cp) ? ECMA_VALUE_UNINITIALIZED
-                                                                                            : this_binding);
-      ecma_op_init_this_binding (local_env_p, lexical_this);
+      ret_value = ecma_raise_type_error (ECMA_ERR_MSG ("Class constructor cannot be invoked without 'new'."));
+      goto exit;
     }
+
+    ecma_value_t lexical_this = this_binding;
+
+    if (ECMA_GET_THIRD_BIT_FROM_POINTER_TAG (ext_func_p->u.function.scope_cp))
+    {
+      shared_args.header.status_flags |= VM_FRAME_CTX_SHARED_HERITAGE_PRESENT;
+      lexical_this = ECMA_VALUE_UNINITIALIZED;
+    }
+
+    ecma_op_init_this_binding (scope_p, lexical_this);
+  }
 #endif /* ENABLED (JERRY_ESNEXT) */
-  }
 
-  ecma_value_t ret_value = vm_run (bytecode_data_p,
-                                   this_binding,
-                                   local_env_p,
-                                   arguments_list_p,
-                                   arguments_list_len);
+  ret_value = vm_run (&shared_args.header, this_binding, scope_p);
 
 #if ENABLED (JERRY_ESNEXT)
-  JERRY_CONTEXT (current_function_obj_p) = old_function_object_p;
-
   /* ECMAScript v6, 9.2.2.13 */
-  if (ECMA_GET_THIRD_BIT_FROM_POINTER_TAG (ext_func_p->u.function.scope_cp))
+  if (JERRY_UNLIKELY (shared_args.header.status_flags & VM_FRAME_CTX_SHARED_HERITAGE_PRESENT))
   {
     if (!ECMA_IS_VALUE_ERROR (ret_value) && !ecma_is_value_object (ret_value))
     {
@@ -962,19 +991,20 @@ ecma_op_function_call_simple (ecma_object_t *func_obj_p, /**< Function object */
       }
       else
       {
-        ret_value = ecma_op_get_this_binding (local_env_p);
+        ret_value = ecma_op_get_this_binding (scope_p);
       }
     }
   }
 
+exit:
 #endif /* ENABLED (JERRY_ESNEXT) */
 
-  if (!(status_flags & CBC_CODE_FLAGS_LEXICAL_ENV_NOT_NEEDED))
+  if (JERRY_UNLIKELY (shared_args.header.status_flags & VM_FRAME_CTX_SHARED_FREE_LOCAL_ENV))
   {
-    ecma_deref_object (local_env_p);
+    ecma_deref_object (scope_p);
   }
 
-  if (JERRY_UNLIKELY (free_this_binding))
+  if (JERRY_UNLIKELY (shared_args.header.status_flags & VM_FRAME_CTX_SHARED_FREE_THIS))
   {
     ecma_free_value (this_binding);
   }
@@ -988,16 +1018,24 @@ ecma_op_function_call_simple (ecma_object_t *func_obj_p, /**< Function object */
  * @return the result of the function call.
  */
 static ecma_value_t JERRY_ATTR_NOINLINE
-ecma_op_function_call_external (ecma_object_t *func_obj_p, /**< Function object */
-                                ecma_value_t this_arg_value, /**< 'this' argument's value */
-                                const ecma_value_t *arguments_list_p, /**< arguments list */
-                                uint32_t arguments_list_len) /**< length of arguments list */
+ecma_op_function_call_native (ecma_object_t *func_obj_p, /**< Function object */
+                              ecma_value_t this_arg_value, /**< 'this' argument's value */
+                              const ecma_value_t *arguments_list_p, /**< arguments list */
+                              uint32_t arguments_list_len) /**< length of arguments list */
 
 {
-  JERRY_ASSERT (ecma_get_object_type (func_obj_p) == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION);
+  JERRY_ASSERT (ecma_get_object_type (func_obj_p) == ECMA_OBJECT_TYPE_NATIVE_FUNCTION);
   ecma_extended_object_t *ext_func_obj_p = (ecma_extended_object_t *) func_obj_p;
-  JERRY_ASSERT (ext_func_obj_p->u.external_handler_cb != NULL);
 
+#if ENABLED (JERRY_ESNEXT)
+  if (ecma_get_object_is_builtin (func_obj_p))
+  {
+    ecma_native_handler_t handler = ecma_builtin_handler_get (ext_func_obj_p->u.native_handler.id);
+    return handler (ecma_make_object_value (func_obj_p), this_arg_value, arguments_list_p, arguments_list_len);
+  }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
+  JERRY_ASSERT (ext_func_obj_p->u.external_handler_cb != NULL);
   ecma_value_t ret_value = ext_func_obj_p->u.external_handler_cb (ecma_make_object_value (func_obj_p),
                                                                   this_arg_value,
                                                                   arguments_list_p,
@@ -1012,7 +1050,7 @@ ecma_op_function_call_external (ecma_object_t *func_obj_p, /**< Function object 
   JERRY_DEBUGGER_CLEAR_FLAGS (JERRY_DEBUGGER_VM_EXCEPTION_THROWN);
 #endif /* ENABLED (JERRY_DEBUGGER) */
   return ret_value;
-} /* ecma_op_function_call_external */
+} /* ecma_op_function_call_native */
 
 /**
  * Append the bound arguments into the given collection
@@ -1142,9 +1180,9 @@ ecma_op_function_call (ecma_object_t *func_obj_p, /**< Function object */
   {
     result = ecma_op_function_call_simple (func_obj_p, this_arg_value, arguments_list_p, arguments_list_len);
   }
-  else if (type == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION)
+  else if (type == ECMA_OBJECT_TYPE_NATIVE_FUNCTION)
   {
-    result = ecma_op_function_call_external (func_obj_p, this_arg_value, arguments_list_p, arguments_list_len);
+    result = ecma_op_function_call_native (func_obj_p, this_arg_value, arguments_list_p, arguments_list_len);
   }
   else
   {
@@ -1200,13 +1238,13 @@ ecma_op_function_construct_bound (ecma_object_t *func_obj_p, /**< Function objec
  * @return ecma value
  *         Returned value must be freed with ecma_free_value
  */
-static ecma_value_t JERRY_ATTR_NOINLINE
-ecma_op_function_construct_external (ecma_object_t *func_obj_p, /**< Function object */
-                                     ecma_object_t *new_target_p, /**< new target */
-                                     const ecma_value_t *arguments_list_p, /**< arguments list */
-                                     uint32_t arguments_list_len) /**< length of arguments list */
+static ecma_value_t
+ecma_op_function_construct_native (ecma_object_t *func_obj_p, /**< Function object */
+                                   ecma_object_t *new_target_p, /**< new target */
+                                   const ecma_value_t *arguments_list_p, /**< arguments list */
+                                   uint32_t arguments_list_len) /**< length of arguments list */
 {
-  JERRY_ASSERT (ecma_get_object_type (func_obj_p) == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION);
+  JERRY_ASSERT (ecma_get_object_type (func_obj_p) == ECMA_OBJECT_TYPE_NATIVE_FUNCTION);
 
   ecma_object_t *proto_p = ecma_op_get_prototype_from_constructor (new_target_p, ECMA_BUILTIN_ID_OBJECT_PROTOTYPE);
 
@@ -1224,7 +1262,7 @@ ecma_op_function_construct_external (ecma_object_t *func_obj_p, /**< Function ob
   JERRY_CONTEXT (current_new_target) = new_target_p;
 #endif /* ENABLED (JERRY_ESNEXT) */
 
-  ecma_value_t ret_value = ecma_op_function_call_external (func_obj_p, this_arg, arguments_list_p, arguments_list_len);
+  ecma_value_t ret_value = ecma_op_function_call_native (func_obj_p, this_arg, arguments_list_p, arguments_list_len);
 
 #if ENABLED (JERRY_ESNEXT)
   JERRY_CONTEXT (current_new_target) = old_new_target_p;
@@ -1239,7 +1277,7 @@ ecma_op_function_construct_external (ecma_object_t *func_obj_p, /**< Function ob
   ecma_free_value (ret_value);
 
   return this_arg;
-} /* ecma_op_function_construct_external */
+} /* ecma_op_function_construct_native */
 
 /**
  * General [[Construct]] implementation function objects
@@ -1275,9 +1313,9 @@ ecma_op_function_construct (ecma_object_t *func_obj_p, /**< Function object */
     return ecma_op_function_construct_bound (func_obj_p, new_target_p, arguments_list_p, arguments_list_len);
   }
 
-  if (JERRY_UNLIKELY (type == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION))
+  if (JERRY_UNLIKELY (type == ECMA_OBJECT_TYPE_NATIVE_FUNCTION))
   {
-    return ecma_op_function_construct_external (func_obj_p, new_target_p, arguments_list_p, arguments_list_len);
+    return ecma_op_function_construct_native (func_obj_p, new_target_p, arguments_list_p, arguments_list_len);
   }
 
   JERRY_ASSERT (type == ECMA_OBJECT_TYPE_FUNCTION);
@@ -1404,7 +1442,7 @@ static ecma_property_t *
 ecma_op_lazy_instantiate_prototype_object (ecma_object_t *object_p) /**< the function object */
 {
   JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_FUNCTION
-                || ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION);
+                || ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_NATIVE_FUNCTION);
 
   /* ECMA-262 v5, 13.2, 16-18 */
 
@@ -1616,39 +1654,66 @@ ecma_property_t *
 ecma_op_external_function_try_to_lazy_instantiate_property (ecma_object_t *object_p, /**< object */
                                                             ecma_string_t *property_name_p) /**< property's name */
 {
-  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION);
+  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_NATIVE_FUNCTION);
 
   if (ecma_compare_ecma_string_to_magic_id (property_name_p, LIT_MAGIC_STRING_PROTOTYPE))
   {
     return ecma_op_lazy_instantiate_prototype_object (object_p);
   }
 
-#if ENABLED (JERRY_ESNEXT)
-  if (ecma_compare_ecma_string_to_magic_id (property_name_p, LIT_MAGIC_STRING_LENGTH))
-  {
-    ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
-    ecma_external_handler_t handler = ext_obj_p->u.external_handler_cb;
+  return NULL;
+} /* ecma_op_external_function_try_to_lazy_instantiate_property */
 
-    if (handler == ecma_promise_then_finally_cb
-        || handler == ecma_promise_catch_finally_cb
-        || handler == ecma_promise_resolve_handler
-        || handler == ecma_promise_reject_handler
-        || handler == ecma_promise_all_handler_cb
-        || handler == ecma_op_get_capabilities_executor_cb)
+#if ENABLED (JERRY_ESNEXT)
+/**
+ * Create specification defined properties for built-in native handlers.
+ *
+ * @return pointer property, if one was instantiated,
+ *         NULL - otherwise.
+ */
+ecma_property_t *
+ecma_op_native_handler_try_to_lazy_instantiate_property (ecma_object_t *object_p, /**< object */
+                                                         ecma_string_t *property_name_p) /**< property's name */
+{
+  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_NATIVE_FUNCTION
+                && ecma_get_object_is_builtin (object_p));
+
+  ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
+  ecma_property_t *prop_p = NULL;
+
+  if (ecma_compare_ecma_string_to_magic_id (property_name_p, LIT_MAGIC_STRING_NAME))
+  {
+    if ((ext_obj_p->u.native_handler.flags & ECMA_NATIVE_HANDLER_FLAGS_NAME_INITIALIZED) == 0)
     {
-      ecma_property_t *value_prop_p;
       ecma_property_value_t *value_p = ecma_create_named_data_property (object_p,
                                                                         property_name_p,
                                                                         ECMA_PROPERTY_FLAG_CONFIGURABLE,
-                                                                        &value_prop_p);
-      value_p->value = ecma_make_uint32_value (handler == ecma_op_get_capabilities_executor_cb ? 2 : 1);
-      return value_prop_p;
+                                                                        &prop_p);
+
+      value_p->value = ecma_make_magic_string_value (LIT_MAGIC_STRING__EMPTY);
+
+      ext_obj_p->u.native_handler.flags |= ECMA_NATIVE_HANDLER_FLAGS_NAME_INITIALIZED;
     }
   }
-#endif /* ENABLED (JERRY_ESNEXT) */
+  else if (ecma_compare_ecma_string_to_magic_id (property_name_p, LIT_MAGIC_STRING_LENGTH))
+  {
+    if ((ext_obj_p->u.native_handler.flags & ECMA_NATIVE_HANDLER_FLAGS_LENGTH_INITIALIZED) == 0)
+    {
+      ecma_property_value_t *value_p = ecma_create_named_data_property (object_p,
+                                                                        property_name_p,
+                                                                        ECMA_PROPERTY_FLAG_CONFIGURABLE,
+                                                                        &prop_p);
 
-  return NULL;
-} /* ecma_op_external_function_try_to_lazy_instantiate_property */
+      const uint8_t length = ecma_builtin_handler_get_length (ext_obj_p->u.native_handler.id);
+      value_p->value = ecma_make_integer_value (length);
+
+      ext_obj_p->u.native_handler.flags |= ECMA_NATIVE_HANDLER_FLAGS_LENGTH_INITIALIZED;
+    }
+  }
+
+  return prop_p;
+} /* ecma_op_native_handler_try_to_lazy_instantiate_property */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Create specification defined non-configurable properties for bound functions.
@@ -1704,7 +1769,7 @@ ecma_op_bound_function_try_to_lazy_instantiate_property (ecma_object_t *object_p
       JERRY_ASSERT (!ECMA_IS_VALUE_ERROR (get_len_value));
       JERRY_ASSERT (ecma_is_value_integer_number (get_len_value));
 
-      length = ecma_get_integer_from_value (get_len_value) - (args_length - 1);
+      length = (ecma_number_t) (ecma_get_integer_from_value (get_len_value) - (args_length - 1));
     }
 #endif /* ENABLED (JERRY_ESNEXT) */
 
@@ -1825,6 +1890,37 @@ ecma_op_external_function_list_lazy_property_names (ecma_object_t *object_p, /**
     prop_counter_p->string_named_props++;
   }
 } /* ecma_op_external_function_list_lazy_property_names */
+
+#if ENABLED (JERRY_ESNEXT)
+/**
+ * List names of an Built-in native handler object's lazy instantiated properties,
+ * adding them to corresponding string collections
+ *
+ * See also:
+ *          ecma_op_native_handler_try_to_lazy_instantiate_property
+ */
+void
+ecma_op_native_handler_list_lazy_property_names (ecma_object_t *object_p, /**< function object */
+                                                 ecma_collection_t *prop_names_p, /**< prop name collection */
+                                                 ecma_property_counter_t *prop_counter_p)  /**< prop counter */
+{
+  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_NATIVE_FUNCTION
+                && ecma_get_object_is_builtin (object_p));
+  ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
+
+  if ((ext_obj_p->u.native_handler.flags & ECMA_NATIVE_HANDLER_FLAGS_NAME_INITIALIZED) == 0)
+  {
+    ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_NAME));
+    prop_counter_p->string_named_props++;
+  }
+
+  if ((ext_obj_p->u.native_handler.flags & ECMA_NATIVE_HANDLER_FLAGS_LENGTH_INITIALIZED) == 0)
+  {
+    ecma_collection_push_back (prop_names_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+    prop_counter_p->string_named_props++;
+  }
+} /* ecma_op_native_handler_list_lazy_property_names */
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * List names of a Bound Function object's lazy instantiated properties,

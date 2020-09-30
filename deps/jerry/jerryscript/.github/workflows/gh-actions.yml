@@ -60,15 +60,24 @@ jobs:
       - name: Unit Tests
         run: $RUNNER --unittests -q
 
-  Conformance_Tests_ES5_1:
+  Linux_x86-64_Build_Option_Tests:
     runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v1
+      - name: Initializtaion
+        run: sudo apt-get install gcc-multilib
+      - name: Buildoption tests
+        run: $RUNNER --buildoption-test
+
+  Conformance_Tests_ES5_1:
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v1
       - name: Test262 - ES5.1
         run: $RUNNER --test262
 
   Conformance_Tests_ES2015:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v1
       - name: Test262 - ES2015
@@ -80,7 +89,7 @@ jobs:
           path: build/tests/test262_tests_es2015/local/bin/test262.report
 
   Conformance_Tests_ESNext_A:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v1
       - name: Test262 - ESNext (built-ins,annexB,harness,intl402)
@@ -92,7 +101,7 @@ jobs:
           path: build/tests/test262_tests_esnext/local/bin/test262.report
 
   Conformance_Tests_ESNext_B:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v1
       - name: Test262 - ESNext (language)

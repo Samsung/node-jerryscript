@@ -45,7 +45,8 @@ typedef enum
   SCAN_MODE_CONTINUE_FUNCTION_ARGUMENTS,   /**< continue scanning function arguments */
   SCAN_MODE_BINDING,                       /**< array or object binding */
   SCAN_MODE_CLASS_DECLARATION,             /**< scanning class declaration */
-  SCAN_MODE_CLASS_METHOD,                  /**< scanning class method */
+  SCAN_MODE_CLASS_BODY,                    /**< scanning class body */
+  SCAN_MODE_CLASS_BODY_NO_SCAN,            /**< scanning class body without calling lexer_scan_identifier */
 #endif /* ENABLED (JERRY_ESNEXT) */
 } scan_modes_t;
 
@@ -59,7 +60,7 @@ typedef enum
   SCAN_STACK_BLOCK_STATEMENT,              /**< block statement group */
   SCAN_STACK_FUNCTION_STATEMENT,           /**< function statement */
   SCAN_STACK_FUNCTION_EXPRESSION,          /**< function expression */
-  SCAN_STACK_FUNCTION_PROPERTY,            /**< function expression in an object literal or class */
+  SCAN_STACK_FUNCTION_PROPERTY,            /**< function expression in an object literal */
 #if ENABLED (JERRY_ESNEXT)
   SCAN_STACK_FUNCTION_ARROW,               /**< arrow function expression */
 #endif /* ENABLED (JERRY_ESNEXT) */
@@ -113,6 +114,7 @@ typedef enum
   SCAN_STACK_CLASS_STATEMENT,              /**< class statement */
   SCAN_STACK_CLASS_EXPRESSION,             /**< class expression */
   SCAN_STACK_CLASS_EXTENDS,                /**< class extends expression */
+  SCAN_STACK_CLASS_FIELD_INITIALIZER,      /**< class field initializer */
   SCAN_STACK_FUNCTION_PARAMETERS,          /**< function parameter initializer */
   SCAN_STACK_FOR_START_PATTERN,            /**< possible assignment pattern for "for" iterator */
   SCAN_STACK_USE_ASYNC,                    /**< an "async" identifier is used */
@@ -273,17 +275,17 @@ typedef struct scanner_binding_list_t
 typedef enum
 {
   SCANNER_LITERAL_POOL_FUNCTION = (1 << 0), /**< literal pool represents a function */
-  SCANNER_LITERAL_POOL_BLOCK = (1 << 1), /**< literal pool represents a code block */
-  SCANNER_LITERAL_POOL_IS_STRICT = (1 << 2), /**< literal pool represents a strict mode code block */
-  SCANNER_LITERAL_POOL_CAN_EVAL = (1 << 3), /**< prepare for executing eval in this block */
-  SCANNER_LITERAL_POOL_NO_ARGUMENTS = (1 << 4), /**< arguments object must not be constructed */
 #if ENABLED (JERRY_ESNEXT)
-  SCANNER_LITERAL_POOL_HAS_COMPLEX_ARGUMENT = (1 << 5), /**< function has complex (ES2015+) argument definition */
+  SCANNER_LITERAL_POOL_CLASS_NAME = (1 << 1), /**< literal pool which contains a class name */
+  SCANNER_LITERAL_POOL_CLASS_FIELD = (1 << 2), /**< literal pool is created for a class field initializer */
 #endif /* ENABLED (JERRY_ESNEXT) */
-  SCANNER_LITERAL_POOL_IN_WITH = (1 << 6), /**< literal pool is in a with statement */
-#if ENABLED (JERRY_MODULE_SYSTEM)
-  SCANNER_LITERAL_POOL_IN_EXPORT = (1 << 7), /**< the declared variables are exported by the module system */
-#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
+  SCANNER_LITERAL_POOL_IS_STRICT = (1 << 3), /**< literal pool represents a strict mode code block */
+  SCANNER_LITERAL_POOL_CAN_EVAL = (1 << 4), /**< prepare for executing eval in this block */
+  SCANNER_LITERAL_POOL_NO_ARGUMENTS = (1 << 5), /**< arguments object must not be constructed */
+#if ENABLED (JERRY_ESNEXT)
+  SCANNER_LITERAL_POOL_HAS_COMPLEX_ARGUMENT = (1 << 6), /**< function has complex (ES2015+) argument definition */
+#endif /* ENABLED (JERRY_ESNEXT) */
+  SCANNER_LITERAL_POOL_IN_WITH = (1 << 7), /**< literal pool is in a with statement */
 #if ENABLED (JERRY_ESNEXT)
   SCANNER_LITERAL_POOL_FUNCTION_STATEMENT = (1 << 8), /**< function statement */
   SCANNER_LITERAL_POOL_ARROW = (1 << 9), /**< arrow function */
@@ -291,6 +293,9 @@ typedef enum
   SCANNER_LITERAL_POOL_ASYNC = (1 << 11), /**< async function */
   SCANNER_LITERAL_POOL_HAS_SUPER_REFERENCE = (1 << 12), /**< function body contains super reference */
 #endif /* ENABLED (JERRY_ESNEXT) */
+#if ENABLED (JERRY_MODULE_SYSTEM)
+  SCANNER_LITERAL_POOL_IN_EXPORT = (1 << 13), /**< the declared variables are exported by the module system */
+#endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 } scanner_literal_pool_flags_t;
 
 /**
@@ -316,6 +321,28 @@ typedef enum
  */
 #define SCANNER_FROM_COMPUTED_TO_LITERAL_POOL(mode) \
   (((mode) - SCAN_STACK_COMPUTED_PROPERTY) << 10)
+
+#if ENABLED (JERRY_ESNEXT)
+
+/**
+ * Literal pool which may contains function argument identifiers
+ */
+#define SCANNER_LITERAL_POOL_MAY_HAVE_ARGUMENTS(status_flags) \
+  (!((status_flags) & (SCANNER_LITERAL_POOL_CLASS_NAME | SCANNER_LITERAL_POOL_CLASS_FIELD)))
+
+/**
+ * The class name is the *default* class name
+ */
+#define SCANNER_LITERAL_POOL_DEFAULT_CLASS_NAME SCANNER_LITERAL_POOL_HAS_SUPER_REFERENCE
+
+#else /* !ENABLED (JERRY_ESNEXT) */
+
+/**
+ * Literal pool which may contains function argument identifiers
+ */
+#define SCANNER_LITERAL_POOL_MAY_HAVE_ARGUMENTS(status_flags) true
+
+#endif /* ENABLED (JERRY_ESNEXT) */
 
 /**
  * Local literal pool.
@@ -385,8 +412,9 @@ void scanner_detect_invalid_let (parser_context_t *context_p, lexer_lit_location
 void scanner_detect_eval_call (parser_context_t *context_p, scanner_context_t *scanner_context_p);
 
 #if ENABLED (JERRY_ESNEXT)
-void scanner_push_class_declaration (parser_context_t *context_p, scanner_context_t *scanner_context_p,
-                                     uint8_t stack_mode);
+lexer_lit_location_t *scanner_push_class_declaration (parser_context_t *context_p,
+                                                      scanner_context_t *scanner_context_p, uint8_t stack_mode);
+void scanner_push_class_field_initializer (parser_context_t *context_p, scanner_context_t *scanner_context_p);
 void scanner_push_destructuring_pattern (parser_context_t *context_p, scanner_context_t *scanner_context_p,
                                          uint8_t binding_type, bool is_nested);
 void scanner_pop_binding_list (scanner_context_t *scanner_context_p);

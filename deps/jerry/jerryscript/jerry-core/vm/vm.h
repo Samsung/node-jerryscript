@@ -260,6 +260,11 @@ typedef enum
   VM_OC_PUSH_IMPLICIT_CTOR,      /**< create implicit class constructor */
   VM_OC_INIT_CLASS,              /**< initialize class */
   VM_OC_FINALIZE_CLASS,          /**< finalize class */
+  VM_OC_SET_FIELD_INIT,          /**< store the class field initializer function */
+  VM_OC_SET_STATIC_FIELD_INIT,   /**< store the static class field initializer function */
+  VM_OC_RUN_FIELD_INIT,          /**< run the class field initializer function */
+  VM_OC_RUN_STATIC_FIELD_INIT,   /**< run the static class field initializer function */
+  VM_OC_SET_NEXT_COMPUTED_FIELD, /**< set the next computed field of a class */
   VM_OC_PUSH_SUPER_CONSTRUCTOR,  /**< getSuperConstructor operation */
   VM_OC_RESOLVE_LEXICAL_THIS,    /**< resolve this_binding from from the lexical environment */
   VM_OC_SUPER_REFERENCE,         /**< push super reference */
@@ -268,6 +273,7 @@ typedef enum
   VM_OC_SET_FUNCTION_NAME,       /**< set function name property */
 
   VM_OC_PUSH_SPREAD_ELEMENT,     /**< push spread element */
+  VM_OC_PUSH_REST_OBJECT,        /**< push rest object */
   VM_OC_GET_ITERATOR,            /**< GetIterator abstract operation */
   VM_OC_ITERATOR_STEP,           /**< IteratorStep abstract operation */
   VM_OC_ITERATOR_CLOSE,          /**< IteratorClose abstract operation */
@@ -289,7 +295,9 @@ typedef enum
   VM_OC_PUSH_NEW_TARGET,         /**< push new.target onto the stack */
   VM_OC_REQUIRE_OBJECT_COERCIBLE,/**< RequireObjectCoercible opretaion */
   VM_OC_ASSIGN_SUPER,            /**< assign super reference */
-  VM_OC_SET__PROTO__,            /**< set prototpe when __proto__: form is used */
+  VM_OC_SET__PROTO__,            /**< set prototype when __proto__: form is used */
+  VM_OC_PUSH_STATIC_FIELD_FUNC,  /**< push static field initializer function */
+  VM_OC_ADD_COMPUTED_FIELD,      /**< add computed field name */
 #endif /* ENABLED (JERRY_ESNEXT) */
   VM_OC_NONE,                    /**< a special opcode for unsupported byte codes */
 } vm_oc_types;
@@ -337,6 +345,11 @@ typedef enum
   VM_OC_PUSH_IMPLICIT_CTOR = VM_OC_NONE,      /**< create implicit class constructor */
   VM_OC_INIT_CLASS = VM_OC_NONE,              /**< initialize class */
   VM_OC_FINALIZE_CLASS = VM_OC_NONE,          /**< finalize class */
+  VM_OC_SET_FIELD_INIT = VM_OC_NONE,          /**< store the class field initializer function */
+  VM_OC_SET_STATIC_FIELD_INIT = VM_OC_NONE,   /**< store the static class field initializer function */
+  VM_OC_RUN_FIELD_INIT = VM_OC_NONE,          /**< run the class field initializer function */
+  VM_OC_RUN_STATIC_FIELD_INIT = VM_OC_NONE,   /**< run the static class field initializer function */
+  VM_OC_SET_NEXT_COMPUTED_FIELD = VM_OC_NONE, /**< set the next computed field of a class */
   VM_OC_PUSH_SUPER_CONSTRUCTOR = VM_OC_NONE,  /**< getSuperConstructor operation */
   VM_OC_RESOLVE_LEXICAL_THIS = VM_OC_NONE,    /**< resolve this_binding from from the lexical environment */
   VM_OC_SUPER_REFERENCE = VM_OC_NONE,         /**< push super reference */
@@ -345,6 +358,7 @@ typedef enum
   VM_OC_SET_FUNCTION_NAME = VM_OC_NONE,       /**< set function name property */
 
   VM_OC_PUSH_SPREAD_ELEMENT = VM_OC_NONE,     /**< push spread element */
+  VM_OC_PUSH_REST_OBJECT = VM_OC_NONE,        /**< push rest object */
   VM_OC_GET_ITERATOR = VM_OC_NONE,            /**< GetIterator abstract operation */
   VM_OC_ITERATOR_STEP = VM_OC_NONE,           /**< IteratorStep abstract operation */
   VM_OC_ITERATOR_CLOSE = VM_OC_NONE,          /**< IteratorClose abstract operation */
@@ -366,7 +380,9 @@ typedef enum
   VM_OC_PUSH_NEW_TARGET = VM_OC_NONE,         /**< push new.target onto the stack */
   VM_OC_REQUIRE_OBJECT_COERCIBLE = VM_OC_NONE,/**< RequireObjectCoercible opretaion */
   VM_OC_ASSIGN_SUPER = VM_OC_NONE,            /**< assign super reference */
-  VM_OC_SET__PROTO__ = VM_OC_NONE,            /**< set prototpe when __proto__: form is used */
+  VM_OC_SET__PROTO__ = VM_OC_NONE,            /**< set prototype when __proto__: form is used */
+  VM_OC_PUSH_STATIC_FIELD_FUNC = VM_OC_NONE,  /**< push static field initializer function */
+  VM_OC_ADD_COMPUTED_FIELD = VM_OC_NONE,      /**< add computed field name */
 #endif /* !ENABLED (JERRY_ESNEXT) */
 
   VM_OC_UNUSED = VM_OC_NONE                   /**< placeholder if the list is empty */
@@ -461,8 +477,7 @@ ecma_value_t vm_run_eval (ecma_compiled_code_t *bytecode_data_p, uint32_t parse_
 ecma_value_t vm_run_module (const ecma_compiled_code_t *bytecode_p, ecma_object_t *lex_env_p);
 #endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 
-ecma_value_t vm_run (const ecma_compiled_code_t *bytecode_header_p, ecma_value_t this_binding_value,
-                     ecma_object_t *lex_env_p, const ecma_value_t *arg_list_p, uint32_t arg_list_len);
+ecma_value_t vm_run (vm_frame_ctx_shared_t *shared_p, ecma_value_t this_binding_value, ecma_object_t *lex_env_p);
 ecma_value_t vm_execute (vm_frame_ctx_t *frame_ctx_p);
 
 bool vm_is_strict_mode (void);

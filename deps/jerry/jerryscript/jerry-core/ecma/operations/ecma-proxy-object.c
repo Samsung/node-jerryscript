@@ -16,6 +16,7 @@
 #include "ecma-alloc.h"
 #include "ecma-array-object.h"
 #include "ecma-builtins.h"
+#include "ecma-builtin-handlers.h"
 #include "ecma-builtin-object.h"
 #include "ecma-exceptions.h"
 #include "ecma-function-object.h"
@@ -165,13 +166,11 @@ ecma_proxy_create_revocable (ecma_value_t target, /**< target argument */
 
   /* 3. */
   ecma_object_t *func_obj_p;
-  func_obj_p = ecma_create_object (ecma_builtin_get (ECMA_BUILTIN_ID_FUNCTION_PROTOTYPE),
-                                   sizeof (ecma_revocable_proxy_object_t),
-                                   ECMA_OBJECT_TYPE_EXTERNAL_FUNCTION);
+  func_obj_p = ecma_op_create_native_handler (ECMA_NATIVE_HANDLER_PROXY_REVOKE,
+                                              sizeof (ecma_revocable_proxy_object_t));
 
-  ecma_revocable_proxy_object_t *rev_proxy_p = (ecma_revocable_proxy_object_t *) func_obj_p;
-  rev_proxy_p->header.u.external_handler_cb = ecma_proxy_revoke_cb;
   /* 4. */
+  ecma_revocable_proxy_object_t *rev_proxy_p = (ecma_revocable_proxy_object_t *) func_obj_p;
   rev_proxy_p->proxy = proxy_value;
 
   ecma_property_value_t *prop_value_p;
@@ -1220,7 +1219,8 @@ ecma_value_t
 ecma_proxy_object_set (ecma_object_t *obj_p, /**< proxy object */
                        ecma_string_t *prop_name_p, /**< property name */
                        ecma_value_t value, /**< value to set */
-                       ecma_value_t receiver) /**< receiver to invoke setter function */
+                       ecma_value_t receiver, /**< receiver to invoke setter function */
+                       bool is_strict) /**< indicate strict mode */
 {
   JERRY_ASSERT (ECMA_OBJECT_IS_PROXY (obj_p));
   ECMA_CHECK_STACK_USAGE ();
@@ -1245,7 +1245,7 @@ ecma_proxy_object_set (ecma_object_t *obj_p, /**< proxy object */
   /* 8. */
   if (ecma_is_value_undefined (trap))
   {
-    return ecma_op_object_put_with_receiver (target_obj_p, prop_name_p, value, receiver, false);
+    return ecma_op_object_put_with_receiver (target_obj_p, prop_name_p, value, receiver, is_strict);
   }
 
   ecma_object_t *func_obj_p = ecma_get_object_from_value (trap);

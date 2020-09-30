@@ -1374,6 +1374,15 @@ parser_parse_for_statement_start (parser_context_t *context_p) /**< context */
 #endif /* ENABLED (JERRY_ESNEXT) */
 
         lexer_expect_identifier (context_p, LEXER_IDENT_LITERAL);
+
+#if ENABLED (JERRY_ESNEXT)
+        if (context_p->token.keyword_type == LEXER_KEYW_LET
+            && token_type != LEXER_KEYW_VAR)
+        {
+          parser_raise_error (context_p, PARSER_ERR_LEXICAL_LET_BINDING);
+        }
+#endif /* ENABLED (JERRY_ESNEXT) */
+
         JERRY_ASSERT (context_p->token.type == LEXER_LITERAL
                       && context_p->token.lit_location.type == LEXER_IDENT_LITERAL);
 
@@ -2336,11 +2345,18 @@ parser_parse_continue_statement (parser_context_t *context_p) /**< context */
         opcode = CBC_JUMP_FORWARD_EXIT_CONTEXT;
       }
 
+#if ENABLED (JERRY_ESNEXT)
+      const bool is_private_scope = (type == PARSER_STATEMENT_PRIVATE_SCOPE
+                                     || type == PARSER_STATEMENT_PRIVATE_CONTEXT);
+#else /* !ENABLED (JERRY_ESNEXT) */
+      const bool is_private_scope = false;
+#endif /* !ENABLED (JERRY_ESNEXT) */
+
       if (parser_statement_flags[type] & PARSER_STATM_CONTINUE_TARGET)
       {
         loop_iterator = iterator;
       }
-      else
+      else if (!is_private_scope)
       {
         loop_iterator.current_p = NULL;
       }

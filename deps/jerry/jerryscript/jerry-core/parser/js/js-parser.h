@@ -77,6 +77,9 @@ typedef enum
   PARSER_ERR_NEWLINE_NOT_ALLOWED,                     /**< newline is not allowed */
   PARSER_ERR_OCTAL_NUMBER_NOT_ALLOWED,                /**< octal numbers are not allowed in strict mode */
   PARSER_ERR_OCTAL_ESCAPE_NOT_ALLOWED,                /**< octal escape sequences are not allowed in strict mode */
+#if ENABLED (JERRY_ESNEXT)
+  PARSER_ERR_TEMPLATE_STR_OCTAL_ESCAPE,               /**< octal escape sequences are not allowed in template strings */
+#endif /* ENABLED (JERRY_ESNEXT) */
   PARSER_ERR_STRICT_IDENT_NOT_ALLOWED,                /**< identifier name is reserved in strict mode */
   PARSER_ERR_EVAL_NOT_ALLOWED,                        /**< eval is not allowed here in strict mode */
   PARSER_ERR_ARGUMENTS_NOT_ALLOWED,                   /**< arguments is not allowed here in strict mode */
@@ -142,9 +145,11 @@ typedef enum
 
   PARSER_ERR_MULTIPLE_CLASS_CONSTRUCTORS,             /**< multiple class constructor */
   PARSER_ERR_CLASS_CONSTRUCTOR_AS_ACCESSOR,           /**< class constructor cannot be an accessor */
-  PARSER_ERR_CLASS_CONSTRUCTOR_AS_GENERATOR,          /**< class constructor cannot be a generator */
+  PARSER_ERR_INVALID_CLASS_CONSTRUCTOR,               /**< class constructor cannot be a generator or async function */
   PARSER_ERR_CLASS_STATIC_PROTOTYPE,                  /**< static method name 'prototype' is not allowed */
   PARSER_ERR_UNEXPECTED_SUPER_KEYWORD,                /**< unexpected super keyword */
+  PARSER_ERR_TOO_MANY_CLASS_FIELDS,                   /**< too many computed class fields */
+  PARSER_ERR_ARGUMENTS_IN_CLASS_FIELD,                /**< arguments is not allowed in class fields */
 
   PARSER_ERR_RIGHT_BRACE_EXPECTED,                    /**< right brace expected */
   PARSER_ERR_OF_EXPECTED,                             /**< of keyword expected */
