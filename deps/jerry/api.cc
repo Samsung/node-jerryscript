@@ -2326,16 +2326,9 @@ v8::String::GetExternalOneByteStringResource() const {
 
 Local<Value> Symbol::Description() const {
   V8_CALL_TRACE();
-  // TODO: create API function for it
   jerry_value_t symbol = reinterpret_cast<const JerryValue*>(this)->value();
-  jerry_value_t symbol_to_object = jerry_value_to_object (symbol);
-  jerry_value_t prop_name = jerry_create_string ((const jerry_char_t *) "description");
 
-  jerry_value_t result = jerry_get_property (symbol_to_object, prop_name);
-  jerry_release_value (prop_name);
-  jerry_release_value (symbol_to_object);
-
-  RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(result));
+  RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(jerry_get_symbol_description(symbol)));
 }
 
 double Number::Value() const {
@@ -2601,13 +2594,13 @@ bool FunctionTemplate::HasInstance(v8::Local<v8::Value> value) {
 }
 
 Local<External> v8::External::New(Isolate* isolate, void* value) {
-  UNIMPLEMENTED(6233);
-  return v8::Local<v8::External>();
+  V8_CALL_TRACE();
+  RETURN_HANDLE(External, isolate, JerryValue::NewExternal(value));
 }
 
 void* External::Value() const {
-  UNIMPLEMENTED(6242);
-  return NULL;
+  V8_CALL_TRACE();
+  return reinterpret_cast<const JerryValue*>(this)->GetExternalData();
 }
 
 MaybeLocal<String> String::NewFromUtf8(Isolate* isolate, const char* data,
