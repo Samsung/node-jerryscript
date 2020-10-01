@@ -197,6 +197,7 @@ void JerryFunctionTemplate::Inherit(JerryFunctionTemplate* parent) {
 JerryObjectTemplate* JerryFunctionTemplate::InstanceTemplate(void) {
     if (!m_instance_template) {
         m_instance_template = new JerryObjectTemplate();
+        m_instance_template->SetConstructor(this);
         JerryIsolate::GetCurrent()->AddTemplate(m_instance_template);
     }
 

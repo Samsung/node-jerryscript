@@ -22,6 +22,7 @@ public:
         m_data = malloc(byteLength);
         m_deleterData = NULL;
         m_deleter = MallocDeleter;
+        memset(m_data, 0, byteLength);
     }
 
     // JerryBackingStore(JerryBackingStore *backingStore)

@@ -1641,9 +1641,7 @@ Maybe<uint32_t> Value::Uint32Value(Local<Context> context) const {
   JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
 
   if (convertedValue != NULL) {
-    double value = convertedValue->GetNumberValue();
-
-    result = (value >= 0) ? (uint32_t)value : 0;
+    result = (uint32_t)convertedValue->GetInt32Value();
     delete convertedValue;
   }
 
@@ -2551,6 +2549,16 @@ MaybeLocal<v8::Object> ObjectTemplate::NewInstance(Local<Context> context) {
   // TODO: the function template's method should be set as the object's constructor
   JerryValue* new_instance = JerryValue::NewObject();
   object_template->InstallProperties(new_instance->value());
+
+  JerryFunctionTemplate* proto_template = object_template->FunctionTemplate();
+
+  if (proto_template != NULL)
+  {
+    JerryValue proto_string(jerry_create_string((const jerry_char_t*)"prototype"));
+    jerry_value_t proto = proto_template->GetFunction()->GetProperty(&proto_string)->value();
+    jerry_set_prototype(new_instance->value(), proto);
+    jerry_release_value(proto);
+  }
 
   if (object_template->HasProxyHandler()) {
     new_instance = object_template->Proxify(new_instance);
