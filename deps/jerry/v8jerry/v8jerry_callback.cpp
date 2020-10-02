@@ -218,15 +218,10 @@ private:
     JerryHandle** m_values;
 };
 
-static jerry_object_native_info_t JerryV8ObjectConstructed = {
-    /* stores the "original" JerryV8FunctionHandlerData for template checks */
-    .free_cb = NULL,
-};
-
 JerryV8FunctionHandlerData* JerryGetFunctionHandlerData(jerry_value_t target) {
     // TODO: extract the native pointer extraction to a method
     void *native_p;
-    bool has_data = jerry_get_object_native_pointer(target, &native_p, &JerryV8ObjectConstructed);
+    bool has_data = jerry_get_object_native_pointer(target, &native_p, &JerryV8FunctionHandlerData::TypeInfo);
 
     if (!has_data) {
         return NULL;
@@ -234,7 +229,6 @@ JerryV8FunctionHandlerData* JerryGetFunctionHandlerData(jerry_value_t target) {
 
     return reinterpret_cast<JerryV8FunctionHandlerData*>(native_p);
 }
-
 
 jerry_value_t JerryV8FunctionHandler(
     const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
@@ -257,7 +251,7 @@ jerry_value_t JerryV8FunctionHandler(
     if (jerry_value_is_object(this_val)) {
 
         // TODO: remove this "constructor" call check.
-        if (!jerry_get_object_native_pointer(this_val, NULL, &JerryV8ObjectConstructed)) {
+        if (!jerry_get_object_native_pointer(this_val, NULL, &JerryV8FunctionHandlerData::TypeInfo)) {
             // Add reference to the function template
             // TODO: really do a correct is constructor call check and only set the constructor function template on the new instance.
             //jerry_set_object_native_pointer(this_val, data, &JerryV8FunctionHandlerData::TypeInfo);
@@ -270,15 +264,17 @@ jerry_value_t JerryV8FunctionHandler(
             // The method was called with a "this" object and there was no "JerryV8ObjectConstructed" set
             // assume that this is a constructo call.
             // TODO: this is not always correct logic. Propert constructor call check is needed.
-            jerry_set_object_native_pointer(this_val, data, &JerryV8ObjectConstructed);
+            data->ref_count++;
+            jerry_set_object_native_pointer(this_val, data, &JerryV8FunctionHandlerData::TypeInfo);
         }
     }
 
     if (data->function_template->HasSignature()) {
-        JerryV8FunctionHandlerData* this_val_data;
-        bool has_info = jerry_get_object_native_pointer(this_val, reinterpret_cast<void**>(&this_val_data), &JerryV8ObjectConstructed);
-        if (!has_info
-            || data->function_template->IsValidSignature(this_val_data->function_template->Signature())) {
+        void *native_p;
+        bool has_data = jerry_get_object_native_pointer(this_val, &native_p, &JerryV8FunctionHandlerData::TypeInfo);
+
+        if (!has_data
+            || data->function_template->IsValidSignature(((JerryV8FunctionHandlerData*)native_p)->function_template->Signature())) {
             // Invalid signature found throw error.
             return jerry_create_error (JERRY_ERROR_TYPE, (const jerry_char_t *) "Incorrect signature");
         }

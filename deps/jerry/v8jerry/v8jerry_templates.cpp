@@ -4,36 +4,46 @@
 
 void JerryTemplate::InstallProperties(const jerry_value_t target) {
     for (PropertyEntry* prop : m_properties) {
-        // TODO: do not ignore the prop->attributes
-        jerry_value_t result = jerry_create_undefined();
+        jerry_property_descriptor_t desc;
+        jerry_init_property_descriptor_fields(&desc);
 
         switch (prop->type) {
             case PropertyEntry::Value: {
-                result = jerry_set_property(target, prop->key->value(), prop->value->value());
+                desc.is_value_defined = true;
+                desc.value = jerry_acquire_value(prop->value_or_getter->value());
+
+                desc.is_writable_defined = true;
+                if (!(prop->attribute & v8::PropertyAttribute::ReadOnly)) {
+                    desc.is_writable = true;
+                }
                 break;
             }
-            case PropertyEntry::GetterSetter: {
-                jerry_property_descriptor_t desc;
-                jerry_init_property_descriptor_fields(&desc);
-
-                // add getter
-                if (prop->value != NULL) {
+            case PropertyEntry::Accessor: {
+                if (prop->value_or_getter != NULL) {
                     desc.is_get_defined = true;
-                    desc.getter = jerry_acquire_value(prop->value->value());
+                    desc.getter = jerry_acquire_value(prop->value_or_getter->value());
                 }
 
-                // add setter
                 if (prop->setter != NULL) {
                     desc.is_set_defined = true;
                     desc.setter = jerry_acquire_value(prop->setter->value());
                 }
-
-                result = jerry_define_own_property(target, prop->key->value(), &desc);
-
-                jerry_free_property_descriptor_fields(&desc);
                 break;
             }
         }
+
+        desc.is_configurable_defined = true;
+        if (!(prop->attribute & v8::PropertyAttribute::DontDelete)) {
+          desc.is_configurable = true;
+        }
+
+        desc.is_enumerable_defined = true;
+        if (!(prop->attribute & v8::PropertyAttribute::DontEnum)) {
+          desc.is_enumerable = true;
+        }
+
+        jerry_value_t result = jerry_define_own_property(target, prop->key->value(), &desc);
+        jerry_free_property_descriptor_fields(&desc);
 
         /* TODO: check isOK? */
         // bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
@@ -190,10 +200,6 @@ JerryObjectTemplate* JerryFunctionTemplate::PrototypeTemplate(void) {
     return m_prototype_template;
 }
 
-void JerryFunctionTemplate::Inherit(JerryFunctionTemplate* parent) {
-    m_proto_template = parent;
-}
-
 JerryObjectTemplate* JerryFunctionTemplate::InstanceTemplate(void) {
     if (!m_instance_template) {
         m_instance_template = new JerryObjectTemplate();
@@ -205,7 +211,11 @@ JerryObjectTemplate* JerryFunctionTemplate::InstanceTemplate(void) {
 }
 
 static void JerryV8FunctionHandlerDataFree(void* data) {
-    delete reinterpret_cast<JerryV8FunctionHandlerData*>(data);
+    JerryV8FunctionHandlerData* function_handler = reinterpret_cast<JerryV8FunctionHandlerData*>(data);
+
+    if (--function_handler->ref_count == 0) {
+        delete function_handler;
+    }
 }
 
 jerry_object_native_info_t JerryV8FunctionHandlerData::TypeInfo = {
@@ -220,39 +230,59 @@ jerry_value_t JerryV8FunctionHandler(
     const jerry_length_t args_cnt);
 
 JerryValue* JerryFunctionTemplate::GetFunction(void) {
-    if (m_function == NULL) {
-        // TODO: have function per context
-        jerry_value_t jfunction = jerry_create_external_function(JerryV8FunctionHandler);
+    if (m_function != NULL) {
+        return m_function;
+    }
 
-        JerryV8FunctionHandlerData* data = new JerryV8FunctionHandlerData();
-        data->function_template = this; // Required so we can do instance checks.
-        data->v8callback = m_callback;
+    // TODO: have function per context
+    jerry_value_t jfunction = jerry_create_external_function(JerryV8FunctionHandler);
 
-        jerry_set_object_native_pointer(jfunction, data, &JerryV8FunctionHandlerData::TypeInfo);
+    JerryV8FunctionHandlerData* data = new JerryV8FunctionHandlerData();
+    data->ref_count = 1;
+    data->function_template = this; // Required so we can do instance checks.
+    data->v8callback = m_callback;
 
-        InstallProperties(jfunction);
+    jerry_set_object_native_pointer(jfunction, data, &JerryV8FunctionHandlerData::TypeInfo);
 
-        m_function = new JerryValue(jfunction);
+    InstallProperties(jfunction);
 
-        // Install the function prototype if there is any
-        if (m_prototype_template != NULL) {
-            JerryValue* new_instance = JerryValue::NewObject();
-            m_prototype_template->InstallProperties(new_instance->value());
+    m_function = new JerryValue(jfunction);
 
-            JerryValue proto_string(jerry_create_string((const jerry_char_t*)"prototype"));
+    // Install the function prototype if there is any
+    if (m_prototype_template != NULL) {
+        m_prototype = jerry_create_object();
+        m_prototype_template->InstallProperties(m_prototype);
 
-            m_function->SetProperty(&proto_string, new_instance);
+        JerryValue proto_string(jerry_create_string((const jerry_char_t*)"prototype"));
 
-            if (m_proto_template)
-            {
-                // TODO: handle potential error?
-                jerry_value_t proto = m_proto_template->GetFunction()->GetProperty(&proto_string)->value();
-                jerry_set_prototype (new_instance->value(), proto);
-                jerry_release_value (proto);
-            }
-            delete new_instance;
+        jerry_set_property(m_function->value(), proto_string.value(), m_prototype);
+
+        if (m_proto_template)
+        {
+            jerry_set_prototype (m_prototype, m_proto_template->GetPrototype());
         }
     }
 
     return m_function;
+}
+
+jerry_value_t JerryFunctionTemplate::GetPrototype(void) {
+    if (m_function != NULL) {
+        return m_prototype;
+    }
+
+    GetFunction();
+    return m_prototype;
+}
+
+void JerryFunctionTemplate::SetFunctionHandlerData(jerry_value_t object) {
+    if (m_function == NULL) {
+        GetFunction();
+    }
+
+    void *native_p = NULL;
+    jerry_get_object_native_pointer(m_function->value(), &native_p, &JerryV8FunctionHandlerData::TypeInfo);
+
+    ((JerryV8FunctionHandlerData*)native_p)->ref_count++;
+    jerry_set_object_native_pointer(object, native_p, &JerryV8FunctionHandlerData::TypeInfo);
 }

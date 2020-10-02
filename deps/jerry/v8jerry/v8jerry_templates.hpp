@@ -11,21 +11,20 @@ class JerryFunctionTemplate;
 struct PropertyEntry {
     enum Type {
         Value,
-        GetterSetter,
+        Accessor,
     };
 
     Type type;
     JerryValue* key;
-    JerryValue* value;
+    JerryValue* value_or_getter;
     JerryValue* setter;
     v8::PropertyAttribute attribute;
-
 
     ~PropertyEntry() {
         delete key;
 
-        if (value != NULL) {
-            delete value;
+        if (value_or_getter != NULL) {
+            delete value_or_getter;
         }
 
         if (setter != NULL) {
@@ -44,11 +43,8 @@ public:
                              JerryValue* getter,
                              JerryValue* setter,
                              v8::PropertyAttribute attribute) {
-        m_properties.push_back(new PropertyEntry{PropertyEntry::GetterSetter, key, getter, setter, attribute});
+        m_properties.push_back(new PropertyEntry{PropertyEntry::Accessor, key, getter, setter, attribute});
     }
-
-
-    const std::vector<PropertyEntry*>& properties(void) const { return m_properties; }
 
     void InstallProperties(const jerry_value_t target);
 
@@ -161,12 +157,11 @@ struct JerryV8ProxyHandlerData {
     static jerry_object_native_info_t TypeInfo;
 };
 
-
 class JerryObjectTemplate : public JerryTemplate {
 public:
     JerryObjectTemplate()
         : JerryTemplate(ObjectTemplate)
-        , m_function_template(NULL)
+        , m_constructor(NULL)
         , m_accessors(0)
         , m_internal_field_count(0)
         , m_proxy_handler(NULL)
@@ -179,13 +174,12 @@ public:
         if (m_proxy_handler) {
             delete m_proxy_handler;
         }
-
     }
 
-    void SetInteralFieldCount(int count) { m_internal_field_count = count; }
-    void SetConstructor(JerryFunctionTemplate* function_template) { m_function_template = function_template; }
+    JerryFunctionTemplate* Constructor(void) { return m_constructor; }
+    void SetConstructor(JerryFunctionTemplate* constructor) { m_constructor = constructor; }
 
-    JerryFunctionTemplate* FunctionTemplate(void) { return m_function_template; }
+    void SetInteralFieldCount(int count) { m_internal_field_count = count; }
 
     void SetAccessor(JerryValue* name,
                      v8::AccessorGetterCallback getter,
@@ -209,9 +203,6 @@ public:
         m_accessors.push_back(entry);
     }
 
-    static bool SetAccessor(const jerry_value_t target, AccessorEntry* entry);
-    void InstallProperties(const jerry_value_t target);
-
     void ReleaseProperties(void) {
         JerryTemplate::ReleaseProperties();
 
@@ -226,20 +217,22 @@ public:
 
     bool HasProxyHandler(void) { return m_proxy_handler != NULL; }
 
+    void InstallProperties(const jerry_value_t target);
     JerryValue* Proxify(JerryValue* target_instance);
 
+    static bool SetAccessor(const jerry_value_t target, AccessorEntry* entry);
 
 private:
-    // If the m_function_template is null then this is not bound to a function
+    // If m_constructor is null then the default prototype is used
     // it must be released "manually"
-    JerryFunctionTemplate* m_function_template;
+    JerryFunctionTemplate* m_constructor;
     std::vector<AccessorEntry*> m_accessors;
     int m_internal_field_count;
     v8::NamedPropertyHandlerConfiguration* m_proxy_handler;
 };
 
-/* Simple function call types & methods */
 struct JerryV8FunctionHandlerData {
+    uint32_t ref_count;
     JerryFunctionTemplate* function_template;
     v8::FunctionCallback v8callback;
 
@@ -252,26 +245,25 @@ public:
         : JerryTemplate(FunctionTemplate)
         , m_prototype_template(NULL)
         , m_instance_template(NULL)
+        , m_proto_template(NULL)
+        , m_prototype(jerry_create_null())
         , m_external(jerry_create_undefined())
         , m_function(NULL)
         , m_signature(NULL)
-        , m_proto_template(NULL)
     {
     }
 
     ~JerryFunctionTemplate(void) {
         ReleaseProperties();
+        jerry_release_value(m_prototype);
         jerry_release_value(m_external);
 
         delete m_function;
     }
 
-    JerryObjectTemplate* PrototypeTemplate(void);
-    void Inherit(JerryFunctionTemplate* parent);
-    JerryObjectTemplate* InstanceTemplate(void);
-
     bool HasInstanceTemplate(void) const { return m_instance_template != NULL; }
     JerryFunctionTemplate* protoTemplate(void) { return m_proto_template; }
+    void Inherit(JerryFunctionTemplate* parent) { m_proto_template = parent; }
 
     void SetCallback(v8::FunctionCallback callback) { m_callback = callback; }
     void SetExternalData(jerry_value_t value) { m_external = value; }
@@ -283,16 +275,21 @@ public:
     v8::FunctionCallback callback(void) const { return m_callback; }
     jerry_value_t external(void) const { return m_external; }
 
+    JerryObjectTemplate* PrototypeTemplate(void);
+    JerryObjectTemplate* InstanceTemplate(void);
     JerryValue* GetFunction(void);
+    jerry_value_t GetPrototype(void);
+    void SetFunctionHandlerData(jerry_value_t object);
+
 private:
     JerryObjectTemplate* m_prototype_template;
     JerryObjectTemplate* m_instance_template;
     JerryFunctionTemplate* m_proto_template;
     v8::FunctionCallback m_callback;
+    jerry_value_t m_prototype;
     jerry_value_t m_external;
     JerryValue* m_function;
     JerryHandle* m_signature;
 };
 
 #endif /* V8JERRY_TEMPLATES_HPP */
-

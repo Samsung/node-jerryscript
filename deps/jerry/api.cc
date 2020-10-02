@@ -168,14 +168,18 @@ i::Address* V8::GlobalizeReference(i::Isolate* isolate, i::Address* obj) {
 
   JerryHandle* result;
   switch (jhandle->type()) {
-      case JerryHandle::GlobalValue:
-      case JerryHandle::Value: result = reinterpret_cast<JerryValue*>(jhandle)->CopyToGlobal(); break;
+      case JerryHandle::LocalValue:
+      case JerryHandle::PersistentValue:
+      case JerryHandle::PersistentWeakValue:
+          result = reinterpret_cast<JerryValue*>(jhandle)->CopyToGlobal();
+          break;
       case JerryHandle::ObjectTemplate:
-      case JerryHandle::FunctionTemplate: result = jhandle; break;
+      case JerryHandle::FunctionTemplate:
+          result = jhandle;
+          break;
       default:
           assert(false && "Unkown Handle type detected");
   }
-
 
   return reinterpret_cast<i::Address*>(result);
 }
@@ -200,16 +204,18 @@ void V8::MoveGlobalReference(internal::Address** from, internal::Address** to) {
 
 bool V8::IsWeak(internal::Address* location)
 {
-  JerryValue* object = reinterpret_cast<JerryValue*> (location);
-  return object->IsWeakReferenced();
+  JerryHandle* object = reinterpret_cast<JerryHandle*> (location);
+  assert(object->type() == JerryHandle::PersistentValue || object->type() == JerryHandle::PersistentWeakValue);
+  return object->type() == JerryHandle::PersistentWeakValue;
 }
 
 void V8::MakeWeak(i::Address* location, void* parameter,
                   WeakCallbackInfo<void>::Callback weak_callback,
                   WeakCallbackType type) {
   V8_CALL_TRACE();
+  assert(!IsWeak(location));
+
   JerryValue* object = reinterpret_cast<JerryValue*> (location);
-  assert(object->IsWeakReferenced() == false);
 
   if (type == WeakCallbackType::kInternalFields) {
       void** wrapper = new void*[kInternalFieldsInWeakCallback + 1];
@@ -223,17 +229,25 @@ void V8::MakeWeak(i::Address* location, void* parameter,
   object->MakeWeak(weak_callback, type, parameter);
 }
 
+static void DummyWeakCallback(const WeakCallbackInfo<void>& data) {
+}
+
 void V8::MakeWeak(i::Address** location_addr) {
   V8_CALL_TRACE();
+  assert(!IsWeak(*location_addr));
+
   JerryValue* object = reinterpret_cast<JerryValue*> (*location_addr);
-  assert(object->IsWeakReferenced() == false);
-  JerryIsolate::GetCurrent()->AddAsWeak(object);
+  object->MakeWeak(DummyWeakCallback, WeakCallbackType::kParameter, NULL);
 }
 
 void* V8::ClearWeak(i::Address* location) {
   V8_CALL_TRACE();
-  JerryValue* object = reinterpret_cast<JerryValue*> (location);
 
+  if (!IsWeak(location)) {
+      return NULL;
+  }
+
+  JerryValue* object = reinterpret_cast<JerryValue*> (location);
   return object->ClearWeak();
 }
 
@@ -243,10 +257,8 @@ void V8::DisposeGlobal(i::Address* location) {
   if (JerryHandle::IsValueType(jhandle)) {
       JerryValue* object = reinterpret_cast<JerryValue*> (location);
 
-      if (object->IsWeakReferenced()) {
-          object->RunWeakCleanup();
-          JerryIsolate::GetCurrent()->RemoveAsWeak(object);
-          //object->ClearWeak();
+      if (object->type() == JerryHandle::PersistentWeakValue) {
+          object->ClearWeak();
       }
 
       delete object;
@@ -299,18 +311,16 @@ i::Address* HandleScope::CreateHandle(i::Isolate* isolate, i::Address value) {
         case JerryHandle::ObjectTemplate:
             iso->AddTemplate(reinterpret_cast<JerryTemplate*>(jhandle));
             break;
-        case JerryHandle::GlobalValue: {
-            // In this case a "global" object is copied to a Local<T>, we'll do a copy here and push it to the scope
-            // A "global" (Persistent/PersistentBase) should never be in a handle scope
+        case JerryHandle::PersistentValue:
+        case JerryHandle::PersistentWeakValue: {
+            // A persistent or global object should never be in a handle scope
             JerryHandle* jcopy = reinterpret_cast<JerryValue*>(jhandle)->Copy();
             iso->AddToHandleScope(jcopy);
             return reinterpret_cast<internal::Address*>(jcopy);
             break;
         }
-        case JerryHandle::Value:
-            if (!JerryIsolate::fromV8(isolate)->HasEternal(reinterpret_cast<JerryValue*>(jhandle))) {
-                iso->AddToHandleScope(jhandle);
-            }
+        case JerryHandle::LocalValue:
+            iso->AddToHandleScope(jhandle);
             break;
         default:
             abort();
@@ -398,8 +408,9 @@ void Template::Set(v8::Local<Name> name, v8::Local<Data> value,
 
   JerryValue* jvalue;
   switch (jhandle->type()) {
-    case JerryHandle::Value:
-    case JerryHandle::GlobalValue: {
+    case JerryHandle::LocalValue:
+    case JerryHandle::PersistentValue:
+    case JerryHandle::PersistentWeakValue: {
       jvalue = reinterpret_cast<JerryValue*>(jhandle)->Copy();
       break;
     }
@@ -2550,14 +2561,12 @@ MaybeLocal<v8::Object> ObjectTemplate::NewInstance(Local<Context> context) {
   JerryValue* new_instance = JerryValue::NewObject();
   object_template->InstallProperties(new_instance->value());
 
-  JerryFunctionTemplate* proto_template = object_template->FunctionTemplate();
+  JerryFunctionTemplate* constructor = object_template->Constructor();
 
-  if (proto_template != NULL)
+  if (constructor != NULL)
   {
-    JerryValue proto_string(jerry_create_string((const jerry_char_t*)"prototype"));
-    jerry_value_t proto = proto_template->GetFunction()->GetProperty(&proto_string)->value();
-    jerry_set_prototype(new_instance->value(), proto);
-    jerry_release_value(proto);
+    jerry_set_prototype(new_instance->value(), constructor->GetPrototype());
+    constructor->SetFunctionHandlerData(new_instance->value());
   }
 
   if (object_template->HasProxyHandler()) {
@@ -2586,16 +2595,16 @@ bool FunctionTemplate::HasInstance(v8::Local<v8::Value> value) {
   JerryV8FunctionHandlerData* data = JerryGetFunctionHandlerData(object->value());
 
   if (data == NULL) {
-    return false;
+      return false;
   }
 
   JerryFunctionTemplate* function_template = data->function_template;
 
   do {
-    if (function_template == reinterpret_cast<JerryFunctionTemplate*>(this)) {
-      return true;
-    }
-    function_template = function_template->protoTemplate();
+      if (function_template == reinterpret_cast<JerryFunctionTemplate*>(this)) {
+          return true;
+      }
+      function_template = function_template->protoTemplate();
   } while (function_template != NULL);
 
   return false;
@@ -3162,7 +3171,7 @@ bool Isolate::InContext() {
 }
 
 void Isolate::ClearKeptObjects() {
-  JerryIsolate::GetCurrent()->RunWeakCleanup();
+  V8_CALL_TRACE();
 }
 
 v8::Local<v8::Context> Isolate::GetCurrentContext() {
@@ -3216,7 +3225,6 @@ void Isolate::RequestInterrupt(InterruptCallback callback, void* data) {
 
 void Isolate::RequestGarbageCollectionForTesting(GarbageCollectionType type) {
   V8_CALL_TRACE();
-  JerryIsolate::GetCurrent()->RunWeakCleanup();
 }
 
 Isolate* Isolate::GetCurrent() {

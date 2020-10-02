@@ -42,6 +42,8 @@
       'include_dirs': [
          'include',
          'jerryscript/jerry-core/include',
+         'jerryscript/jerry-ext/include',
+         'jerryscript/jerry-ext/common',
          'jerryscript/jerry-port/default/include',
          'v8jerry',
       ],
@@ -49,6 +51,7 @@
         'JERRY_CPOINTER_32_BIT=1',
         'JERRY_GLOBAL_HEAP_SIZE=16384',
         'JERRY_LINE_INFO=1',
+        'JERRY_DEBUGGER=0',
         'JERRY_ERROR_MESSAGES=1',
         'JERRY_V8_DUMP_BACKTRACE=1',
       ],
@@ -78,7 +81,12 @@
         'v8jerry/v8jerry_utils.cpp',
         'v8jerry/v8jerry_utils.hpp',
         'v8jerry/v8jerry_value.cpp',
-        'v8jerry/v8jerry_value.hpp'
+        'v8jerry/v8jerry_value.hpp',
+
+        'jerryscript/jerry-ext/debugger/debugger-common.c',
+        'jerryscript/jerry-ext/debugger/debugger-sha1.c',
+        'jerryscript/jerry-ext/debugger/debugger-tcp.c',
+        'jerryscript/jerry-ext/debugger/debugger-ws.c',
       ],
       'direct_dependent_settings': {
         'include_dirs': [

@@ -6,6 +6,8 @@
 #include <iostream>
 #include <sstream>
 
+#include "jerryscript-ext/debugger.h"
+
 #include "v8jerry_handlescope.hpp"
 #include "v8jerry_flags.hpp"
 #include "v8jerry_templates.hpp"
@@ -209,6 +211,11 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 #endif
 
     InjectGlobalFunctions();
+
+#if (defined JERRY_DEBUGGER && JERRY_DEBUGGER)
+    bool protocol = jerryx_debugger_tcp_create (5001);
+    jerryx_debugger_after_connect (protocol && jerryx_debugger_ws_create ());
+#endif
 }
 
 
@@ -235,16 +242,6 @@ void JerryIsolate::Terminate(void) {
 void JerryIsolate::CancelTerminate(void) {
     m_terminated = false;
     jerry_set_vm_exec_stop_callback(NULL, NULL, 1);
-}
-
-void JerryIsolate::RunWeakCleanup(void) {
-    for (std::vector<JerryValue*>::reverse_iterator it = m_weakrefs.rbegin();
-        it != m_weakrefs.rend();
-        it++) {
-        // The weak callback will delete the JerryValue*
-        (*it)->RunWeakCleanup();
-    }
-    m_weakrefs.clear();
 }
 
 void JerryIsolate::Dispose(void) {
@@ -476,15 +473,15 @@ void JerryIsolate::InitalizeSlots(void) {
                 // v8::internal::kExternalAllocationSoftLimit
 
     // Undefined
-    m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex] = new JerryValue(jerry_create_undefined(), JerryHandle::GlobalValue);
+    m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex] = new JerryValue(jerry_create_undefined(), JerryHandle::PersistentValue);
     // Null
-    m_slot[root_offset + v8::internal::Internals::kNullValueRootIndex] = new JerryValue(jerry_create_null(), JerryHandle::GlobalValue);
+    m_slot[root_offset + v8::internal::Internals::kNullValueRootIndex] = new JerryValue(jerry_create_null(), JerryHandle::PersistentValue);
     // Boolean True
-    m_slot[root_offset + v8::internal::Internals::kTrueValueRootIndex] = new JerryValue(jerry_create_boolean(true), JerryHandle::GlobalValue);
+    m_slot[root_offset + v8::internal::Internals::kTrueValueRootIndex] = new JerryValue(jerry_create_boolean(true), JerryHandle::PersistentValue);
     // Boolean False
-    m_slot[root_offset + v8::internal::Internals::kFalseValueRootIndex] = new JerryValue(jerry_create_boolean(false), JerryHandle::GlobalValue);
+    m_slot[root_offset + v8::internal::Internals::kFalseValueRootIndex] = new JerryValue(jerry_create_boolean(false), JerryHandle::PersistentValue);
     // Empty string
-    m_slot[root_offset + v8::internal::Internals::kEmptyStringRootIndex] = new JerryValue(jerry_create_string_sz((const jerry_char_t*)"", 0), JerryHandle::GlobalValue);
+    m_slot[root_offset + v8::internal::Internals::kEmptyStringRootIndex] = new JerryValue(jerry_create_string_sz((const jerry_char_t*)"", 0), JerryHandle::PersistentValue);
 
     assert((sizeof(m_slot) / sizeof(m_slot[0])) > root_offset + v8::internal::Internals::kEmptyStringRootIndex);
 
@@ -517,38 +514,8 @@ void JerryIsolate::SetEternal(JerryValue* value, int* index) {
     }
 }
 
-bool JerryIsolate::HasEternal(JerryValue* value) {
+bool JerryIsolate::IsEternal(JerryValue* value) {
     return std::find(m_eternals.begin(), m_eternals.end(), value) != m_eternals.end();
-}
-
-bool JerryIsolate::HasAsWeak(JerryValue* value) {
-    std::vector<JerryValue*>::iterator iter = std::find(m_weakrefs.begin(), m_weakrefs.end(), value);
-
-    return iter != m_weakrefs.end();
-}
-
-void JerryIsolate::AddAsWeak(JerryValue* value) {
-    assert(HasAsWeak(value) == false);
-
-    std::vector<JerryValue*>::iterator iter = std::find(m_eternals.begin(), m_eternals.end(), value);
-    // Just eternal objects can have weak reference.
-    //assert(iter != m_eternals.end());
-    if (iter != m_eternals.end()) {
-        m_eternals.erase(iter);
-    }
-
-    m_weakrefs.push_back(value);
-}
-
-void JerryIsolate::RemoveAsWeak(JerryValue* value) {
-    std::vector<JerryValue*>::iterator eternal_iter = std::find(m_eternals.begin(), m_eternals.end(), value);
-    std::vector<JerryValue*>::iterator weak_iter = std::find(m_weakrefs.begin(), m_weakrefs.end(), value);
-
-    assert(eternal_iter == m_eternals.end());
-    assert(weak_iter != m_weakrefs.end());
-
-    m_weakrefs.erase(weak_iter);
-    m_eternals.push_back(value);
 }
 
 void JerryIsolate::AddUTF16String(std::u16string* str) {

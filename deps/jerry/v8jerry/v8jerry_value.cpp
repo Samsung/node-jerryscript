@@ -15,34 +15,6 @@ static jerry_object_native_info_t JerryV8ExternalTypeInfo = {
     .free_cb = NULL,
 };
 
-static void JerryV8WeakCallback(void* data) {
-    if (data == NULL) {
-        return;
-    }
-
-    JerryV8WeakReferenceData* weak_cb_data = static_cast<JerryV8WeakReferenceData*>(data);
-
-    void* parameter = NULL;
-    void** embedder_fields = NULL;
-
-    if (weak_cb_data->type == v8::WeakCallbackType::kInternalFields) {
-        embedder_fields = reinterpret_cast<void**>(weak_cb_data->data);
-    } else {
-        parameter = weak_cb_data->data;
-        embedder_fields = new void*[v8::kEmbedderFieldsInWeakCallback];
-    }
-
-    v8::WeakCallbackInfo<void> info(v8::Isolate::GetCurrent(), parameter, embedder_fields, &weak_cb_data->callback);
-    weak_cb_data->callback(info);
-
-    delete [] embedder_fields;
-    delete weak_cb_data;
-};
-
-static jerry_object_native_info_t JerryV8WeakReferenceInfo = {
-    .free_cb = JerryV8WeakCallback,
-};
-
 static void JerryV8BackingStoreCallback(void* data) {
     if (data != NULL) {
         delete static_cast<JerryBackingStore*>(data);
@@ -307,7 +279,6 @@ void* JerryValue::ContextGetEmbedderData(int index) {
     return ctx->embedderData[index];
 }
 
-
 /* static */
 void JerryValue::CreateInternalFields(jerry_value_t target, int field_count) {
     JerryV8InternalFieldData *data = new JerryV8InternalFieldData(field_count);
@@ -376,43 +347,81 @@ JerryValue* JerryValue::TryCreateValue(JerryIsolate* iso, jerry_value_t value) {
     }
 }
 
-bool JerryValue::IsWeakReferenced() {
-    void* data_p = NULL;
-    return jerry_get_object_native_pointer(m_value, &data_p, &JerryV8WeakReferenceInfo) && data_p != NULL;
+static void JerryV8WeakCallback(void* data) {
+    JerryV8WeakReference* weak_ref = reinterpret_cast<JerryV8WeakReference*>(data);
+
+    while (weak_ref != NULL) {
+        void* parameter = NULL;
+
+        void* tmp_fields[v8::kEmbedderFieldsInWeakCallback];
+        void** tmp_fields_ptr = reinterpret_cast<void**>(&tmp_fields);
+        void** embedder_fields = tmp_fields_ptr;
+
+        if (weak_ref->type == v8::WeakCallbackType::kInternalFields) {
+            embedder_fields = reinterpret_cast<void**>(weak_ref->data);
+        } else {
+            parameter = weak_ref->data;
+        }
+
+        v8::WeakCallbackInfo<void> info(v8::Isolate::GetCurrent(), parameter, embedder_fields, &weak_ref->callback);
+        weak_ref->callback(info);
+
+        JerryV8WeakReference* next_weak_ref = weak_ref->next;
+
+        delete weak_ref;
+        if (embedder_fields != tmp_fields_ptr) {
+            delete [] embedder_fields;
+        }
+        weak_ref = next_weak_ref;
+    }
 }
 
+static jerry_object_native_info_t JerryV8WeakReferenceInfo = {
+    .free_cb = JerryV8WeakCallback,
+};
+
 void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data) {
-    assert(IsWeakReferenced() == false);
+    setType(PersistentWeakValue);
 
-    JerryV8WeakReferenceData* weak_data = new JerryV8WeakReferenceData(weak_callback, type, data);
-    jerry_set_object_native_pointer(value(), weak_data, &JerryV8WeakReferenceInfo);
+    void* weak_ref_head = NULL;
+    jerry_get_object_native_pointer(value(), &weak_ref_head, &JerryV8WeakReferenceInfo);
 
-    JerryIsolate::GetCurrent()->AddAsWeak(this);
+    JerryV8WeakReference* weak_ref = new JerryV8WeakReference(reinterpret_cast<JerryV8WeakReference*>(weak_ref_head), this, weak_callback, type, data);
+    jerry_set_object_native_pointer(value(), reinterpret_cast<void*>(weak_ref), &JerryV8WeakReferenceInfo);
 }
 
 void* JerryValue::ClearWeak() {
-    if(!IsWeakReferenced()) {
-        return NULL;
+    setType(PersistentValue);
+
+    void* data = NULL;
+    jerry_get_object_native_pointer(value(), &data, &JerryV8WeakReferenceInfo);
+
+    JerryV8WeakReference* weak_ref = reinterpret_cast<JerryV8WeakReference*>(data);
+
+    if (weak_ref->persistent == this)
+    {
+        jerry_set_object_native_pointer (value(), reinterpret_cast<void*>(weak_ref->next), &JerryV8WeakReferenceInfo);
+    }
+    else
+    {
+        JerryV8WeakReference* prev_weak_ref = weak_ref;
+        weak_ref = weak_ref->next;
+
+        while (true) {
+            if (weak_ref->persistent == this) {
+                prev_weak_ref->next = weak_ref->next;
+                break;
+            }
+
+            prev_weak_ref = weak_ref;
+            weak_ref = weak_ref->next;
+        }
     }
 
-    JerryV8WeakReferenceData* weak_data;
-    jerry_get_object_native_pointer (m_value, reinterpret_cast<void**>(&weak_data), &JerryV8WeakReferenceInfo);
-    jerry_delete_object_native_pointer(m_value, &JerryV8WeakReferenceInfo);
+    data = weak_ref->data;
+    delete weak_ref;
 
-    JerryIsolate::GetCurrent()->RemoveAsWeak(this);
-
-    return weak_data->data;
-}
-
-void JerryValue::RunWeakCleanup() {
-    assert(IsWeakReferenced() == true);
-
-    JerryV8WeakReferenceData* weak_data;
-    jerry_get_object_native_pointer (m_value, reinterpret_cast<void**>(&weak_data), &JerryV8WeakReferenceInfo);
-    jerry_set_object_native_pointer (m_value, NULL, &JerryV8WeakReferenceInfo);
-    //jerry_delete_object_native_pointer(m_value, &JerryV8WeakReferenceInfo);
-
-    JerryV8WeakReferenceInfo.free_cb(weak_data);
+    return data;
 }
 
 jerry_value_t JerryString::FromBuffer (const char* buffer, int length) {

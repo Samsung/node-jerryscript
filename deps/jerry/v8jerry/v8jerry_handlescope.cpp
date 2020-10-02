@@ -6,19 +6,8 @@
 #include "v8jerry_value.hpp"
 
 JerryHandleScope::~JerryHandleScope(void) {
-    for (std::vector<JerryHandle*>::reverse_iterator it = m_handles.rbegin();
-        it != m_handles.rend();
-        it++) {
-        JerryHandle* jhandle = *it;
-
-        switch (jhandle->type()) {
-            case JerryHandle::Value: delete reinterpret_cast<JerryValue*>(jhandle); break;
-            case JerryHandle::GlobalValue: {
-                /* This case is very bad at the moment */
-            }
-            // FunctionTemplate and ObjectTemplates are now Isolate level items.
-            default: fprintf(stderr, "~JerryHandleScope::Unsupported handle type (%d)\n", jhandle->type()); break;
-        }
+    for (std::vector<JerryHandle*>::reverse_iterator it = m_handles.rbegin(); it != m_handles.rend(); it++) {
+        delete reinterpret_cast<JerryValue*>(*it);
     }
 }
 
@@ -27,6 +16,11 @@ void JerryHandleScope::AddHandle(JerryHandle* jvalue) {
         fprintf(stderr, "Invalid usage of handles: Using SealHandleScope for variables\n");
         JerryIsolate::GetCurrent()->ReportFatalError("", "Trying to add handle to SealHandleScope");
         return;
+    }
+
+    if (jvalue->type() != JerryHandle::LocalValue) {
+        fprintf(stderr, "JerryHandleScope::AddHandle: Unexpected handle type (%d)\n", jvalue->type());
+        abort();
     }
 
     m_handles.push_back(jvalue);

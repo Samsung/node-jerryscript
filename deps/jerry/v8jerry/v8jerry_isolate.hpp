@@ -50,7 +50,6 @@ public:
     void Terminate(void);
     void CancelTerminate(void);
 
-    void RunWeakCleanup(void);
     void Dispose(void);
 
     void PushTryCatch(void* try_catch_obj);
@@ -91,12 +90,7 @@ public:
 
     void SetEternal(JerryValue* value, int* index);
     void ClearEternal(JerryValue* value);
-    bool HasEternal(JerryValue* value);
-
-    void AddAsWeak(JerryValue* value);
-    void RemoveAsWeak(JerryValue* value);
-    bool HasAsWeak(JerryValue* value);
-
+    bool IsEternal(JerryValue* value);
 
     void AddUTF16String(std::u16string*);
     void RemoveUTF16String(uint16_t*);
@@ -139,7 +133,6 @@ private:
     std::vector<JerryTemplate*> m_templates;
     std::vector<JerryValue*> m_eternals;
     std::vector<std::pair<jerry_value_t, jerry_value_t>> m_global_symbols;
-    std::vector<JerryValue*> m_weakrefs;
     std::unordered_map<uint16_t*, std::u16string*> m_utf16strs;
 
     JerryObjectTemplate* m_hidden_object_template;

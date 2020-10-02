@@ -21,8 +21,9 @@ public:
         ObjectTemplate,
 
         // Only value types are allowed after this point
-        Value,
-        GlobalValue,
+        LocalValue,
+        PersistentValue,
+        PersistentWeakValue,
     };
 
     JerryHandle() {}
@@ -34,8 +35,11 @@ public:
     Type type() const { return m_type; }
 
     static bool IsValueType(JerryHandle* handle) {
-        return (handle != NULL && handle->type() >= Value);
+        return (handle != NULL && handle->type() >= LocalValue);
     }
+
+protected:
+    void setType(Type type) { m_type = type; }
 
 private:
     Type m_type;
@@ -55,13 +59,18 @@ struct JerryV8InternalFieldData {
     }
 };
 
-struct JerryV8WeakReferenceData {
+struct JerryV8WeakReference {
+    JerryV8WeakReference *next;
+    JerryHandle *persistent;
     v8::WeakCallbackInfo<void>::Callback callback;
     v8::WeakCallbackType type;
     void* data;
 
-    JerryV8WeakReferenceData(v8::WeakCallbackInfo<void>::Callback callback, v8::WeakCallbackType type, void* data)
-        : callback(callback)
+    JerryV8WeakReference(JerryV8WeakReference *next, JerryHandle *persistent, v8::WeakCallbackInfo<void>::Callback callback,
+                         v8::WeakCallbackType type, void* data)
+        : next(next)
+        , persistent(persistent)
+        , callback(callback)
         , type(type)
         , data(data)
         {
@@ -76,11 +85,11 @@ public:
     {}
 
     JerryValue()
-        : JerryValue(0, JerryHandle::Value)
+        : JerryValue(0, JerryHandle::LocalValue)
     {}
 
     JerryValue(jerry_value_t value)
-        : JerryValue(value, JerryHandle::Value)
+        : JerryValue(value, JerryHandle::LocalValue)
     {}
 
     /* Create a JerryValue if there is no error.
@@ -212,13 +221,10 @@ public:
 
     JerryValue* Move(JerryValue* to) { jerry_release_value(m_value); m_value = jerry_acquire_value(to->value()); }
     JerryValue* Copy() const { return new JerryValue(jerry_acquire_value(m_value)); }
-    JerryValue* CopyToGlobal() const { return new JerryValue(jerry_acquire_value(m_value), JerryHandle::GlobalValue); }
+    JerryValue* CopyToGlobal() const { return new JerryValue(jerry_acquire_value(m_value), JerryHandle::PersistentValue); }
 
     void MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data);
-    bool IsWeakReferenced();
     void* ClearWeak();
-    void RunWeakCleanup();
-
 
     static void CreateInternalFields(jerry_value_t target, int field_count);
     JerryV8InternalFieldData* GetInternalFieldData(int idx);
