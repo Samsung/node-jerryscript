@@ -107,6 +107,9 @@ private:
     void SetError(JerryValue* error);
     void InitalizeSlots(void);
 
+    void InitializeSharedArrayBuffer();
+    void InitializeAtomics();
+
     // Slots accessed by v8::Isolate::Get/SetData
     // They must be the first field of GraalIsolate
     void* m_slot[26] = {};
