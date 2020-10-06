@@ -197,6 +197,8 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_fn_set_integrity = new JerryPolyfill("set_integrity", "prop", "Object[prop](this)");
 
     InitalizeSlots();
+    InitializeSharedArrayBuffer();
+    InitializeAtomics();
 
     m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
     m_try_catch_count = 0;
@@ -485,6 +487,45 @@ void JerryIsolate::InitalizeSlots(void) {
     //m_slot[root_offset + v8::internal::Internals::kInt32ReturnValuePlaceholderIndex] =
     //m_slot[root_offset + v8::internal::Internals::kUint32ReturnValuePlaceholderIndex] =
     //m_slot[root_offset + v8::internal::Internals::kDoubleReturnValuePlaceholderIndex] =
+}
+
+static jerry_value_t shared_array_buffer_constructor(
+    const jerry_value_t func_value, /**< function object */
+    const jerry_value_t this_val,   /**< this arg */
+    const jerry_value_t args_p[],   /**< function arguments */
+    const jerry_length_t args_cnt)  /**< number of function arguments */
+{
+    if ((args_cnt == 0) || (jerry_value_is_number(args_p[0]) == false)) {
+        return jerry_create_undefined();
+    }
+
+    jerry_length_t size = (jerry_length_t) jerry_get_number_value(args_p[0]);
+    jerry_value_t array = jerry_create_arraybuffer(size);
+
+    // TODO: Create mutex for memory sharing
+
+    return array;
+}
+
+void JerryIsolate::InitializeSharedArrayBuffer() {
+    jerryx_handler_register_global((const jerry_char_t*) "SharedArrayBuffer",
+                                    shared_array_buffer_constructor);
+    // TODO: Create map of mutexes for memory sharing
+}
+
+static jerry_value_t atomics_handler(
+    const jerry_value_t func_value, /**< function object */
+    const jerry_value_t this_val,   /**< this arg */
+    const jerry_value_t args_p[],   /**< function arguments */
+    const jerry_length_t args_cnt)  /**< number of function arguments */
+{
+    return jerry_create_undefined();
+}
+
+void JerryIsolate::InitializeAtomics() {
+    jerryx_handler_register_global((const jerry_char_t*) "Atomics",
+                                    atomics_handler);
+    // TODO: Add handlers for Atomics methods
 }
 
 void JerryIsolate::EnqueueMicrotask(JerryValue *func) {
