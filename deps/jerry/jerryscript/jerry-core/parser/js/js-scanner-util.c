@@ -775,6 +775,11 @@ scanner_pop_literal_pool (parser_context_t *context_p, /**< context */
       {
         u8_arg |= SCANNER_FUNCTION_LEXICAL_ENV_NEEDED;
       }
+
+      if (status_flags & SCANNER_LITERAL_POOL_IS_STRICT)
+      {
+        u8_arg |= SCANNER_FUNCTION_IS_STRICT;
+      }
 #endif /* ENABLED (JERRY_ESNEXT) */
 
       info_p->u8_arg = u8_arg;
@@ -1889,8 +1894,8 @@ scanner_is_context_needed (parser_context_t *context_p, /**< context */
 #if ENABLED (JERRY_ESNEXT)
 #if ENABLED (JERRY_MODULE_SYSTEM)
     const bool is_import = (type == SCANNER_STREAM_TYPE_IMPORT);
-#else
-    const bool is_import = true;
+#else /* !ENABLED (JERRY_MODULE_SYSTEM) */
+    const bool is_import = false;
 #endif /* ENABLED (JERRY_MODULE_SYSTEM) */
 
     if (JERRY_UNLIKELY (check_type == PARSER_CHECK_GLOBAL_CONTEXT)

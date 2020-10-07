@@ -148,7 +148,6 @@
   <test id="built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js"><reason></reason></test>
   <test id="built-ins/Array/prototype/slice/create-proto-from-ctor-realm-array.js"><reason></reason></test>
   <test id="built-ins/Array/prototype/slice/create-proto-from-ctor-realm-non-array.js"><reason></reason></test>
-  <test id="built-ins/Array/prototype/sort/comparefn-nonfunction-call-throws.js"><reason></reason></test>
   <test id="built-ins/Array/prototype/splice/create-proto-from-ctor-realm-array.js"><reason></reason></test>
   <test id="built-ins/Array/prototype/splice/create-proto-from-ctor-realm-non-array.js"><reason></reason></test>
   <test id="built-ins/Array/prototype/splice/property-traps-order-with-species.js"><reason></reason></test>
@@ -694,9 +693,6 @@
   <test id="built-ins/DataView/toindex-bytelength-sab.js"><reason></reason></test>
   <test id="built-ins/DataView/toindex-byteoffset-sab.js"><reason></reason></test>
   <test id="built-ins/DataView/toindex-byteoffset.js"><reason></reason></test>
-  <test id="built-ins/Date/UTC/return-value.js"><reason></reason></test>
-  <test id="built-ins/Date/parse/time-value-maximum-range.js"><reason></reason></test>
-  <test id="built-ins/Date/parse/without-utc-offset.js"><reason></reason></test>
   <test id="built-ins/Date/proto-from-ctor-realm-one.js"><reason></reason></test>
   <test id="built-ins/Date/proto-from-ctor-realm-two.js"><reason></reason></test>
   <test id="built-ins/Date/proto-from-ctor-realm-zero.js"><reason></reason></test>
@@ -932,9 +928,7 @@
   <test id="built-ins/Proxy/construct/trap-is-not-callable-realm.js"><reason></reason></test>
   <test id="built-ins/Proxy/construct/trap-is-undefined-proto-from-cross-realm-newtarget.js"><reason></reason></test>
   <test id="built-ins/Proxy/construct/trap-is-undefined-proto-from-newtarget-realm.js"><reason></reason></test>
-  <test id="built-ins/Proxy/create-handler-is-revoked-proxy.js"><reason></reason></test>
   <test id="built-ins/Proxy/create-target-is-revoked-function-proxy.js"><reason></reason></test>
-  <test id="built-ins/Proxy/create-target-is-revoked-proxy.js"><reason></reason></test>
   <test id="built-ins/Proxy/defineProperty/desc-realm.js"><reason></reason></test>
   <test id="built-ins/Proxy/defineProperty/null-handler-realm.js"><reason></reason></test>
   <test id="built-ins/Proxy/defineProperty/targetdesc-configurable-desc-not-configurable-realm.js"><reason></reason></test>
@@ -959,9 +953,7 @@
   <test id="built-ins/Proxy/ownKeys/trap-is-not-callable-realm.js"><reason></reason></test>
   <test id="built-ins/Proxy/preventExtensions/trap-is-not-callable-realm.js"><reason></reason></test>
   <test id="built-ins/Proxy/preventExtensions/trap-is-undefined-target-is-proxy.js"><reason></reason></test>
-  <test id="built-ins/Proxy/revocable/handler-is-revoked-proxy.js"><reason></reason></test>
   <test id="built-ins/Proxy/revocable/target-is-revoked-function-proxy.js"><reason></reason></test>
-  <test id="built-ins/Proxy/revocable/target-is-revoked-proxy.js"><reason></reason></test>
   <test id="built-ins/Proxy/set/trap-is-not-callable-realm.js"><reason></reason></test>
   <test id="built-ins/Proxy/setPrototypeOf/toboolean-trap-result-false.js"><reason></reason></test>
   <test id="built-ins/Proxy/setPrototypeOf/trap-is-not-callable-realm.js"><reason></reason></test>
@@ -2864,8 +2856,6 @@
   <test id="intl402/supportedLocalesOf-test-option-localeMatcher.js"><reason></reason></test>
   <test id="intl402/supportedLocalesOf-throws-if-element-not-string-or-object.js"><reason></reason></test>
   <test id="intl402/supportedLocalesOf-unicode-extensions-ignored.js"><reason></reason></test>
-  <test id="language/arguments-object/10.6-13-a-2.js"><reason></reason></test>
-  <test id="language/arguments-object/10.6-13-a-3.js"><reason></reason></test>
   <test id="language/block-scope/syntax/redeclaration/async-function-name-redeclaration-attempt-with-async-function.js"><reason></reason></test>
   <test id="language/block-scope/syntax/redeclaration/async-function-name-redeclaration-attempt-with-async-generator.js"><reason></reason></test>
   <test id="language/block-scope/syntax/redeclaration/async-function-name-redeclaration-attempt-with-function.js"><reason></reason></test>
@@ -3754,11 +3744,9 @@
   <test id="language/expressions/super/call-spread-obj-spread-order.js"><reason></reason></test>
   <test id="language/expressions/super/call-spread-obj-symbol-property.js"><reason></reason></test>
   <test id="language/expressions/super/prop-dot-cls-ref-strict.js"><reason></reason></test>
-  <test id="language/expressions/super/prop-dot-cls-this-uninit.js"><reason></reason></test>
   <test id="language/expressions/super/prop-dot-obj-ref-non-strict.js"><reason></reason></test>
   <test id="language/expressions/super/prop-dot-obj-ref-strict.js"><reason></reason></test>
   <test id="language/expressions/super/prop-expr-cls-ref-strict.js"><reason></reason></test>
-  <test id="language/expressions/super/prop-expr-cls-this-uninit.js"><reason></reason></test>
   <test id="language/expressions/super/prop-expr-obj-key-err.js"><reason></reason></test>
   <test id="language/expressions/super/prop-expr-obj-ref-non-strict.js"><reason></reason></test>
   <test id="language/expressions/super/prop-expr-obj-ref-strict.js"><reason></reason></test>
@@ -4079,7 +4067,6 @@
   <test id="language/statements/class/class-name-ident-yield-escaped.js"><reason></reason></test>
   <test id="language/statements/class/class-name-ident-yield.js"><reason></reason></test>
   <test id="language/statements/class/constructor-inferred-observable-iteration.js"><reason></reason></test>
-  <test id="language/statements/class/definition/this-access-restriction.js"><reason></reason></test>
   <test id="language/statements/class/definition/this-check-ordering.js"><reason></reason></test>
   <test id="language/statements/class/dstr/async-gen-meth-ary-init-iter-no-close.js"><reason></reason></test>
   <test id="language/statements/class/dstr/async-gen-meth-ary-ptrn-rest-init-ary.js"><reason></reason></test>

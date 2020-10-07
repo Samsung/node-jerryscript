@@ -12,9 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-try {
-  eval("class cla { static }");
-  assert(false);
-} catch (e) {
-  assert(e instanceof SyntaxError);
-}
+var asyncFunProto = Object.getPrototypeOf (async function() {});
+assert (Object.prototype.toString.call (asyncFunProto) === "[object AsyncFunction]")
