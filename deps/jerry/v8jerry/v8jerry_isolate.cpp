@@ -186,9 +186,6 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 
     m_fatalErrorCallback = nullptr;
 
-    m_fn_map_new = new JerryPolyfill("new_map", "", "return new Map();");
-    m_fn_is_map = new JerryPolyfill("is_map", "value", "return value instanceof Map;");
-    m_fn_is_set = new JerryPolyfill("is_set", "value", "return value instanceof Set;");
     m_fn_map_set = new JerryPolyfill("map_set", "map, key, value", "return map.set(key, value);");
     m_fn_set_add = new JerryPolyfill("set_add", "set, value", "return map.add(key);");
     m_fn_object_assign = new JerryPolyfill("object_assign", "value", "return Object.assign(Array.isArray(value) ? [] : {}, value);");
@@ -276,9 +273,6 @@ void JerryIsolate::Dispose(void) {
     pthread_mutex_destroy(&m_lock);
 #endif
 
-    delete m_fn_map_new;
-    delete m_fn_is_map;
-    delete m_fn_is_set;
     delete m_fn_set_add;
     delete m_fn_map_set;
     delete m_fn_object_assign;
