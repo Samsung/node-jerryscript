@@ -296,6 +296,8 @@ void JerryIsolate::Dispose(void) {
         delete m_hidden_object_template;
     }
 
+    m_micro_tasks.clear();
+
     //JerryForceCleanup();
 
     jerry_cleanup();
@@ -485,18 +487,28 @@ void JerryIsolate::InitalizeSlots(void) {
     //m_slot[root_offset + v8::internal::Internals::kDoubleReturnValuePlaceholderIndex] =
 }
 
-void JerryIsolate::EnqueueMicrotask(v8::MicrotaskCallback callback, void* data) {
-    m_tasks.push_back(new Task{callback, data});
+void JerryIsolate::EnqueueMicrotask(JerryValue *func) {
+    m_micro_tasks.push_back(func->Copy());
 }
 
 void JerryIsolate::RunMicrotasks(void) {
-    for (Task* task : m_tasks) {
-        task->callback(task->data);
+    for (auto& task : m_micro_tasks) {
+        jerry_value_t call_res = jerry_call_function (task->value(), jerry_create_undefined(), NULL, 0);
+        jerry_release_value (call_res);
     }
-    m_tasks.clear();
+    m_micro_tasks.clear();
 
-    // TODO: is it ok to have this here?
-    jerry_run_all_enqueued_jobs();
+    while (true) {
+        jerry_value_t ret = jerry_run_all_enqueued_jobs();
+
+        bool end = jerry_value_is_undefined(ret);
+        jerry_release_value(ret);
+
+        if (end) {
+            break;
+        }
+    }
+
 }
 
 void JerryIsolate::SetEternal(JerryValue* value, int* index) {

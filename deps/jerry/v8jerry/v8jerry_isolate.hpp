@@ -79,7 +79,7 @@ public:
     void SetFatalErrorHandler(v8::FatalErrorCallback callback) { m_fatalErrorCallback = callback; }
     void ReportFatalError(const char* location, const char* message);
 
-    void EnqueueMicrotask(v8::MicrotaskCallback callback, void* data);
+    void EnqueueMicrotask(JerryValue* func);
     void RunMicrotasks(void);
 
     void SetPromiseHook(v8::PromiseHook promise_hook) { m_promise_hook = promise_hook; }
@@ -104,12 +104,6 @@ public:
     static JerryIsolate* GetCurrent(void);
 
 private:
-    struct Task {
-        v8::MicrotaskCallback callback;
-        void* data;
-    };
-
-
     void SetError(JerryValue* error);
     void InitalizeSlots(void);
 
@@ -154,7 +148,7 @@ private:
     bool m_terminated;
     bool m_autorun_tasks;
 
-    std::vector<Task*> m_tasks;
+    std::vector<JerryValue*> m_micro_tasks;
 
     v8::PromiseHook m_promise_hook;
     v8::PromiseRejectCallback m_promise_reject_calback;
