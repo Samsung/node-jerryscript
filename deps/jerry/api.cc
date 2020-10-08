@@ -205,31 +205,29 @@ void V8::MoveGlobalReference(internal::Address** from, internal::Address** to) {
 bool V8::IsWeak(internal::Address* location)
 {
   JerryHandle* object = reinterpret_cast<JerryHandle*> (location);
-  assert(object->type() == JerryHandle::PersistentValue || object->type() == JerryHandle::PersistentWeakValue);
-  return object->type() == JerryHandle::PersistentWeakValue;
+  assert(object->type() == JerryHandle::PersistentValue
+         || object->type() == JerryHandle::PersistentWeakValue
+         || object->type() == JerryHandle::PersistentDeletedValue);
+  return object->type() != JerryHandle::PersistentValue;
 }
 
 void V8::MakeWeak(i::Address* location, void* parameter,
                   WeakCallbackInfo<void>::Callback weak_callback,
                   WeakCallbackType type) {
   V8_CALL_TRACE();
-  assert(!IsWeak(location));
 
-  JerryValue* object = reinterpret_cast<JerryValue*> (location);
+  JerryValue* object = reinterpret_cast<JerryValue*>(location);
 
-  if (type == WeakCallbackType::kInternalFields) {
-      void** wrapper = new void*[kInternalFieldsInWeakCallback + 1];
-      for (int i = 0; i < kInternalFieldsInWeakCallback; i++) {
-          wrapper[i] = object->GetInternalField<void*>(i);
-      }
-      wrapper[kInternalFieldsInWeakCallback] = parameter;
-      parameter = (void*) wrapper;
-  }
+  assert(object->type() == JerryHandle::PersistentValue && type == WeakCallbackType::kParameter);
 
   object->MakeWeak(weak_callback, type, parameter);
 }
 
-static void DummyWeakCallback(const WeakCallbackInfo<void>& data) {
+static void PersistentWeakDeleteCallback(const WeakCallbackInfo<void>& data) {
+  JerryValue** object_location = reinterpret_cast<JerryValue**>(data.GetParameter());
+
+  JerryValue::DeleteValueWithoutRelease(*object_location);
+  *object_location = NULL;
 }
 
 void V8::MakeWeak(i::Address** location_addr) {
@@ -237,32 +235,42 @@ void V8::MakeWeak(i::Address** location_addr) {
   assert(!IsWeak(*location_addr));
 
   JerryValue* object = reinterpret_cast<JerryValue*> (*location_addr);
-  object->MakeWeak(DummyWeakCallback, WeakCallbackType::kParameter, NULL);
+  void *parameter = reinterpret_cast<void*>(location_addr);
+
+  object->MakeWeak(PersistentWeakDeleteCallback, WeakCallbackType::kParameter, parameter);
 }
 
 void* V8::ClearWeak(i::Address* location) {
   V8_CALL_TRACE();
 
-  if (!IsWeak(location)) {
+  JerryValue* object = reinterpret_cast<JerryValue*> (location);
+
+  if (object->type() != JerryHandle::PersistentWeakValue) {
       return NULL;
   }
 
-  JerryValue* object = reinterpret_cast<JerryValue*> (location);
   return object->ClearWeak();
 }
 
 void V8::DisposeGlobal(i::Address* location) {
   JerryHandle* jhandle = reinterpret_cast<JerryHandle*>(location);
 
-  if (JerryHandle::IsValueType(jhandle)) {
-      JerryValue* object = reinterpret_cast<JerryValue*> (location);
-
-      if (object->type() == JerryHandle::PersistentWeakValue) {
-          object->ClearWeak();
-      }
-
-      delete object;
+  if (!JerryHandle::IsValueType(jhandle)) {
+      return;
   }
+
+  JerryValue* object = reinterpret_cast<JerryValue*> (location);
+
+  if (object->type() == JerryHandle::PersistentDeletedValue) {
+      JerryValue::DeleteValueWithoutRelease(object);
+      return;
+  }
+
+  if (object->type() == JerryHandle::PersistentWeakValue) {
+      object->ClearWeak();
+  }
+
+  delete object;
 }
 
 Value* V8::Eternalize(Isolate* v8_isolate, Value* value) {

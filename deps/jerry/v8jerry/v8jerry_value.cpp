@@ -351,17 +351,12 @@ static void JerryV8WeakCallback(void* data) {
     JerryV8WeakReference* weak_ref = reinterpret_cast<JerryV8WeakReference*>(data);
 
     while (weak_ref != NULL) {
-        void* parameter = NULL;
-
+        void* parameter = parameter = weak_ref->data;
         void* tmp_fields[v8::kEmbedderFieldsInWeakCallback];
         void** tmp_fields_ptr = reinterpret_cast<void**>(&tmp_fields);
         void** embedder_fields = tmp_fields_ptr;
 
-        if (weak_ref->type == v8::WeakCallbackType::kInternalFields) {
-            embedder_fields = reinterpret_cast<void**>(weak_ref->data);
-        } else {
-            parameter = weak_ref->data;
-        }
+        weak_ref->persistent->setType(JerryHandle::PersistentDeletedValue);
 
         v8::WeakCallbackInfo<void> info(v8::Isolate::GetCurrent(), parameter, embedder_fields, &weak_ref->callback);
         weak_ref->callback(info);
@@ -369,9 +364,6 @@ static void JerryV8WeakCallback(void* data) {
         JerryV8WeakReference* next_weak_ref = weak_ref->next;
 
         delete weak_ref;
-        if (embedder_fields != tmp_fields_ptr) {
-            delete [] embedder_fields;
-        }
         weak_ref = next_weak_ref;
     }
 }
@@ -388,10 +380,12 @@ void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8
 
     JerryV8WeakReference* weak_ref = new JerryV8WeakReference(reinterpret_cast<JerryV8WeakReference*>(weak_ref_head), this, weak_callback, type, data);
     jerry_set_object_native_pointer(value(), reinterpret_cast<void*>(weak_ref), &JerryV8WeakReferenceInfo);
+    jerry_release_value(value());
 }
 
 void* JerryValue::ClearWeak() {
     setType(PersistentValue);
+    jerry_acquire_value(value());
 
     void* data = NULL;
     jerry_get_object_native_pointer(value(), &data, &JerryV8WeakReferenceInfo);

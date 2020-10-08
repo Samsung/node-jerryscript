@@ -13,7 +13,10 @@
 class JerryIsolate;
 struct JerryV8ContextData;
 
+static void JerryV8WeakCallback(void* data);
+
 class JerryHandle {
+    friend void JerryV8WeakCallback(void* data);
 public:
     enum Type {
         Context,
@@ -24,6 +27,7 @@ public:
         LocalValue,
         PersistentValue,
         PersistentWeakValue,
+        PersistentDeletedValue,
     };
 
     JerryHandle() {}
@@ -85,7 +89,7 @@ public:
     {}
 
     JerryValue()
-        : JerryValue(0, JerryHandle::LocalValue)
+        : JerryValue(jerry_create_undefined(), JerryHandle::LocalValue)
     {}
 
     JerryValue(jerry_value_t value)
@@ -97,11 +101,14 @@ public:
      */
     static JerryValue* TryCreateValue(JerryIsolate* iso, jerry_value_t value);
 
+    /* Deletes the value without releasing the internal Jerry value. */
+    static void DeleteValueWithoutRelease(JerryValue *value) {
+        value->m_value = jerry_create_undefined();
+        delete value;
+    }
+
     ~JerryValue(void) {
-        if (m_value) {
-            jerry_release_value(m_value);
-            m_value = 0;
-        }
+        jerry_release_value(m_value);
     }
 
     jerry_value_t value() const { return m_value; }
