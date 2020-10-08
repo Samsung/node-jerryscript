@@ -1974,8 +1974,24 @@ MaybeLocal<Array> v8::Object::GetOwnPropertyNames(Local<Context> context) {
 }
 
 Local<String> v8::Object::GetConstructorName() {
-  UNIMPLEMENTED(4414);
-  return Local<String>();
+  JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
+
+  JerryV8FunctionHandlerData* data = JerryGetFunctionHandlerData(jobject->value());
+
+  JerryValue* name;
+
+  if (data == NULL) {
+    name = new JerryValue(jerry_create_string((const jerry_char_t*)""));
+  }
+  else
+  {
+    JerryFunctionTemplate* function_template = data->function_template;
+    JerryValue prop_name(jerry_create_string((const jerry_char_t*)"name"));
+
+    name = function_template->GetFunction()->GetProperty(&prop_name);
+  }
+
+  RETURN_HANDLE(String, JerryIsolate::toV8(JerryIsolate::GetCurrent()), name);
 }
 
 Maybe<bool> v8::Object::SetIntegrityLevel(Local<Context> context,
@@ -3371,11 +3387,14 @@ void Isolate::SetPromiseRejectCallback(PromiseRejectCallback callback) {
 }
 
 void Isolate::EnqueueMicrotask(Local<Function> v8_function) {
-  UNIMPLEMENTED(8655);
+  V8_CALL_TRACE();
+  JerryValue* jFunc = reinterpret_cast<JerryValue*>(*v8_function);
+  JerryIsolate::fromV8(this)->EnqueueMicrotask(jFunc);
 }
 
 void Isolate::SetMicrotasksPolicy(MicrotasksPolicy policy) {
   V8_CALL_TRACE();
+  // Leave this empty since node uses only MicrotasksPolicy::kExplicit
 }
 
 void Isolate::LowMemoryNotification() {
@@ -3411,6 +3430,7 @@ void v8::Isolate::DateTimeConfigurationChangeNotification(
 
 void MicrotasksScope::PerformCheckpoint(Isolate* v8_isolate) {
   V8_CALL_TRACE();
+  JerryIsolate::fromV8(v8_isolate)->RunMicrotasks();
 }
 
 String::Utf8Value::Utf8Value(v8::Isolate* isolate, v8::Local<v8::Value> obj)
