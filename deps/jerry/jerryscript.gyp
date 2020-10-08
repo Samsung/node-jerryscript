@@ -65,6 +65,8 @@
 
         'v8jerry/v8jerry_allocator.cpp',
         'v8jerry/v8jerry_allocator.hpp',
+        'v8jerry/v8jerry_atomics.cpp',
+        'v8jerry/v8jerry_atomics.hpp',
         'v8jerry/v8jerry_backing_store.cpp',
         'v8jerry/v8jerry_backing_store.hpp',
         'v8jerry/v8jerry_allocator.hpp',

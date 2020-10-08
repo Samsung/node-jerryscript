@@ -20,4 +20,12 @@ private:
 void InjectGlobalFunctions(void);
 void JerryForceCleanup(void);
 
+void JerryxHandlerRegister(const jerry_char_t* name_p,
+                           jerry_value_t object_value,
+                           jerry_external_handler_t handler_p);
+void JerryxHandlerRegisterGlobal(const jerry_char_t* name_p,
+                                 jerry_external_handler_t handler_p);
+void JerryxHandlerRegisterString(const jerry_char_t* name_p,
+                                 jerry_external_handler_t handler_p);
+
 #endif

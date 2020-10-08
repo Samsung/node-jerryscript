@@ -150,3 +150,49 @@ void JerryForceCleanup(void) {
         }
     }
 }
+
+void JerryxHandlerRegister (const jerry_char_t *name_p, jerry_value_t object_value,
+                            jerry_external_handler_t handler_p) {
+    jerry_value_t function_name_val = jerry_create_string (name_p);
+    jerry_value_t function_val = jerry_create_external_function (handler_p);
+    jerry_property_descriptor_t desc;
+    jerry_init_property_descriptor_fields(&desc);
+    desc.is_value_defined = true;
+    desc.value = function_val;
+
+    jerry_value_t result_val = jerry_define_own_property (object_value, function_name_val, &desc);
+
+    jerry_free_property_descriptor_fields (&desc);
+    jerry_release_value (function_name_val);
+
+    if (jerry_value_is_error (result_val))
+    {
+        jerry_port_log (JERRY_LOG_LEVEL_WARNING, "Warning: failed to register '%s' method.", name_p);
+    }
+
+    jerry_release_value (result_val);
+}
+
+void JerryxHandlerRegisterGlobal (const jerry_char_t *name_p,
+                                  jerry_external_handler_t handler_p) {
+    jerry_value_t global_obj_val = jerry_get_global_object();
+    JerryxHandlerRegister(name_p, global_obj_val, handler_p);
+    jerry_release_value(global_obj_val);
+}
+
+void JerryxHandlerRegisterString (const jerry_char_t *name_p,
+                                  jerry_external_handler_t handler_p) {
+    jerry_value_t global_obj_val = jerry_get_global_object();
+    jerry_value_t name_val = jerry_create_string((const jerry_char_t *) "String");
+    jerry_value_t string_val = jerry_get_property(global_obj_val, name_val);
+    jerry_release_value (name_val);
+    jerry_release_value (global_obj_val);
+
+    name_val = jerry_create_string((const jerry_char_t *) "prototype");
+    jerry_value_t prototype_val = jerry_get_property(string_val, name_val);
+    jerry_release_value (name_val);
+    jerry_release_value (string_val);
+
+    JerryxHandlerRegister (name_p, prototype_val, handler_p);
+    jerry_release_value (prototype_val);
+}
