@@ -599,6 +599,7 @@ parser.add_option('--no-browser-globals',
 parser.add_option('--without-inspector',
     action='store_true',
     dest='without_inspector',
+    default=True,
     help='disable the V8 inspector protocol')
 
 parser.add_option('--shared',
@@ -610,7 +611,7 @@ parser.add_option('--shared',
 parser.add_option('--without-v8-platform',
     action='store_true',
     dest='without_v8_platform',
-    default=False,
+    default=True,
     help='do not initialize v8 platform during node.js startup. ' +
          '(This mode is not officially supported for regular applications)')
 
