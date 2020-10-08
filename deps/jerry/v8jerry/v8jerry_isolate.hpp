@@ -11,6 +11,7 @@
 #include "jerryscript-port-default.h"
 
 #include "v8jerry_allocator.hpp"
+#include "v8jerry_atomics.hpp"
 #include "v8jerry_value.hpp"
 #include "v8jerry_utils.hpp"
 
