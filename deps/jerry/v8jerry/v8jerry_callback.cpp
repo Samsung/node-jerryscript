@@ -389,7 +389,7 @@ jerry_value_t JerryV8ProxyHandler(
                 // Again: dragons!
                 JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
 
-                jret = jerry_acquire_value(retVal->value());
+                jret = jerry_create_boolean(!jerry_value_is_undefined(retVal->value()));
             } else {
                 JerryValue* jerror = iso->GetRawError();
                 jret = jerry_create_error_from_value(jerror->value(), false);

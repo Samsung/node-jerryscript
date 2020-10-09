@@ -2480,7 +2480,7 @@ HeapSpaceStatistics::HeapSpaceStatistics()
       space_used_size_(0),
       space_available_size_(0),
       physical_space_size_(0) {
-  UNIMPLEMENTED(5761);
+  V8_CALL_TRACE();
 }
 
 HeapCodeStatistics::HeapCodeStatistics()
@@ -3343,13 +3343,13 @@ void Isolate::GetHeapStatistics(HeapStatistics* heap_statistics) {
 }
 
 size_t Isolate::NumberOfHeapSpaces() {
-  UNIMPLEMENTED(8477);
+  V8_CALL_TRACE();
   return 0;
 }
 
 bool Isolate::GetHeapSpaceStatistics(HeapSpaceStatistics* space_statistics,
                                      size_t index) {
-  UNIMPLEMENTED(8481);
+  V8_CALL_TRACE();
   return false;
 }
 
