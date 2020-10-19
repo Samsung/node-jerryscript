@@ -2574,7 +2574,7 @@ Local<v8::Object> Context::GetExtrasBindingObject() {
 }
 
 void Context::AllowCodeGenerationFromStrings(bool allow) {
-  UNIMPLEMENTED(6082);
+  V8_CALL_TRACE();
 }
 
 MaybeLocal<v8::Object> ObjectTemplate::NewInstance(Local<Context> context) {
