@@ -448,8 +448,8 @@ void JerryIsolate::EnqueueMicrotask(JerryValue *func) {
 
 void JerryIsolate::RunMicrotasks(void) {
     for (auto& task : m_micro_tasks) {
-        jerry_value_t call_res = jerry_call_function (task->value(), jerry_create_undefined(), NULL, 0);
-        jerry_release_value (call_res);
+        jerry_release_value(jerry_call_function (task->value(), jerry_create_undefined(), NULL, 0));
+        delete task;
     }
     m_micro_tasks.clear();
 

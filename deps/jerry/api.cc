@@ -3000,7 +3000,9 @@ size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
       abort();
   }
 
-  return jerry_arraybuffer_read (buffer, 0, (uint8_t*)dest, byte_length);
+  jerry_length_t length = jerry_arraybuffer_read (buffer, 0, (uint8_t*)dest, byte_length);
+  jerry_release_value(buffer);
+  return length;
 }
 
 bool v8::ArrayBufferView::HasBuffer() const {
