@@ -116,7 +116,7 @@ jerry_value_t JerryV8GetterSetterHandler(
         } else {
             JerryValue* jerror = iso->GetRawError();
             jret = jerry_create_error_from_value(jerror->value(), false);
-            iso->ClearError();
+            iso->ClearError(NULL);
         }
     }
 
@@ -298,7 +298,7 @@ jerry_value_t JerryV8FunctionHandler(
         } else {
             JerryValue* jerror = iso->GetRawError();
             jret = jerry_create_error_from_value(jerror->value(), false);
-            iso->ClearError();
+            iso->ClearError(NULL);
         }
     }
 
@@ -364,7 +364,7 @@ jerry_value_t JerryV8ProxyHandler(
             } else {
                 JerryValue* jerror = iso->GetRawError();
                 jret = jerry_create_error_from_value(jerror->value(), false);
-                iso->ClearError();
+                iso->ClearError(NULL);
             }
             break;
         }
@@ -394,7 +394,7 @@ jerry_value_t JerryV8ProxyHandler(
             } else {
                 JerryValue* jerror = iso->GetRawError();
                 jret = jerry_create_error_from_value(jerror->value(), false);
-                iso->ClearError();
+                iso->ClearError(NULL);
             }
 
             break;
@@ -415,7 +415,7 @@ jerry_value_t JerryV8ProxyHandler(
             } else {
                 JerryValue* jerror = iso->GetRawError();
                 jret = jerry_create_error_from_value(jerror->value(), false);
-                iso->ClearError();
+                iso->ClearError(NULL);
             }
             break;
         }
@@ -434,7 +434,7 @@ jerry_value_t JerryV8ProxyHandler(
             } else {
                 JerryValue* jerror = iso->GetRawError();
                 jret = jerry_create_error_from_value(jerror->value(), false);
-                iso->ClearError();
+                iso->ClearError(NULL);
             }
             break;
         }
@@ -465,7 +465,7 @@ jerry_value_t JerryV8ProxyHandler(
                 } else {
                     JerryValue* jerror = iso->GetRawError();
                     jret = jerry_create_error_from_value(jerror->value(), false);
-                    iso->ClearError();
+                    iso->ClearError(NULL);
                 }
             } else {
                 jerry_property_descriptor_t prop_desc;

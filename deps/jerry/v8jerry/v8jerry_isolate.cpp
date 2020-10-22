@@ -154,7 +154,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     JerryAtomics::Initialize();
 
     m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
-    m_try_catch_count = 0;
+    m_last_try_catch = NULL;
     m_current_error = NULL;
     m_hidden_object_template = NULL;
 
@@ -222,7 +222,7 @@ void JerryIsolate::Dispose(void) {
     }
 
     delete m_magic_string_stack;
-    ClearError();
+    ClearError(NULL);
 
 #ifdef __POSIX__
     pthread_mutex_destroy(&m_lock);
@@ -263,35 +263,35 @@ void JerryIsolate::Dispose(void) {
     delete this;
 }
 
-void JerryIsolate::PushTryCatch(void* try_catch_obj) {
-    m_try_catch_count++;
+void* JerryIsolate::PushTryCatch(void* try_catch_obj) {
+   void *result = m_last_try_catch;
+   m_last_try_catch = reinterpret_cast<v8::TryCatch*>(try_catch_obj);
+   return result;
 }
 
 void JerryIsolate::PopTryCatch(void* try_catch_obj) {
-    assert(m_try_catch_count > 0);
-
-    m_try_catch_count--;
-}
-
-void JerryIsolate::SetError(JerryValue* error) {
-    assert(error != NULL);
-    // If there was a previous error, release it!
-    ClearError();
-    m_current_error = error;
+    m_last_try_catch = reinterpret_cast<v8::TryCatch*>(try_catch_obj);
 }
 
 void JerryIsolate::SetError(const jerry_value_t error_value) {
     assert(jerry_value_is_error(error_value));
 
     jerry_value_t error_obj = jerry_get_value_from_error(error_value, true);
-    SetError(new JerryValue(error_obj));
+    ClearError(new JerryValue(error_obj));
 }
 
-void JerryIsolate::ClearError(void) {
+void JerryIsolate::ClearError(JerryValue* exception) {
     if (m_current_error != NULL) {
         delete m_current_error;
-        m_current_error = NULL;
     }
+    m_current_error = exception;
+}
+
+void *JerryIsolate::TakeError(void)
+{
+    void *result = m_current_error;
+    m_current_error = NULL;
+    return result;
 }
 
 bool JerryIsolate::HasError(void) {
@@ -299,14 +299,14 @@ bool JerryIsolate::HasError(void) {
 }
 
 void JerryIsolate::TryReportError(void) {
-    if (m_try_catch_count != 0) {
+    if (m_last_try_catch != NULL) {
         return;
     }
 
     // Copy the error to corectly report error
     JerryValue error(jerry_acquire_value(GetRawError()->value()));
 
-    ClearError();
+    ClearError(NULL);
     v8::Local<v8::Value> exception = error.AsLocal<v8::Value>();
 
     // Replace "stack" property on exception as V8 creates a stack string and not an array.

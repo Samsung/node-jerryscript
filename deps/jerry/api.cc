@@ -942,7 +942,6 @@ MaybeLocal<Script> Script::Compile(Local<Context> context, Local<String> source,
 
 v8::TryCatch::TryCatch(v8::Isolate* isolate)
     : isolate_(reinterpret_cast<v8::internal::Isolate*>(isolate)),
-      next_(NULL),
       is_verbose_(false),
       can_continue_(true),
       capture_message_(true),
@@ -950,31 +949,42 @@ v8::TryCatch::TryCatch(v8::Isolate* isolate)
       has_terminated_(false) {
   V8_CALL_TRACE();
 
-  JerryIsolate::fromV8(isolate_)->PushTryCatch(this);
+  JerryIsolate* iso = JerryIsolate::fromV8(isolate_);
+
+  next_ = reinterpret_cast<v8::TryCatch*>(iso->PushTryCatch(this));
+  exception_ = iso->TakeError();
 }
 
 v8::TryCatch::~TryCatch() {
     V8_CALL_TRACE();
     // TODO: remove from isolate stack
     JerryIsolate* iso = JerryIsolate::fromV8(isolate_);
-    iso->PopTryCatch(this);
+    iso->PopTryCatch(this->next_);
 
-    if (!rethrow_ && HasCaught()) {
-        if (is_verbose_) {
-            JerryValue error(jerry_acquire_value(iso->GetRawError()->value()));
-            iso->ClearError();
-            Local<Value> exception(reinterpret_cast<Value*>(&error));
-
-            // Replace "stack" property on exception as V8 creates a stack string and not an array.
-            iso->UpdateErrorStackProp(error);
-
-            Local<v8::Message> message;
-            iso->ReportMessage(message, exception);
-        } else {
-            // By not clearing the error "effectively" the parent TryCatch would inherit everything.
-            iso->ClearError();
-        }
+    if (!iso->HasError()) {
+        iso->ClearError(reinterpret_cast<JerryValue*>(exception_));
+        return;
     }
+
+    if (rethrow_) {
+        if (exception_ != NULL) {
+            delete reinterpret_cast<JerryValue*>(exception_);
+        }
+        return;
+    }
+
+    if (is_verbose_) {
+        JerryValue error(jerry_acquire_value(iso->GetRawError()->value()));
+        Local<Value> exception(reinterpret_cast<Value*>(&error));
+
+        // Replace "stack" property on exception as V8 creates a stack string and not an array.
+        iso->UpdateErrorStackProp(error);
+
+        Local<v8::Message> message;
+        iso->ReportMessage(message, exception);
+    }
+
+    iso->ClearError(reinterpret_cast<JerryValue*>(exception_));
 }
 
 bool v8::TryCatch::HasCaught() const {

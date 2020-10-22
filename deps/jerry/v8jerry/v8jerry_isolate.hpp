@@ -50,11 +50,12 @@ public:
 
     void Dispose(void);
 
-    void PushTryCatch(void* try_catch_obj);
+    void* PushTryCatch(void* try_catch_obj);
     void PopTryCatch(void* try_catch_obj);
     void SetErrorVerbose(bool value);
     void SetError(const jerry_value_t error_value);
-    void ClearError(void);
+    void ClearError(JerryValue* exception);
+    void *TakeError(void);
     bool HasError(void);
     void TryReportError(void);
     JerryValue* GetRawError(void) { return m_current_error; }
@@ -110,7 +111,6 @@ public:
     static JerryIsolate* GetCurrent(void);
 
 private:
-    void SetError(JerryValue* error);
     void InitalizeSlots(void);
 
     void InitializeSharedArrayBuffer();
@@ -148,7 +148,7 @@ private:
 
     JerryValue* m_magic_string_stack;
 
-    int m_try_catch_count;
+    v8::TryCatch* m_last_try_catch;
     JerryValue* m_current_error;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
