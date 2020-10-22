@@ -96,6 +96,11 @@ public:
     void FormatError(const JerryValue& error, std::ostream& out);
     void UpdateErrorStackProp(JerryValue& error);
 
+    JerryValue* Undefined() {
+        int root_offset = v8::internal::Internals::kIsolateRootsOffset / v8::internal::kApiSystemPointerSize;
+        return reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex]);
+    }
+
     JerryObjectTemplate* HiddenObjectTemplate(void);
 
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }

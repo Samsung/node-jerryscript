@@ -631,7 +631,7 @@ Local<Script> UnboundScript::BindToCurrentContext() {
   const JerryValue* unboundScript = reinterpret_cast<const JerryValue*>(this);
   void* unboundScriptData;
   jerry_get_object_native_pointer(unboundScript->value(), &unboundScriptData, &unboundScriptInfo);
-  RETURN_HANDLE(Script, ((UnboundScriptData*)unboundScriptData)->isolate, new JerryValue(jerry_acquire_value(unboundScript->value())));
+  RETURN_HANDLE(Script, ((UnboundScriptData*)unboundScriptData)->isolate, unboundScript->clone());
 }
 
 MaybeLocal<Value> Script::Run(Local<Context> context) {
@@ -2835,8 +2835,10 @@ MaybeLocal<Promise::Resolver> Promise::Resolver::New(Local<Context> context) {
 
 Local<Promise> Promise::Resolver::GetPromise() {
   V8_CALL_TRACE();
+  JerryValue* jpromise = reinterpret_cast<JerryValue*>(this)->clone();
+
   // TODO: maybe wrap the promise object into a resolver?
-  RETURN_HANDLE(Promise, JerryIsolate::toV8(JerryIsolate::GetCurrent()), reinterpret_cast<JerryValue*>(this));
+  RETURN_HANDLE(Promise, JerryIsolate::toV8(JerryIsolate::GetCurrent()), jpromise);
 }
 
 Maybe<bool> Promise::Resolver::Resolve(Local<Context> context,

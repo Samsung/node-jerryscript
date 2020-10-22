@@ -120,7 +120,6 @@ jerry_value_t JerryV8GetterSetterHandler(
         }
     }
 
-
     // No need to delete the JerryValue here, the HandleScope will take (should) care of it!
     //delete retVal;
 
@@ -138,7 +137,7 @@ class JerryFunctionCallbackInfo : public v8::FunctionCallbackInfo<T> {
   static const int kDataIndex = 4;
   static const int kCalleeIndex = 5;
   static const int kContextSaveIndex = 6;
-static const int kNewTargetIndex = 7;
+  static const int kNewTargetIndex = 7;
 */
 public:
     static const int kImplicitArgsSize = v8::FunctionCallbackInfo<T>::kNewTargetIndex + 1;
@@ -146,76 +145,75 @@ public:
     JerryFunctionCallbackInfo(
         const jerry_value_t function_obj,
         const jerry_value_t this_val,
+        const jerry_value_t new_target_val,
         const jerry_value_t args_p[],
         const jerry_length_t args_cnt,
         const JerryV8FunctionHandlerData* handlerData)
         // Please note there is a "Hack"/"Fix" in the v8.h file where the FunctionCallbackInfo's "values_" member is accessed!
-        : v8::FunctionCallbackInfo<T>(reinterpret_cast<v8::internal::Address*>(BuildImplicitArgs(function_obj, this_val, handlerData)),
+        : v8::FunctionCallbackInfo<T>(reinterpret_cast<v8::internal::Address*>(implicit_args_data_),
                                       reinterpret_cast<v8::internal::Address*>(BuildArgs(this_val, args_p, args_cnt) + args_cnt - 1),
                                       args_cnt)
-        // Beware of magic: !!!
-        , m_values(reinterpret_cast<JerryHandle**>(this->values_) - args_cnt + 1)
-    {}
+    {
+        BuildImplicitArgs(function_obj, this_val, new_target_val, handlerData);
+    }
 
     ~JerryFunctionCallbackInfo() {
-        const int args_count = this->Length() + 1; /* +1 is the js 'this' */
-        for (int idx = 0; idx < args_count; idx++) {
-            delete m_values[idx];
-        }
-        delete [] m_values;
+        /* The values_ points to the end */
+        JerryHandle **values = reinterpret_cast<JerryHandle**>(this->values_) - this->Length() + 1;
 
-        JerryHandle **implicit_args = reinterpret_cast<JerryHandle**>(this->implicit_args_);
-        delete [] implicit_args;
+        delete [] values;
     }
 
 private:
+    static JerryValue* newValue(jerry_value_t value) {
+        /* Handle scope will release these values */
+        JerryValue* jvalue = new JerryValue(jerry_acquire_value(value));
+        JerryIsolate::GetCurrent()->AddToHandleScope(jvalue);
+        return jvalue;
+    }
+
     static JerryHandle** BuildArgs(
         const jerry_value_t this_val,
         const jerry_value_t args_p[],
         const jerry_length_t args_cnt) {
 
         JerryHandle **values = new JerryHandle*[args_cnt + 1 /* this */];
-        /* this should be at 'values - 1' */
+        /* this should be at 'values + 1' */
 
         /* args_p[0]  is at 'values - 0' */
         /* args_p[1]  is at 'values - 1' */
         /* args_p[2]  is at 'values - 2' */
         for (jerry_length_t idx = 0; idx < args_cnt; idx++) {
-            values[args_cnt - idx - 1] = new JerryValue(args_p[idx]);
+            values[args_cnt - idx - 1] = newValue(args_p[idx]);
         }
-        values[args_cnt] = new JerryValue(this_val);
+        values[args_cnt] = newValue(this_val);
 
         return values;
     }
 
-    static JerryHandle** BuildImplicitArgs(const jerry_value_t function_obj,
-                                           const jerry_value_t this_val,
-                                           const JerryV8FunctionHandlerData* handlerData) {
-        JerryHandle **values = new JerryHandle*[kImplicitArgsSize];
+    void BuildImplicitArgs(const jerry_value_t function_obj,
+                           const jerry_value_t this_val,
+                           const jerry_value_t new_target_val,
+                           const JerryV8FunctionHandlerData* handlerData) {
         /* TODO: From the docs:
          * If the callback was created without a Signature, this is the same
          * value as This(). If there is a signature, and the signature didn't match
          * This() but one of its hidden prototypes, this will be the respective
          * hidden prototype.
          */
-        values[v8::FunctionCallbackInfo<T>::kHolderIndex] = new JerryValue(jerry_acquire_value(this_val));
+        v8::Isolate* isolate = v8::Isolate::GetCurrent();
+        JerryIsolate* jerry_isolate = reinterpret_cast<JerryIsolate*>(isolate);
+
+        implicit_args_data_[v8::FunctionCallbackInfo<T>::kHolderIndex] = newValue(this_val);
         // TODO: correctly fill the arguments:
-        values[v8::FunctionCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(v8::Isolate::GetCurrent()); /* isolate; */
-        values[v8::FunctionCallbackInfo<T>::kReturnValueIndex] = new JerryValue(jerry_create_undefined()); /* construct_call ? this : nullptr;*/
+        implicit_args_data_[v8::FunctionCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(isolate);
+        implicit_args_data_[v8::FunctionCallbackInfo<T>::kReturnValueIndex] = jerry_isolate->Undefined();
 
-        values[v8::FunctionCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(handlerData->function_template->external())); /* data; */
-        values[v8::FunctionCallbackInfo<T>::kNewTargetIndex] = new JerryValue(jerry_acquire_value(this_val)); /* new_target; */
-
-        // HandleScope will do the cleanup for us at a later stage
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kHolderIndex]);
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kReturnValueIndex]);
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kDataIndex]);
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::FunctionCallbackInfo<T>::kNewTargetIndex]);
-
-        return values;
+        implicit_args_data_[v8::FunctionCallbackInfo<T>::kDataIndex] = newValue(handlerData->function_template->external()); /* data; */
+        implicit_args_data_[v8::FunctionCallbackInfo<T>::kNewTargetIndex] = newValue(new_target_val); /* new_target; */
     }
 
-    JerryHandle** m_values;
+    JerryHandle* implicit_args_data_[kImplicitArgsSize];
 };
 
 JerryV8FunctionHandlerData* JerryGetFunctionHandlerData(jerry_value_t target) {
@@ -246,9 +244,11 @@ jerry_value_t JerryV8FunctionHandler(
     // Make sure that Localy allocated vars will be freed upon exit.
     v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
 
+    jerry_value_t new_target = jerry_get_new_target ();
+
     // If this is a constructor call do a few extra things
     // TODO: this should be really checked correcty
-    if (jerry_value_is_object(this_val)) {
+    if (!jerry_value_is_undefined(new_target)) {
 
         // TODO: remove this "constructor" call check.
         if (!jerry_get_object_native_pointer(this_val, NULL, &JerryV8FunctionHandlerData::TypeInfo)) {
@@ -283,7 +283,7 @@ jerry_value_t JerryV8FunctionHandler(
     jerry_value_t jret = jerry_create_undefined();
 
     if (data->v8callback != NULL) {
-        JerryFunctionCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data);
+        JerryFunctionCallbackInfo<v8::Value> info(function_obj, this_val, new_target, args_p, args_cnt, data);
 
         data->v8callback(info);
 
@@ -305,6 +305,7 @@ jerry_value_t JerryV8FunctionHandler(
     // No need to delete the JerryValue here, the HandleScope will take (should) care of it!
     //delete retVal;
 
+    jerry_release_value(new_target);
     return jret;
 }
 

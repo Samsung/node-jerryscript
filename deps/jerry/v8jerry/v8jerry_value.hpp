@@ -113,6 +113,8 @@ public:
 
     jerry_value_t value() const { return m_value; }
 
+    JerryValue *clone() const { return new JerryValue(jerry_acquire_value(m_value)); }
+
     bool SetProperty(JerryValue* key, JerryValue* value);
     bool SetPrivateProperty(JerryValue* key, JerryValue* value);
     bool SetPropertyIdx(uint32_t idx, JerryValue* value);
