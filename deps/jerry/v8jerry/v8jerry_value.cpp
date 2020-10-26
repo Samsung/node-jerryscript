@@ -356,7 +356,7 @@ static void JerryV8WeakCallback(void* data) {
         void** tmp_fields_ptr = reinterpret_cast<void**>(&tmp_fields);
         void** embedder_fields = tmp_fields_ptr;
 
-        weak_ref->persistent->setType(JerryHandle::PersistentDeletedValue);
+        weak_ref->persistent->m_type = JerryHandle::PersistentDeletedValue;
 
         v8::WeakCallbackInfo<void> info(v8::Isolate::GetCurrent(), parameter, embedder_fields, &weak_ref->callback);
         weak_ref->callback(info);
@@ -373,7 +373,7 @@ static jerry_object_native_info_t JerryV8WeakReferenceInfo = {
 };
 
 void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data) {
-    setType(PersistentWeakValue);
+    m_type = PersistentWeakValue;
 
     void* weak_ref_head = NULL;
     jerry_get_object_native_pointer(value(), &weak_ref_head, &JerryV8WeakReferenceInfo);
@@ -384,7 +384,7 @@ void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8
 }
 
 void* JerryValue::ClearWeak() {
-    setType(PersistentValue);
+    m_type = PersistentValue;
     jerry_acquire_value(value());
 
     void* data = NULL;
@@ -418,7 +418,40 @@ void* JerryValue::ClearWeak() {
     return data;
 }
 
-jerry_value_t JerryString::FromBuffer (const char* buffer, int length) {
+JerryString* JerryValue::ToString(void) const {
+    jerry_value_t string = jerry_value_to_string(m_value);
+
+    if (jerry_value_is_error (string)) {
+        jerry_release_value (string);
+        return NULL;
+    }
+
+    return new JerryString(string, JerryStringType::ONE_BYTE);
+}
+
+JerryValue* JerryValue::ToNumber() const {
+    jerry_value_t number = jerry_value_to_number(m_value);
+
+    if (jerry_value_is_error (number)) {
+        jerry_release_value (number);
+        return NULL;
+    }
+
+    return new JerryValue(number);
+}
+
+JerryValue* JerryValue::ToObject(void) const {
+    jerry_value_t object = jerry_value_to_object(m_value);
+
+    if (jerry_value_is_error (object)) {
+        jerry_release_value (object);
+        return NULL;
+    }
+
+    return new JerryValue(object);
+}
+
+jerry_value_t JerryString::FromBuffer(const char* buffer, int length) {
     if (length == -1) {
         length = strlen(buffer);
     }

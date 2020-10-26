@@ -33,20 +33,19 @@ public:
     JerryHandle() {}
 
     JerryHandle(Type type)
-        : m_type(type)
+        : m_type(static_cast<uint8_t>(type))
+        , m_stringType(0)
     {}
 
-    Type type() const { return m_type; }
+    Type type() const { return static_cast<Type>(m_type); }
 
     static bool IsValueType(JerryHandle* handle) {
         return (handle != NULL && handle->type() >= LocalValue);
     }
 
 protected:
-    void setType(Type type) { m_type = type; }
-
-private:
-    Type m_type;
+    uint8_t m_type;
+    uint8_t m_stringType;
 };
 
 struct JerryV8InternalFieldData {
@@ -80,6 +79,8 @@ struct JerryV8WeakReference {
         {
         }
 };
+
+class JerryString;
 
 class JerryValue : public JerryHandle {
 public:
@@ -178,18 +179,12 @@ public:
     int GetStringLength(void) const { return jerry_get_string_length(m_value); }
     int GetStringUtf8Length(void) const { return jerry_get_utf8_string_size(m_value); }
 
-    JerryValue* ToString(void) const {
-        // TODO: error handling?
-        return new JerryValue(jerry_value_to_string(m_value));
-    }
+    JerryString* ToString(void) const;
+    JerryValue* ToNumber() const;
+    JerryValue* ToObject(void) const;
 
     JerryValue* ToInteger(void) const {
-        // TODO: error handling?
-        return new JerryValue(jerry_value_to_number(m_value));
-    }
-
-    JerryValue* ToNumber() const {
-        return new JerryValue(jerry_value_to_number(m_value));
+        return ToNumber();
     }
 
     bool BooleanValue() const {
@@ -200,10 +195,6 @@ public:
         return new JerryValue(jerry_value_to_boolean(m_value));
     }
 
-    JerryValue* ToObject(void) const {
-        // TODO: error handling?
-        return new JerryValue(jerry_value_to_object(m_value));
-    }
 
     JerryValue* GetObjectCreationContext(void);
 
@@ -291,17 +282,15 @@ class JerryString : public JerryValue {
 public:
     JerryString(jerry_value_t value, JerryStringType type = JerryStringType::ONE_BYTE)
         : JerryValue(value)
-        , m_type(type)
-    {}
+    {
+        m_stringType = static_cast<uint8_t>(type);
+    }
 
     JerryStringType type () const {
-        return m_type;
+        return static_cast<JerryStringType>(m_stringType);
     }
 
     static jerry_value_t FromBuffer (const char* buffer, int length);
-
-private:
-    JerryStringType m_type;
 };
 
 class JerryExternalString : public JerryString {

@@ -1441,6 +1441,11 @@ bool Value::IsModuleNamespaceObject() const {
 MaybeLocal<String> Value::ToString(Local<Context> context) const {
   V8_CALL_TRACE();
   JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToString();
+
+  if (result == NULL) {
+      return MaybeLocal<String>();
+  }
+
   RETURN_HANDLE(String, context->GetIsolate(), result);
 }
 
@@ -1452,6 +1457,11 @@ MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
 MaybeLocal<Object> Value::ToObject(Local<Context> context) const {
   V8_CALL_TRACE();
   JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToObject();
+
+  if (result == NULL) {
+      return MaybeLocal<Object>();
+  }
+
   RETURN_HANDLE(Object, Isolate::GetCurrent(), result);
 }
 
@@ -1469,12 +1479,22 @@ Local<Boolean> Value::ToBoolean(Isolate* v8_isolate) const {
 MaybeLocal<Number> Value::ToNumber(Local<Context> context) const {
   V8_CALL_TRACE();
   JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToNumber();
+
+  if (result == NULL) {
+      return MaybeLocal<Number>();
+  }
+
   RETURN_HANDLE(Number, context->GetIsolate(), result);
 }
 
 MaybeLocal<Integer> Value::ToInteger(Local<Context> context) const {
   V8_CALL_TRACE();
   JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+
+  if (result == NULL) {
+      return MaybeLocal<Integer>();
+  }
+
   RETURN_HANDLE(Integer, context->GetIsolate(), result);
 }
 
