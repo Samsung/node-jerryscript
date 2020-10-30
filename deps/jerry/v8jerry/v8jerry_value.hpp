@@ -131,10 +131,6 @@ public:
 
     JerryValue* GetOwnPropertyDescriptor(const JerryValue& jkey) const;
     JerryValue* GetOwnPropertyNames() const;
-    JerryValue* GetPropertyNames() const;
-    JerryValue* GetAdvancedPropertyNames(v8::KeyCollectionMode mode,
-    v8::PropertyFilter property_filter, v8::IndexFilter index_filter,
-    v8::KeyConversionMode key_conversion) const;
 
     bool IsString() const { return jerry_value_is_string(m_value); }
     bool IsName() const { return jerry_value_is_string(m_value) || jerry_value_is_symbol(m_value); }

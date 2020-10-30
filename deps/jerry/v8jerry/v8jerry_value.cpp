@@ -90,16 +90,6 @@ JerryValue* JerryValue::GetOwnPropertyNames() const {
     return new JerryValue(JerryIsolate::GetCurrent()->HelperGetOwnPropNames().Call(m_value, NULL, 0));
 }
 
-JerryValue* JerryValue::GetPropertyNames() const {
-    return new JerryValue(JerryIsolate::GetCurrent()->HelperGetPropNames().Call(m_value, NULL, 0));
-}
-
-JerryValue* JerryValue::GetAdvancedPropertyNames(v8::KeyCollectionMode mode,
-    v8::PropertyFilter property_filter, v8::IndexFilter index_filter,
-    v8::KeyConversionMode key_conversion) const {
-    return GetPropertyNames();
-}
-
 static const jerry_object_native_info_t JerryV8ObjectContextTypeInfo = {
     /* native_pointer stores JerryContext (aka JerryValue*) which will be freed via the handlescope */
     .free_cb = NULL

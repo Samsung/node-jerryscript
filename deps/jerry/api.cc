@@ -1980,7 +1980,9 @@ MaybeLocal<Array> v8::Object::GetPropertyNames(Local<Context> context) {
   V8_CALL_TRACE();
   JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
 
-  JerryValue* names = jobject->GetPropertyNames();
+  int filter = JERRY_PROPERTY_FILTER_TRAVERSE_PROTOTYPE_CHAIN | JERRY_PROPERTY_FILTER_EXLCUDE_NON_ENUMERABLE;
+  JerryValue* names = new JerryValue(jerry_object_get_property_names (jobject->value(), static_cast<jerry_property_filter_t>(filter)));
+
   RETURN_HANDLE(Array, context->GetIsolate(), names);
 }
 
@@ -1991,7 +1993,37 @@ MaybeLocal<Array> v8::Object::GetPropertyNames(
   V8_CALL_TRACE();
   JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
 
-  JerryValue* names = jobject->GetAdvancedPropertyNames(mode, property_filter, index_filter, key_conversion);
+  int filter = JERRY_PROPERTY_FILTER_ALL;
+
+  if (mode == v8::KeyCollectionMode::kIncludePrototypes) {
+    filter |= JERRY_PROPERTY_FILTER_TRAVERSE_PROTOTYPE_CHAIN;
+  }
+
+  if (property_filter & v8::ONLY_WRITABLE) {
+    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_NON_WRITABLE;
+  }
+  if (property_filter & v8::ONLY_ENUMERABLE) {
+    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_NON_ENUMERABLE;
+  }
+  if (property_filter & v8::ONLY_CONFIGURABLE) {
+    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_NON_CONFIGURABLE;
+  }
+  if (property_filter & v8::SKIP_STRINGS) {
+    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_STRINGS;
+  }
+  if (property_filter & v8::SKIP_SYMBOLS) {
+    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_SYMBOLS;
+  }
+
+  if (index_filter == v8::IndexFilter::kSkipIndices) {
+    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_INTEGER_INDICES;
+  }
+
+  if (key_conversion == v8::KeyConversionMode::kKeepNumbers) {
+    filter |= JERRY_PROPERTY_FILTER_INTEGER_INDICES_AS_NUMBER;
+  }
+
+  JerryValue* names = new JerryValue(jerry_object_get_property_names (jobject->value(), static_cast<jerry_property_filter_t>(filter)));
   RETURN_HANDLE(Array, context->GetIsolate(), names);
 }
 

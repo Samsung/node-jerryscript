@@ -39,7 +39,6 @@ public:
     const JerryPolyfill& HelperConversionFailer(void) const { return *m_fn_conversion_failer; }
     const JerryPolyfill& HelperGetOwnPropDesc(void) const { return *m_fn_get_own_prop; }
     const JerryPolyfill& HelperGetOwnPropNames(void) const { return *m_fn_get_own_names; }
-    const JerryPolyfill& HelperGetPropNames(void) const { return *m_fn_get_names; }
     const JerryPolyfill& HelperSetIntegrityLevel(void) const { return *m_fn_set_integrity; }
 
     void Enter(void);
@@ -143,7 +142,6 @@ private:
     JerryPolyfill* m_fn_conversion_failer;
     JerryPolyfill* m_fn_get_own_prop;
     JerryPolyfill* m_fn_get_own_names;
-    JerryPolyfill* m_fn_get_names;
     JerryPolyfill* m_fn_set_integrity;
 
     JerryValue* m_magic_string_stack;
