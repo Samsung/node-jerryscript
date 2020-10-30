@@ -2340,7 +2340,8 @@ int String::WriteUtf8(Isolate* v8_isolate, char* buffer, int capacity,
   V8_CALL_TRACE();
   const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
 
-  jerry_size_t bytes = jerry_string_to_utf8_char_buffer (jvalue->value(), (jerry_char_t *)buffer, capacity);
+  jerry_length_t length = jerry_get_utf8_string_length(jvalue->value());
+  jerry_size_t bytes = jerry_substring_to_utf8_char_buffer(jvalue->value(), 0, length, (jerry_char_t *)buffer, capacity);
 
   if ((options & String::NO_NULL_TERMINATION) == 0) {
       buffer[bytes] = '\0';
@@ -2356,17 +2357,40 @@ int String::WriteOneByte(Isolate* isolate, uint8_t* buffer, int start,
 
   jerry_size_t str_length = jerry_get_string_length(jvalue->value());
 
-  if ((length == -1) || ((jerry_size_t)(start + length) > str_length)) {
+  if (start >= str_length || length <= 0) {
+      return 0;
+  }
+
+  if ((jerry_size_t)(start + length) >= str_length) {
       length = str_length - start;
+      options &= ~String::NO_NULL_TERMINATION;
   }
 
-  jerry_size_t bytes = jerry_substring_to_char_buffer (jvalue->value(), start, start + length, (jerry_char_t *)buffer, length);
+  jerry_char_t* str_data = (jerry_char_t*)malloc(length * 3);
+  jerry_size_t bytes = jerry_substring_to_char_buffer(jvalue->value(), start, start + length, str_data, length * 3);
+  jerry_char_t* str_ptr = str_data;
+  jerry_char_t* str_end = str_data + bytes;
 
-  if ((options & String::NO_NULL_TERMINATION) == 0) {
-      buffer[bytes] = '\0';
+  /* Store the lower 8 bit only. */
+  while (str_ptr < str_end) {
+      if (*str_ptr <= 0xc0) {
+          *buffer++ = *str_ptr++;
+      } else if (*str_ptr <= 0xe0) {
+          *buffer++ = (uint8_t) ((str_ptr[0] << 6) | (str_ptr[1] & 0x3f));
+          str_ptr += 2;
+      } else {
+          *buffer++ = (uint8_t) ((str_ptr[1] << 6) | (str_ptr[2] & 0x3f));
+          str_ptr += 3;
+      }
   }
 
-  return (int)bytes;
+  free(str_data);
+
+  if (options & String::NO_NULL_TERMINATION) {
+      buffer[length] = '\0';
+  }
+
+  return (int)length;
 }
 
 int String::Write(Isolate* isolate, uint16_t* buffer, int start, int length,
@@ -2374,19 +2398,41 @@ int String::Write(Isolate* isolate, uint16_t* buffer, int start, int length,
   V8_CALL_TRACE();
   const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
 
-  jerry_size_t str_length = jerry_get_utf8_string_length(jvalue->value());
+  jerry_size_t str_length = jerry_get_string_length(jvalue->value());
 
-  if ((length == -1) || ((jerry_size_t)(start + length) > str_length)) {
+  if (start >= str_length || length <= 0) {
+      return 0;
+  }
+
+  if ((jerry_size_t)(start + length) >= str_length) {
       length = str_length - start;
+      options &= ~String::NO_NULL_TERMINATION;
   }
 
-  jerry_size_t bytes = jerry_substring_to_utf8_char_buffer (jvalue->value(), start, start + length, (jerry_char_t *)buffer, length);
+  jerry_char_t* str_data = (jerry_char_t*)malloc(length * 3);
+  jerry_size_t bytes = jerry_substring_to_char_buffer(jvalue->value(), start, start + length, str_data, length * 3);
+  jerry_char_t* str_ptr = str_data;
+  jerry_char_t* str_end = str_data + bytes;
 
-  if ((options & String::NO_NULL_TERMINATION) == 0) {
-      buffer[bytes] = '\0';
+  while (str_ptr < str_end) {
+      if (*str_ptr <= 0xc0) {
+          *buffer++ = *str_ptr++;
+      } else if (*str_ptr <= 0xe0) {
+          *buffer++ = (uint16_t) (((str_ptr[0] & 0x1f) << 6) | (str_ptr[1] & 0x3f));
+          str_ptr += 2;
+      } else {
+          *buffer++ = (uint16_t) (((str_ptr[0] & 0x0f) << 12) | ((str_ptr[1] & 0x3f) << 6) | (str_ptr[2] & 0x3f));
+          str_ptr += 3;
+      }
   }
 
-  return (int)bytes;
+  free(str_data);
+
+  if (options & String::NO_NULL_TERMINATION) {
+      buffer[length] = '\0';
+  }
+
+  return (int)length;
 }
 
 bool v8::String::IsExternal() const {

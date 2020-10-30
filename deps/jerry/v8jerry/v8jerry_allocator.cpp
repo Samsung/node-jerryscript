@@ -2,6 +2,10 @@
 
 void* JerryAllocator::Allocate(size_t length)
 {
+  if (length == 0) {
+    return (void*)0x1;
+  }
+
   void *data = jerry_heap_alloc(length);
 
   if (data) {
@@ -13,13 +17,19 @@ void* JerryAllocator::Allocate(size_t length)
 
 void* JerryAllocator::AllocateUninitialized(size_t length)
 {
+  if (length == 0) {
+    return (void*)0x1;
+  }
+
   return jerry_heap_alloc(length);
 }
 
 
 void JerryAllocator::Free(void* data, size_t length)
 {
-  jerry_heap_free(data, length);
+  if (length > 0) {
+    jerry_heap_free(data, length);
+  }
 }
 
 
@@ -27,12 +37,22 @@ void* JerryAllocator::Reallocate(void* data, size_t old_length, size_t new_lengt
 {
   // TODO add jerry realloc API
 
+  if (new_length == 0) {
+    if (old_length > 0) {
+      jerry_heap_free(data, old_length);
+    }
+    return (void*)0x1;
+  }
+
   void *newData = jerry_heap_alloc(new_length);
 
   if (newData) {
     memcpy(newData, data, old_length);
-  }
 
+    if (old_length > 0) {
+      jerry_heap_free(data, old_length);
+    }
+  }
   return newData;
 }
 
