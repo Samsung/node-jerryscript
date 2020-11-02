@@ -285,8 +285,6 @@ public:
     JerryStringType type () const {
         return static_cast<JerryStringType>(m_stringType);
     }
-
-    static jerry_value_t FromBuffer (const char* buffer, int length);
 };
 
 class JerryExternalString : public JerryString {

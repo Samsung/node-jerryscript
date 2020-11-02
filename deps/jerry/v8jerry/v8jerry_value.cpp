@@ -441,14 +441,6 @@ JerryValue* JerryValue::ToObject(void) const {
     return new JerryValue(object);
 }
 
-jerry_value_t JerryString::FromBuffer(const char* buffer, int length) {
-    if (length == -1) {
-        length = strlen(buffer);
-    }
-
-    return jerry_create_string_sz_from_utf8((const jerry_char_t*)buffer, length);
-}
-
 namespace v8 {
     namespace internal {
         class Heap {

@@ -2777,28 +2777,99 @@ MaybeLocal<String> String::NewFromUtf8(Isolate* isolate, const char* data,
 MaybeLocal<String> String::NewFromOneByte(Isolate* isolate, const uint8_t* data,
                                           NewStringType type, int length) {
   V8_CALL_TRACE();
+
+  if (length == -1) {
+      length = (int)strlen((const char*)data);
+  }
+
   if (length >= String::kMaxLength) {
       return Local<String>();
   }
 
-  jerry_value_t str = JerryString::FromBuffer((const char*)data, length);
+  const uint8_t* data_ptr = data;
+  const uint8_t* data_end = data + length;
+
+  while (data_ptr < data_end) {
+      if (*data_ptr >= 0x80) {
+          break;
+      }
+      data_ptr++;
+  }
+
+  jerry_value_t str;
+
+  if (data_ptr == data_end) {
+      /* ASCII characters */
+      str = jerry_create_string_sz(data, (jerry_size_t)length);
+  } else {
+      jerry_char_t* str_data = (jerry_char_t*)malloc(length * 2);
+      jerry_char_t* str_ptr = str_data;
+
+      while (data < data_end) {
+          if (*data < 0x80) {
+              *str_ptr++ = (jerry_char_t)*data;
+          } else {
+              str_ptr[0] = 0xc0 | (jerry_char_t)(*data >> 6);
+              str_ptr[1] = 0x80 | (jerry_char_t)(*data & 0x3f);
+              str_ptr+= 2;
+          }
+          data++;
+      }
+
+      str = jerry_create_string_sz(str_data, (jerry_size_t)(str_ptr - str_data));
+      free(str_data);
+  }
 
   RETURN_HANDLE(String, isolate, new JerryString(str));
+}
+
+static jerry_value_t JerryNewFromTwoByte(const uint16_t* data, int length)
+{
+  jerry_char_t* str_data = (jerry_char_t*)malloc(length * 3);
+  jerry_char_t* str_ptr = str_data;
+  const uint16_t* data_end = data + length;
+
+  while (data < data_end) {
+      if (*data < 0x80) {
+          *str_ptr++ = (jerry_char_t)*data;
+      } else if (*data < 0x800) {
+          str_ptr[0] = 0xc0 | (jerry_char_t)(*data >> 6);
+          str_ptr[1] = 0x80 | (jerry_char_t)(*data & 0x3f);
+          str_ptr+= 2;
+      } else {
+          str_ptr[0] = 0xe0 | (jerry_char_t)(*data >> 12);
+          str_ptr[1] = 0x80 | (jerry_char_t)((*data >> 6) & 0x3f);
+          str_ptr[2] = 0x80 | (jerry_char_t)(*data & 0x3f);
+          str_ptr+= 3;
+      }
+      data++;
+  }
+
+  jerry_value_t str = jerry_create_string_sz(str_data, (jerry_size_t)(str_ptr - str_data));
+
+  free(str_data);
+  return str;
 }
 
 MaybeLocal<String> String::NewFromTwoByte(Isolate* isolate,
                                           const uint16_t* data,
                                           NewStringType type, int length) {
   V8_CALL_TRACE();
-  std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-  std::string dest = convert.to_bytes(reinterpret_cast<const char16_t*>(data),
-                                      reinterpret_cast<const char16_t*>(data + length));
 
-  if (dest.size() >= String::kMaxLength) {
+  if (length == -1) {
+      const uint16_t* data_ptr = data;
+
+      length = 0;
+      while (*data_ptr++) {
+          length++;
+      }
+  }
+
+  if (length >= String::kMaxLength) {
       return Local<String>();
   }
 
-  jerry_value_t str = JerryString::FromBuffer(dest.c_str(), dest.size());
+  jerry_value_t str = JerryNewFromTwoByte(data, length);
 
   RETURN_HANDLE(String, isolate, new JerryString(str, JerryStringType::TWO_BYTE));
 }
@@ -2819,15 +2890,11 @@ MaybeLocal<String> v8::String::NewExternalTwoByte(
     Isolate* isolate, v8::String::ExternalStringResource* resource) {
   V8_CALL_TRACE();
 
-  std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-  std::string dest = convert.to_bytes(reinterpret_cast<const char16_t*>(resource->data()),
-                                      reinterpret_cast<const char16_t*>(resource->data() + resource->length()));
-
   if (resource->length() >= String::kMaxLength) {
       return Local<String>();
   }
 
-  jerry_value_t str = JerryString::FromBuffer(dest.c_str(), dest.size());
+  jerry_value_t str = JerryNewFromTwoByte(resource->data(), (int)resource->length());
 
   RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::TWO_BYTE));
 }
@@ -2840,7 +2907,7 @@ MaybeLocal<String> v8::String::NewExternalOneByte(
       return Local<String>();
   }
 
-  jerry_value_t str = JerryString::FromBuffer((const char*)resource->data(), resource->length());
+  jerry_value_t str = jerry_create_string_sz((const jerry_char_t*)resource->data(), (int)resource->length());
 
   RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::TWO_BYTE));
 }
@@ -3101,16 +3168,17 @@ size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
   V8_CALL_TRACE();
   const JerryValue* jarray = reinterpret_cast<const JerryValue*> (this);
   jerry_value_t buffer;
+  jerry_length_t start;
 
   if (jarray->IsTypedArray()) {
-      buffer = jerry_get_typedarray_buffer (jarray->value(), NULL, NULL);
+      buffer = jerry_get_typedarray_buffer (jarray->value(), &start, NULL);
   } else if (jarray->IsDataView()) {
-      buffer = jerry_get_dataview_buffer (jarray->value(), NULL, NULL);
+      buffer = jerry_get_dataview_buffer (jarray->value(), &start, NULL);
   } else {
       abort();
   }
 
-  jerry_length_t length = jerry_arraybuffer_read (buffer, 0, (uint8_t*)dest, byte_length);
+  jerry_length_t length = jerry_arraybuffer_read (buffer, start, (uint8_t*)dest, byte_length);
   jerry_release_value(buffer);
   return length;
 }
