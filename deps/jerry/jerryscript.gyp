@@ -78,6 +78,8 @@
         'v8jerry/v8jerry_handlescope.hpp',
         'v8jerry/v8jerry_isolate.cpp',
         'v8jerry/v8jerry_isolate.hpp',
+        'v8jerry/v8jerry_serialize.cpp',
+        'v8jerry/v8jerry_serialize.hpp',
         'v8jerry/v8jerry_templates.cpp',
         'v8jerry/v8jerry_templates.hpp',
         'v8jerry/v8jerry_utils.cpp',

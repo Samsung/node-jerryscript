@@ -21,6 +21,7 @@
 #include "v8jerry_handlescope.hpp"
 #include "v8jerry_isolate.hpp"
 #include "v8jerry_platform.hpp"
+#include "v8jerry_serialize.hpp"
 #include "v8jerry_templates.hpp"
 #include "v8jerry_value.hpp"
 
@@ -1201,32 +1202,38 @@ void ValueSerializer::Delegate::FreeBufferMemory(void* buffer) {
   UNIMPLEMENTED(3149);
 }
 
+struct ValueSerializer::PrivateData {
+  explicit PrivateData(i::Isolate* i, ValueSerializer::Delegate* delegate)
+      : isolate(i), serializer(i, delegate) {}
+  i::Isolate* isolate;
+  JerrySerialize::ValueSerializer serializer;
+};
+
 ValueSerializer::ValueSerializer(Isolate* isolate, Delegate* delegate)
-    : private_(NULL) {
-  UNIMPLEMENTED(3163);
+    : private_(new PrivateData(reinterpret_cast<i::Isolate*>(isolate), nullptr)) {
 }
 
 ValueSerializer::~ValueSerializer() {
-  UNIMPLEMENTED(3167);
+  delete private_;
 }
 
 void ValueSerializer::WriteHeader() {
-  UNIMPLEMENTED(3169);
+  private_->serializer.WriteHeader();
 }
 
 void ValueSerializer::SetTreatArrayBufferViewsAsHostObjects(bool mode) {
-  UNIMPLEMENTED(3171);
+  private_->serializer.SetTreatArrayBufferViewsAsHostObjects(mode);
 }
 
 Maybe<bool> ValueSerializer::WriteValue(Local<Context> context,
                                         Local<Value> value) {
-  UNIMPLEMENTED(3175);
-  return Just(false);
+  bool result = private_->serializer.WriteValue(reinterpret_cast<JerryValue*>(*value));
+  return Just(result);
 }
 
 std::pair<uint8_t*, size_t> ValueSerializer::Release() {
-  UNIMPLEMENTED(3187);
-  return std::pair<uint8_t*, size_t>(NULL, 0);
+  auto result = private_->serializer.Release();
+  return result;
 }
 
 void ValueSerializer::TransferArrayBuffer(uint32_t transfer_id,
@@ -1235,19 +1242,19 @@ void ValueSerializer::TransferArrayBuffer(uint32_t transfer_id,
 }
 
 void ValueSerializer::WriteUint32(uint32_t value) {
-  UNIMPLEMENTED(3197);
+  private_->serializer.WriteUint32(value);
 }
 
 void ValueSerializer::WriteUint64(uint64_t value) {
-  UNIMPLEMENTED(3201);
+  private_->serializer.WriteUint64(value);
 }
 
 void ValueSerializer::WriteDouble(double value) {
-  UNIMPLEMENTED(3205);
+  private_->serializer.WriteDouble(value);
 }
 
 void ValueSerializer::WriteRawBytes(const void* source, size_t length) {
-  UNIMPLEMENTED(3209);
+  private_->serializer.WriteRawBytes(source, length);
 }
 
 MaybeLocal<Object> ValueDeserializer::Delegate::ReadHostObject(
@@ -1269,18 +1276,30 @@ ValueDeserializer::Delegate::GetSharedArrayBufferFromId(Isolate* v8_isolate,
   return MaybeLocal<SharedArrayBuffer>();
 }
 
-ValueDeserializer::ValueDeserializer(Isolate* isolate, const uint8_t* data,
-                                     size_t size, Delegate* delegate) {
-  UNIMPLEMENTED(3254);
-}
+struct ValueDeserializer::PrivateData {
+  PrivateData(i::Isolate* i,
+              const uint8_t* data,
+              const size_t size,
+              ValueDeserializer::Delegate* delegate)
+      : isolate(i), deserializer(i, data, size, delegate) {}
+  i::Isolate* isolate;
+  JerrySerialize::ValueDeserializer deserializer;
+};
+
+ValueDeserializer::ValueDeserializer(Isolate* isolate,
+                                     const uint8_t* data,
+                                     size_t size,
+                                     Delegate* delegate)
+    : private_(
+          new ValueDeserializer::PrivateData(reinterpret_cast<i::Isolate*>(isolate), data, size, nullptr)) {}
 
 ValueDeserializer::~ValueDeserializer() {
-  UNIMPLEMENTED(3267);
+  delete private_;
 }
 
 Maybe<bool> ValueDeserializer::ReadHeader(Local<Context> context) {
-  UNIMPLEMENTED(3269);
-  return Just(false);
+  bool result = private_->deserializer.ReadHeader();
+  return Just(result);
 }
 
 uint32_t ValueDeserializer::GetWireFormatVersion() const {
@@ -1289,8 +1308,8 @@ uint32_t ValueDeserializer::GetWireFormatVersion() const {
 }
 
 MaybeLocal<Value> ValueDeserializer::ReadValue(Local<Context> context) {
-  UNIMPLEMENTED(3310);
-  return MaybeLocal<Value>();
+  JerryValue* result = private_->deserializer.ReadValue();
+  RETURN_HANDLE(Value, context->GetIsolate(), result);
 }
 
 void ValueDeserializer::TransferArrayBuffer(uint32_t transfer_id,
@@ -1304,23 +1323,19 @@ void ValueDeserializer::TransferSharedArrayBuffer(
 }
 
 bool ValueDeserializer::ReadUint32(uint32_t* value) {
-  UNIMPLEMENTED(3340);
-  return false;
+  return private_->deserializer.ReadUint32(value);
 }
 
 bool ValueDeserializer::ReadUint64(uint64_t* value) {
-  UNIMPLEMENTED(3344);
-  return false;
+  return private_->deserializer.ReadUint64(value);
 }
 
 bool ValueDeserializer::ReadDouble(double* value) {
-  UNIMPLEMENTED(3348);
-  return false;
+  return private_->deserializer.ReadDouble(value);
 }
 
 bool ValueDeserializer::ReadRawBytes(size_t length, const void** data) {
-  UNIMPLEMENTED(3352);
-  return false;
+  return private_->deserializer.ReadRawBytes(length, data);
 }
 
 bool Value::FullIsUndefined() const {
@@ -3112,8 +3127,10 @@ v8::ArrayBuffer::Allocator* v8::ArrayBuffer::Allocator::NewDefaultAllocator() {
 }
 
 bool v8::ArrayBuffer::IsDetachable() const {
-  UNIMPLEMENTED(7265);
-  return false;
+  const JerryValue* jarray = reinterpret_cast<const JerryValue*> (this);
+  jerry_value_t is_detachable = jerry_is_arraybuffer_detachable(jarray->value());
+  bool ret = jerry_get_boolean_value(is_detachable);
+  return ret;
 }
 
 /* ArrayBuffer & Allocator */

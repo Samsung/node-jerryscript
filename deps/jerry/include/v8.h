@@ -373,6 +373,7 @@ class Local {
   friend class ScriptCompiler;
   friend class EscapableHandleScope;
   friend class PrimitiveArray;
+  friend class ValueDeserializer;
   explicit V8_INLINE Local(T* that) : val_(that) {}
   V8_INLINE static Local<T> New(Isolate* isolate, T* that);
   T* val_;
