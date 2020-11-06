@@ -29,6 +29,8 @@ void JerryAllocator::Free(void* data, size_t length)
 {
   if (length > 0) {
     jerry_heap_free(data, length);
+  } else if (data != NULL && data != (void*)0x1) {
+    jerry_heap_free(data, 1);
   }
 }
 
@@ -47,7 +49,15 @@ void* JerryAllocator::Reallocate(void* data, size_t old_length, size_t new_lengt
   void *newData = jerry_heap_alloc(new_length);
 
   if (newData) {
-    memcpy(newData, data, old_length);
+    if (new_length > old_length)
+    {
+      memcpy(newData, data, old_length);
+      memset((uint8_t*)newData + old_length, 0, new_length - old_length);
+    }
+    else
+    {
+      memcpy(newData, data, new_length);
+    }
 
     if (old_length > 0) {
       jerry_heap_free(data, old_length);

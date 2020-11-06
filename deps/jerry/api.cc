@@ -2388,9 +2388,9 @@ int String::WriteOneByte(Isolate* isolate, uint8_t* buffer, int start,
 
   /* Store the lower 8 bit only. */
   while (str_ptr < str_end) {
-      if (*str_ptr <= 0xc0) {
+      if (*str_ptr < 0xc0) {
           *buffer++ = *str_ptr++;
-      } else if (*str_ptr <= 0xe0) {
+      } else if (*str_ptr < 0xe0) {
           *buffer++ = (uint8_t) ((str_ptr[0] << 6) | (str_ptr[1] & 0x3f));
           str_ptr += 2;
       } else {
@@ -2430,9 +2430,9 @@ int String::Write(Isolate* isolate, uint16_t* buffer, int start, int length,
   jerry_char_t* str_end = str_data + bytes;
 
   while (str_ptr < str_end) {
-      if (*str_ptr <= 0xc0) {
+      if (*str_ptr < 0xc0) {
           *buffer++ = *str_ptr++;
-      } else if (*str_ptr <= 0xe0) {
+      } else if (*str_ptr < 0xe0) {
           *buffer++ = (uint16_t) (((str_ptr[0] & 0x1f) << 6) | (str_ptr[1] & 0x3f));
           str_ptr += 2;
       } else {
@@ -3127,10 +3127,9 @@ v8::ArrayBuffer::Allocator* v8::ArrayBuffer::Allocator::NewDefaultAllocator() {
 }
 
 bool v8::ArrayBuffer::IsDetachable() const {
-  const JerryValue* jarray = reinterpret_cast<const JerryValue*> (this);
-  jerry_value_t is_detachable = jerry_is_arraybuffer_detachable(jarray->value());
-  bool ret = jerry_get_boolean_value(is_detachable);
-  return ret;
+  V8_CALL_TRACE();
+  const JerryValue* arrayBuffer = reinterpret_cast<const JerryValue*>(this);
+  return jerry_get_boolean_value(jerry_is_arraybuffer_detachable(arrayBuffer->value()));
 }
 
 /* ArrayBuffer & Allocator */
