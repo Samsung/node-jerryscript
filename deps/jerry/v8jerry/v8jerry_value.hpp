@@ -129,9 +129,6 @@ public:
     bool DeleteInternalProperty(JerryValue* key);
     JerryValue* GetInternalProperty(JerryValue* key);
 
-    JerryValue* GetOwnPropertyDescriptor(const JerryValue& jkey) const;
-    JerryValue* GetOwnPropertyNames() const;
-
     bool IsString() const { return jerry_value_is_string(m_value); }
     bool IsName() const { return jerry_value_is_string(m_value) || jerry_value_is_symbol(m_value); }
     bool IsBoolean() const { return jerry_value_is_boolean(m_value); }

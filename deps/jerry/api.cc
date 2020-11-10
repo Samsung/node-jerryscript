@@ -1965,8 +1965,19 @@ MaybeLocal<Value> v8::Object::GetOwnPropertyDescriptor(Local<Context> context,
   V8_CALL_TRACE();
   JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
   JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+  JerryValue* property_object;
 
-  JerryValue* property_object = jobject->GetOwnPropertyDescriptor(*jkey);
+  jerry_property_descriptor_t prop_desc;
+  bool has_own_property = jerry_get_own_property_descriptor (jobject->value(), jkey->value(), &prop_desc);
+
+  if (has_own_property)  {
+      property_object = new JerryValue (jerry_from_property_descriptor (&prop_desc));
+      jerry_free_property_descriptor_fields(&prop_desc);
+      RETURN_HANDLE(Value, context->GetIsolate(), property_object);
+  }
+
+  property_object = new JerryValue ();
+  jerry_free_property_descriptor_fields(&prop_desc);
   RETURN_HANDLE(Value, context->GetIsolate(), property_object);
 }
 
@@ -2046,8 +2057,20 @@ MaybeLocal<Array> v8::Object::GetOwnPropertyNames(Local<Context> context) {
   V8_CALL_TRACE();
   JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
 
-  JerryValue* names = jobject->GetOwnPropertyNames();
-  RETURN_HANDLE(Array, context->GetIsolate(), names);
+  jerry_property_filter_t flags = (jerry_property_filter_t) (JERRY_PROPERTY_FILTER_EXLCUDE_SYMBOLS
+                                                             | JERRY_PROPERTY_FILTER_EXLCUDE_NON_ENUMERABLE);
+  jerry_value_t property_names_val = jerry_object_get_property_names (jobject->value(), flags);
+  JerryValue* names_obj;
+
+  if (jerry_value_is_array (property_names_val))  {
+      names_obj = new JerryValue (property_names_val);
+      jerry_release_value (property_names_val);
+      RETURN_HANDLE(Array, context->GetIsolate(), names_obj);
+  }
+
+  names_obj = new JerryValue (jerry_create_array(0));
+  jerry_release_value (property_names_val);
+  RETURN_HANDLE(Array, context->GetIsolate(), names_obj);
 }
 
 Local<String> v8::Object::GetConstructorName() {
