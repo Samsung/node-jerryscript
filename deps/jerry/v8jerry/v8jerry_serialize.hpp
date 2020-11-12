@@ -78,7 +78,10 @@ class ValueSerializer {
     void WriteVarint(T value);
     template <typename T>
     void WriteZigZag(T value);
+    void WriteJerryBigInt(jerry_value_t value);
+    void WriteJerryContainer(jerry_value_t value);
     bool WriteJerryArray(jerry_value_t value);
+    bool WriteJerryArrayBufferView(jerry_value_t value);
     bool WriteJerryArrayBuffer(jerry_value_t value);
     void WriteJerryString(jerry_value_t value);
     void WriteJerryError(jerry_value_t value);
@@ -117,10 +120,12 @@ class ValueDeserializer {
     bool ReadVarint(T* value);
     template <typename T>
     bool ReadZigZag(T* value);
-    bool ReadOneByteString(JerryString* value);
 
+    jerry_value_t ReadJerryBigInt();
+    jerry_value_t ReadJerryContainer(SerializationTag tag);
     jerry_value_t ReadJerryArray();
     jerry_value_t ReadJerryArrayBuffer();
+    jerry_value_t ReadJerryArrayBufferView(jerry_value_t array_buffer);
     jerry_value_t ReadJerryError();
     jerry_value_t ReadJerryObject();
 

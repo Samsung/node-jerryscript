@@ -125,6 +125,21 @@ enum class SerializationTag : uint8_t {
     kLegacyReservedRTCCertificate = 'k',
 };
 
+enum class ArrayBufferViewTag : uint8_t {
+    kInt8Array = 'b',
+    kUint8Array = 'B',
+    kUint8ClampedArray = 'C',
+    kInt16Array = 'w',
+    kUint16Array = 'W',
+    kInt32Array = 'd',
+    kUint32Array = 'D',
+    kFloat32Array = 'f',
+    kFloat64Array = 'F',
+    kBigInt64Array = 'q',
+    kBigUint64Array = 'Q',
+    kDataView = '?',
+};
+
 // Sub-tags only meaningful for error serialization.
 enum class ErrorTag : uint8_t {
     // The error is a EvalError. No accompanying data.
@@ -211,10 +226,24 @@ bool ValueSerializer::WriteValueInternal(jerry_value_t value) {
             WriteTag(SerializationTag::kDouble);
             WriteDouble(jerry_get_number_value(value));
         }
+    } else if (jerry_value_is_bigint(value)) {
+        WriteJerryBigInt(value);
     } else if (jerry_value_is_string(value)) {
         WriteJerryString(value);
     } else if (jerry_value_is_arraybuffer(value)) {
         return WriteJerryArrayBuffer(value);
+    } else if (jerry_value_is_typedarray(value)) {
+        jerry_value_t array_buffer =
+            jerry_get_typedarray_buffer(value, NULL, NULL);
+        bool result = WriteJerryArrayBuffer(array_buffer);
+        jerry_release_value(array_buffer);
+        return result && WriteJerryArrayBufferView(value);
+    } else if (jerry_value_is_dataview(value)) {
+        jerry_value_t array_buffer =
+            jerry_get_dataview_buffer(value, NULL, NULL);
+        bool result = WriteJerryArrayBuffer(array_buffer);
+        jerry_release_value(array_buffer);
+        return result && WriteJerryArrayBufferView(value);
     } else if (jerry_value_is_array(value)) {
         return WriteJerryArray(value);
     } else if (jerry_value_is_error(value) ||
@@ -234,7 +263,11 @@ bool ValueSerializer::WriteValueInternal(jerry_value_t value) {
             (const jerry_char_t*)"Function could not be serialized"));
         return false;
     } else if (jerry_value_is_object(value)) {
-        WriteJerryObject(value);
+        if (jerry_object_get_type(value) == JERRY_OBJECT_TYPE_CONTAINER) {
+            WriteJerryContainer(value);
+        } else {
+            WriteJerryObject(value);
+        }
     } else {
         reinterpret_cast<JerryIsolate*>(isolate_)->SetError(jerry_create_error(
             JERRY_ERROR_COMMON, (const jerry_char_t*)"Serialization error"));
@@ -279,6 +312,23 @@ void ValueSerializer::WriteZigZag(T value) {
                 (value >> (8 * sizeof(T) - 1)));
 }
 
+void ValueSerializer::WriteJerryBigInt(jerry_value_t value) {
+    WriteTag(SerializationTag::kBigInt);
+    uint32_t length = jerry_get_bigint_size_in_digits(value);
+    uint64_t* digits = new uint64_t[length];
+    bool sign = false;
+    jerry_get_bigint_digits(value, digits, length, &sign);
+    size_t bytes = length * sizeof(uint64_t);
+    // LSB is used for sign
+    WriteVarint<uint32_t>(bytes << 1 | sign);
+    WriteRawBytes(digits, bytes);
+    delete[] digits;
+}
+
+void ValueSerializer::WriteJerryContainer(jerry_value_t value) {
+    // TODO: Waiting for container functions in jerryscript API
+}
+
 bool ValueSerializer::WriteJerryArray(jerry_value_t value) {
     size_t length = jerry_get_array_length(value);
     uint32_t properties_written = 0;
@@ -304,6 +354,72 @@ bool ValueSerializer::WriteJerryArray(jerry_value_t value) {
     WriteTag(SerializationTag::kEndDenseJSArray);
     WriteVarint<uint32_t>(properties_written);
     WriteVarint<uint32_t>(length);
+    return true;
+}
+
+bool ValueSerializer::WriteJerryArrayBufferView(jerry_value_t value) {
+    WriteTag(SerializationTag::kArrayBufferView);
+    if (jerry_value_is_dataview(value)) {
+        WriteVarint(static_cast<uint8_t>(ArrayBufferViewTag::kDataView));
+
+        jerry_length_t byte_length = 0;
+        jerry_length_t byte_offset = 0;
+        jerry_value_t array_buffer =
+            jerry_get_dataview_buffer(value, &byte_offset, &byte_length);
+        jerry_release_value(array_buffer);
+        WriteVarint<uint32_t>(byte_offset);
+        WriteVarint<uint32_t>(byte_length);
+        return true;
+    }
+
+    jerry_typedarray_type_t jtype = jerry_get_typedarray_type(value);
+    ArrayBufferViewTag type = ArrayBufferViewTag::kUint8Array;
+    switch (jtype) {
+        case JERRY_TYPEDARRAY_UINT8:
+            type = ArrayBufferViewTag::kUint8Array;
+            break;
+        case JERRY_TYPEDARRAY_UINT8CLAMPED:
+            type = ArrayBufferViewTag::kUint8ClampedArray;
+            break;
+        case JERRY_TYPEDARRAY_INT8:
+            type = ArrayBufferViewTag::kInt8Array;
+            break;
+        case JERRY_TYPEDARRAY_UINT16:
+            type = ArrayBufferViewTag::kUint16Array;
+            break;
+        case JERRY_TYPEDARRAY_INT16:
+            type = ArrayBufferViewTag::kInt16Array;
+            break;
+        case JERRY_TYPEDARRAY_UINT32:
+            type = ArrayBufferViewTag::kUint32Array;
+            break;
+        case JERRY_TYPEDARRAY_INT32:
+            type = ArrayBufferViewTag::kInt32Array;
+            break;
+        case JERRY_TYPEDARRAY_FLOAT32:
+            type = ArrayBufferViewTag::kFloat32Array;
+            break;
+        case JERRY_TYPEDARRAY_FLOAT64:
+            type = ArrayBufferViewTag::kFloat64Array;
+            break;
+        case JERRY_TYPEDARRAY_BIGINT64:
+            type = ArrayBufferViewTag::kBigInt64Array;
+            break;
+        case JERRY_TYPEDARRAY_BIGUINT64:
+            type = ArrayBufferViewTag::kBigUint64Array;
+            break;
+        default:
+            break;
+    }
+    WriteVarint(static_cast<uint8_t>(type));
+
+    jerry_length_t byte_length = 0;
+    jerry_length_t byte_offset = 0;
+    jerry_value_t array_buffer =
+        jerry_get_typedarray_buffer(value, &byte_offset, &byte_length);
+    jerry_release_value(array_buffer);
+    WriteVarint<uint32_t>(byte_offset);
+    WriteVarint<uint32_t>(byte_length);
     return true;
 }
 
@@ -489,6 +605,11 @@ jerry_value_t ValueDeserializer::ReadValueInternal() {
             return jerry_create_number(v);
             break;
         }
+        case SerializationTag::kBigInt:
+            return ReadJerryBigInt();
+        case SerializationTag::kBeginJSMap:
+        case SerializationTag::kBeginJSSet:
+            return ReadJerryContainer(tag);
         case SerializationTag::kOneByteString: {
             uint32_t length = 0;
             const void* str = nullptr;
@@ -499,7 +620,13 @@ jerry_value_t ValueDeserializer::ReadValueInternal() {
             }
         }
         case SerializationTag::kArrayBuffer: {
-            return ReadJerryArrayBuffer();
+            jerry_value_t array_buffer = ReadJerryArrayBuffer();
+            if (CheckTag(SerializationTag::kArrayBufferView)) {
+                ReadTag(&tag);
+                return ReadJerryArrayBufferView(array_buffer);
+            }
+            return array_buffer;
+            break;
         }
         case SerializationTag::kBeginDenseJSArray: {
             return ReadJerryArray();
@@ -593,8 +720,23 @@ bool ValueDeserializer::ReadZigZag(T* value) {
     return true;
 }
 
-bool ValueDeserializer::ReadOneByteString(JerryString* value) {
-    return true;
+jerry_value_t ValueDeserializer::ReadJerryBigInt() {
+    uint32_t bytes;
+    if (!ReadVarint<uint32_t>(&bytes)) {
+        return jerry_create_undefined();
+    }
+    bool sign = bytes & 0x01;
+    bytes = bytes >> 1;
+    uint32_t length = bytes / sizeof(uint64_t);
+    const void* digits = nullptr;
+    ReadRawBytes(bytes, &digits);
+    jerry_value_t bigint =
+        jerry_create_bigint((const uint64_t*)digits, length, sign);
+    return bigint;
+}
+
+jerry_value_t ValueDeserializer::ReadJerryContainer(SerializationTag tag) {
+    // TODO: Waiting for container functions in jerryscript API
 }
 
 jerry_value_t ValueDeserializer::ReadJerryArray() {
@@ -642,6 +784,85 @@ jerry_value_t ValueDeserializer::ReadJerryArrayBuffer() {
     jerry_value_t result = jerry_create_arraybuffer(length);
     jerry_arraybuffer_write(result, 0, (const uint8_t*)bytes, length);
     return result;
+}
+
+jerry_value_t ValueDeserializer::ReadJerryArrayBufferView(
+    jerry_value_t array_buffer) {
+    uint32_t buffer_byte_length =
+        jerry_get_arraybuffer_byte_length(array_buffer);
+    uint8_t tag = 0;
+    uint32_t byte_offset = 0;
+    uint32_t byte_length = 0;
+    if (!ReadVarint<uint8_t>(&tag) || !ReadVarint<uint32_t>(&byte_offset) ||
+        !ReadVarint<uint32_t>(&byte_length) ||
+        byte_offset > buffer_byte_length ||
+        byte_length > buffer_byte_length - byte_offset) {
+        jerry_release_value(array_buffer);
+        return jerry_create_error(JERRY_ERROR_COMMON,
+                                  (const jerry_char_t*)"Deserialization error");
+    }
+
+    jerry_typedarray_type_t jtype = JERRY_TYPEDARRAY_UINT8;
+    ArrayBufferViewTag view_tag = (ArrayBufferViewTag)tag;
+    size_t element_size_shift = 0;
+    switch (view_tag) {
+        case ArrayBufferViewTag::kDataView: {
+            jerry_value_t dataview =
+                jerry_create_dataview(array_buffer, byte_offset, byte_length);
+            jerry_release_value(array_buffer);
+            return dataview;
+        }
+        case ArrayBufferViewTag::kUint8Array:
+            jtype = JERRY_TYPEDARRAY_UINT8;
+            break;
+        case ArrayBufferViewTag::kUint8ClampedArray:
+            jtype = JERRY_TYPEDARRAY_UINT8CLAMPED;
+            break;
+        case ArrayBufferViewTag::kInt8Array:
+            jtype = JERRY_TYPEDARRAY_INT8;
+            break;
+        case ArrayBufferViewTag::kUint16Array:
+            jtype = JERRY_TYPEDARRAY_UINT16;
+            element_size_shift = 1;
+            break;
+        case ArrayBufferViewTag::kInt16Array:
+            jtype = JERRY_TYPEDARRAY_INT16;
+            element_size_shift = 1;
+            break;
+        case ArrayBufferViewTag::kUint32Array:
+            jtype = JERRY_TYPEDARRAY_UINT32;
+            element_size_shift = 2;
+            break;
+        case ArrayBufferViewTag::kInt32Array:
+            jtype = JERRY_TYPEDARRAY_INT32;
+            element_size_shift = 2;
+            break;
+        case ArrayBufferViewTag::kFloat32Array:
+            jtype = JERRY_TYPEDARRAY_FLOAT32;
+            element_size_shift = 2;
+            break;
+        case ArrayBufferViewTag::kFloat64Array:
+            jtype = JERRY_TYPEDARRAY_FLOAT64;
+            element_size_shift = 3;
+            break;
+        case ArrayBufferViewTag::kBigInt64Array:
+            jtype = JERRY_TYPEDARRAY_BIGINT64;
+            element_size_shift = 3;
+            break;
+        case ArrayBufferViewTag::kBigUint64Array:
+            jtype = JERRY_TYPEDARRAY_BIGUINT64;
+            element_size_shift = 3;
+            break;
+        default:
+            return jerry_create_error(
+                JERRY_ERROR_COMMON,
+                (const jerry_char_t*)"Deserialization error");
+    }
+
+    jerry_value_t typed_array = jerry_create_typedarray_for_arraybuffer_sz(
+        jtype, array_buffer, byte_offset, byte_length >> element_size_shift);
+    jerry_release_value(array_buffer);
+    return typed_array;
 }
 
 jerry_value_t ValueDeserializer::ReadJerryError() {
