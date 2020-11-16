@@ -226,20 +226,28 @@ class Local {
    */
   template <class S>
   V8_INLINE bool operator==(const Local<S>& that) const {
-    internal::Address* a = reinterpret_cast<internal::Address*>(this->val_);
-    internal::Address* b = reinterpret_cast<internal::Address*>(that.val_);
+    // [[V8_API_CHANGE]]
+    //internal::Address* a = reinterpret_cast<internal::Address*>(this->val_);
+    //internal::Address* b = reinterpret_cast<internal::Address*>(that.val_);
+    uint32_t* a = reinterpret_cast<uint32_t*>(this->val_);
+    uint32_t* b = reinterpret_cast<uint32_t*>(that.val_);
     if (a == nullptr) return b == nullptr;
     if (b == nullptr) return false;
-    return *a == *b;
+    //return *a == *b;
+    return a[1] == b[1];
   }
 
   template <class S> V8_INLINE bool operator==(
       const PersistentBase<S>& that) const {
-    internal::Address* a = reinterpret_cast<internal::Address*>(this->val_);
-    internal::Address* b = reinterpret_cast<internal::Address*>(that.val_);
+    // [[V8_API_CHANGE]]
+    //internal::Address* a = reinterpret_cast<internal::Address*>(this->val_);
+    //internal::Address* b = reinterpret_cast<internal::Address*>(that.val_);
+    uint32_t* a = reinterpret_cast<uint32_t*>(this->val_);
+    uint32_t* b = reinterpret_cast<uint32_t*>(that.val_);
     if (a == nullptr) return b == nullptr;
     if (b == nullptr) return false;
-    return *a == *b;
+    //return *a == *b;
+    return a[1] == b[1];
   }
 
   /**
