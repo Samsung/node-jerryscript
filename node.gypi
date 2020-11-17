@@ -85,6 +85,24 @@
         'NODE_RELEASE_URLBASE="<(node_release_urlbase)"',
       ]
     }],
+    [ 'v8_enable_i18n_support==1', {
+      'defines': [ 'NODE_HAVE_I18N_SUPPORT=1' ],
+      'dependencies': [
+        '<(icu_gyp_path):icui18n',
+        '<(icu_gyp_path):icuuc',
+      ],
+      'conditions': [
+        [ 'icu_small=="true"', {
+          'defines': [ 'NODE_HAVE_SMALL_ICU=1' ],
+          'conditions': [
+            [ 'icu_default_data!=""', {
+              'defines': [
+                'NODE_ICU_DEFAULT_DATA_DIR="<(icu_default_data)"',
+              ],
+            }],
+          ],
+      }]],
+    }],
     [ 'node_no_browser_globals=="true"', {
       'defines': [ 'NODE_NO_BROWSER_GLOBALS' ],
     } ],
