@@ -167,9 +167,9 @@ public:
     bool IsUndefined() const { return jerry_value_is_undefined(m_value); }
 
     double GetNumberValue(void) const { return jerry_get_number_value(m_value); }
-    uint32_t GetUInt32Value(void) const { return (uint32_t)jerry_get_number_value(m_value); }
-    int32_t GetInt32Value(void) const { return (int32_t)jerry_get_number_value(m_value); }
-    int64_t GetInt64Value(void) const { return (int64_t)jerry_get_number_value(m_value); }
+    uint32_t GetUInt32Value(void) const { return jerry_value_as_uint32(m_value); }
+    int32_t GetInt32Value(void) const { return jerry_value_as_int32(m_value); }
+    int64_t GetInt64Value(void) const { return jerry_value_as_integer(m_value); }
     bool GetBooleanValue(void) const { return jerry_get_boolean_value(m_value); }
 
     int GetStringLength(void) const { return jerry_get_string_length(m_value); }
