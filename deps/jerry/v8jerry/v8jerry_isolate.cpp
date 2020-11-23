@@ -157,6 +157,9 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_current_error = NULL;
     m_hidden_object_template = NULL;
 
+    // Initialize random for math functions
+    srand((unsigned)time(NULL));
+
 #ifdef __POSIX__
     m_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
