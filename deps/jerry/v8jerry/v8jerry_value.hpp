@@ -52,12 +52,10 @@ struct JerryV8InternalFieldData {
     // TODO: maybe use raw pointers to reduce memory?
     int count;
     std::vector<void*> fields;
-    std::vector<bool> is_value;
 
     JerryV8InternalFieldData(int count)
         : count(count)
         , fields(count, NULL)
-        , is_value(count, false)
     {
     }
 };
@@ -127,7 +125,6 @@ public:
     bool SetInternalProperty(JerryValue* key, JerryValue* value);
     bool HasInternalProperty(JerryValue* key);
     bool DeleteInternalProperty(JerryValue* key);
-    JerryValue* GetInternalProperty(JerryValue* key);
 
     JerryValue* GetOwnPropertyDescriptor(const JerryValue& jkey) const;
     JerryValue* GetOwnPropertyNames() const;
@@ -235,19 +232,11 @@ public:
         }
 
         if (std::is_same<T, JerryValue*>::value) {
-            if (!data->is_value[idx]) {
-                return NULL;
-            }
-
-            std::string internal_name = "$$internal_" + idx;
-            JerryValue name(jerry_create_string_from_utf8((const jerry_char_t*)internal_name.c_str()));
-            return GetInternalProperty(&name);
-        } else if (std::is_same<T, void*>::value) {
-            return reinterpret_cast<T>(data->fields[idx]);
-        } else {
-            // DON'T do this...
-            abort();
+            uintptr_t value = reinterpret_cast<uintptr_t>(data->fields[idx]);
+            return new JerryValue(jerry_acquire_value(static_cast<jerry_value_t>(value)));
         }
+
+        return reinterpret_cast<T>(data->fields[idx]);
     }
 
     int InternalFieldCount(void);

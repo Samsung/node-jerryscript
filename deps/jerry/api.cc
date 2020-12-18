@@ -1896,7 +1896,6 @@ Maybe<bool> v8::Object::DefineProperty(v8::Local<v8::Context> context,
   jerry_property_descriptor_t prop_desc;
   jerry_init_property_descriptor_fields(&prop_desc);
 
-
   if (descriptor.has_value()) {
       prop_desc.is_value_defined = true;
       prop_desc.value = jerry_acquire_value(reinterpret_cast<JerryValue*>(*descriptor.value())->value());
@@ -2191,10 +2190,22 @@ MaybeLocal<Value> v8::Object::GetRealNamedProperty(Local<Context> context,
   JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
   JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
 
-  jerry_value_t property = jerry_get_property(jobject->value(), jkey->value());
+  jerry_value_t property;
+
+  if (jerry_value_is_proxy(jobject->value())) {
+      jerry_value_t target = jerry_get_proxy_target(jobject->value());
+      property = jerry_get_property(target, jkey->value());
+      jerry_release_value(target);
+  } else {
+      property = jerry_get_property(jobject->value(), jkey->value());
+  }
 
   JerryValue* result = NULL;
   if (!jerry_value_is_error(property)) {
+      if (jerry_value_is_undefined(property)) {
+          return MaybeLocal<Value>();
+      }
+
       result = new JerryValue(property);
   } else {
       jerry_release_value(property);
@@ -2211,8 +2222,16 @@ Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
 
   int attributes = PropertyAttribute::None;
 
-  jerry_value_t target_object = jerry_acquire_value(jobject->value());
+  jerry_value_t target_object;
+
+  if (jerry_value_is_proxy(jobject->value())) {
+      target_object = jerry_get_proxy_target(jobject->value());
+  } else {
+      target_object = jerry_acquire_value(jobject->value());
+  }
+
   bool found = false;
+
   do {
       jerry_property_descriptor_t prop_desc;
       jerry_init_property_descriptor_fields(&prop_desc);
@@ -2627,7 +2646,28 @@ Local<Context> v8::Context::New(
     DeserializeInternalFieldsCallback internal_fields_deserializer,
     v8::MicrotaskQueue* microtask_queue) {
   V8_CALL_TRACE();
+
   JerryValue* __handle = JerryValue::NewContextObject(JerryIsolate::fromV8(external_isolate));
+
+  v8::Local<ObjectTemplate> templ;
+  JerryObjectTemplate* jerry_templ = NULL;
+
+  if (global_template.ToLocal(&templ)) {
+      JerryObjectTemplate *object_template = reinterpret_cast<JerryObjectTemplate*>(*templ);
+
+      jerry_value_t old_realm = jerry_set_realm(__handle->value());
+
+      object_template->InstallProperties(__handle->value());
+
+      if (object_template->HasProxyHandler()) {
+          JerryValue *interceptor = object_template->Proxify(__handle->clone());
+          jerry_realm_set_this (__handle->value(), interceptor->value());
+          delete interceptor;
+      }
+
+      jerry_set_realm(old_realm);
+  }
+
   Local<Context> ctx = v8::Local<Context>::New(external_isolate, reinterpret_cast<Context*>(__handle));
 
   ctx->SetSecurityToken(ctx->Global().As<v8::Value>());
@@ -2655,10 +2695,11 @@ void v8::Context::SetSecurityToken(Local<Value> token) {
 Local<Value> v8::Context::GetSecurityToken() {
   V8_CALL_TRACE();
   JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
-  JerryValue name(jerry_create_string_from_utf8((const jerry_char_t*)kContextSecurityTokenKey.c_str()));
-  JerryValue* prop = ctx->GetInternalProperty(&name);
+  jerry_value_t name = jerry_create_string_from_utf8((const jerry_char_t*)kContextSecurityTokenKey.c_str());
+  jerry_value_t prop = jerry_get_internal_property(ctx->value(), name);
+  jerry_release_value(name);
 
-  RETURN_HANDLE(Value, GetIsolate(), prop);
+  RETURN_HANDLE(Value, GetIsolate(), new JerryValue(prop));
 }
 
 v8::Isolate* Context::GetIsolate() {
@@ -2670,7 +2711,9 @@ v8::Isolate* Context::GetIsolate() {
 
 v8::Local<v8::Object> Context::Global() {
   V8_CALL_TRACE();
-  RETURN_HANDLE(Object, GetIsolate(), new JerryValue(jerry_get_global_object()));
+
+  JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
+  RETURN_HANDLE(Object, GetIsolate(), new JerryValue(jerry_realm_get_this(ctx->value())));
 }
 
 static jerry_value_t trace_function(const jerry_value_t function_obj, const jerry_value_t this_val,

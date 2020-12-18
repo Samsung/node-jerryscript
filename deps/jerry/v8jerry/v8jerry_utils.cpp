@@ -4,8 +4,11 @@
 #include <cstring>
 #include <vector>
 
+#include "v8jerry_atomics.hpp"
 #include "v8jerry_flags.hpp"
 #include "v8jerry_value.hpp"
+
+#define DEBUG_PRINT 1
 
 JerryPolyfill::JerryPolyfill(const char* name, const char* fn_args, const char* fn_body)
     : m_method(JerryPolyfill::BuildMethod(name, fn_args, fn_body))
@@ -32,6 +35,112 @@ jerry_value_t JerryPolyfill::BuildMethod(const char* name, const char* fn_args, 
     }
 
     return method;
+}
+
+#if DEBUG_PRINT
+
+static jerry_value_t
+jerryx_handler_print (const jerry_value_t func_obj_val,
+                      const jerry_value_t this_p,
+                      const jerry_value_t args_p[],
+                      const jerry_length_t args_cnt) {
+  (void) func_obj_val; /* unused */
+  (void) this_p; /* unused */
+
+  const char * const null_str = "\\u0000";
+
+  jerry_value_t ret_val = jerry_create_undefined ();
+
+  for (jerry_length_t arg_index = 0; arg_index < args_cnt; arg_index++)
+  {
+    jerry_value_t str_val;
+
+    if (jerry_value_is_symbol (args_p[arg_index]))
+    {
+      str_val = jerry_get_symbol_descriptive_string (args_p[arg_index]);
+    }
+    else
+    {
+      str_val = jerry_value_to_string (args_p[arg_index]);
+    }
+
+    if (jerry_value_is_error (str_val))
+    {
+      /* There is no need to free the undefined value. */
+      ret_val = str_val;
+      break;
+    }
+
+    jerry_length_t length = jerry_get_utf8_string_length (str_val);
+    jerry_length_t substr_pos = 0;
+    jerry_char_t substr_buf[256];
+
+    do
+    {
+      jerry_size_t substr_size = jerry_substring_to_utf8_char_buffer (str_val,
+                                                                      substr_pos,
+                                                                      length,
+                                                                      substr_buf,
+                                                                      256 - 1);
+
+      jerry_char_t *buf_end_p = substr_buf + substr_size;
+
+      /* Update start position by the number of utf-8 characters. */
+      for (jerry_char_t *buf_p = substr_buf; buf_p < buf_end_p; buf_p++)
+      {
+        /* Skip intermediate utf-8 octets. */
+        if ((*buf_p & 0xc0) != 0x80)
+        {
+          substr_pos++;
+        }
+      }
+
+      if (substr_pos == length)
+      {
+        *buf_end_p++ = (arg_index < args_cnt - 1) ? ' ' : '\n';
+      }
+
+      for (jerry_char_t *buf_p = substr_buf; buf_p < buf_end_p; buf_p++)
+      {
+        char chr = (char) *buf_p;
+
+        if (chr != '\0')
+        {
+          jerry_port_print_char (chr);
+          continue;
+        }
+
+        for (jerry_size_t null_index = 0; null_str[null_index] != '\0'; null_index++)
+        {
+          jerry_port_print_char (null_str[null_index]);
+        }
+      }
+    }
+    while (substr_pos < length);
+
+    jerry_release_value (str_val);
+  }
+
+  if (args_cnt == 0 || jerry_value_is_error (ret_val))
+  {
+    jerry_port_print_char ('\n');
+  }
+
+  return ret_val;
+}
+
+#endif
+
+static jerry_value_t
+jerryx_handler_string_normalize (const jerry_value_t func_obj_val,
+                                 const jerry_value_t this_p,
+                                 const jerry_value_t args_p[],
+                                 const jerry_length_t args_cnt) {
+  (void) func_obj_val; /* unused */
+  (void) args_p; /* unused */
+  (void) args_cnt; /* unused */
+
+  return jerry_acquire_value(this_p);
 }
 
 static jerry_value_t JerryHandlerStackTrace(const jerry_value_t func,
@@ -70,8 +179,14 @@ static jerry_value_t JerryHandlerGC(const jerry_value_t func,
 }
 
 void InjectGlobalFunctions(void) {
-    JerryValue global(jerry_get_global_object());
+#if DEBUG_PRINT
+    JerryxHandlerRegisterGlobal((const jerry_char_t *)"print", jerryx_handler_print);
+#endif
+    JerryxHandlerRegisterString((const jerry_char_t *)"normalize", jerryx_handler_string_normalize);
 
+    JerryAtomics::Initialize();
+
+    JerryValue global(jerry_get_global_object());
 
     if (Flag::Get(Flag::expose_gc)->u.bool_value) {
         JerryValue gc_string(jerry_create_string((const jerry_char_t*)"gc"));
@@ -93,7 +208,6 @@ void InjectGlobalFunctions(void) {
     error_obj->SetProperty(&capture_stack_trace_string, &stack_trace_function);
     delete error_obj;
 }
-
 
 // TODO: remove these layering violations (this is a Jerry internal method, should not be visible here)
 extern "C" bool ecma_get_object_is_builtin(void* obj);

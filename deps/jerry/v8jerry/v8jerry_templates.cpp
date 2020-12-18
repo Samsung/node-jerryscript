@@ -128,9 +128,34 @@ void JerryObjectTemplate::InstallProperties(const jerry_value_t target) {
     }
 }
 
+void JerryObjectTemplate::SetProxyHandler(const v8::NamedPropertyHandlerConfiguration& configuration)
+{
+    m_proxy_handler = new JerryV8ProxyHandlerConfiguration;
+
+    m_proxy_handler->ref_count = 1;
+    m_proxy_handler->genericGetter = configuration.getter;
+    m_proxy_handler->genericSetter = configuration.setter;
+    m_proxy_handler->genericQuery = configuration.query;
+    m_proxy_handler->genericDeleter = configuration.deleter;
+    m_proxy_handler->genericEnumerator = configuration.enumerator;
+    m_proxy_handler->genericDefiner = configuration.definer;
+    m_proxy_handler->genericDescriptor = configuration.descriptor;
+    m_proxy_handler->genericFlags = configuration.flags;
+
+    if (configuration.data.IsEmpty()) {
+        m_proxy_handler->genericData = jerry_create_undefined();
+    } else {
+        m_proxy_handler->genericData = jerry_acquire_value(reinterpret_cast<JerryValue*>(*configuration.data)->value());
+    }
+}
 
 static void JerryV8ProxyHandlerDataFree(void *data_p) {
     JerryV8ProxyHandlerData* data = reinterpret_cast<JerryV8ProxyHandlerData*>(data_p);
+
+    if (--data->configuration->ref_count == 0) {
+        delete data->configuration;
+    }
+
     delete data;
 }
 
@@ -144,16 +169,22 @@ jerry_value_t JerryV8ProxyHandler(
     const jerry_value_t args_p[],
     const jerry_length_t args_cnt);
 
-static jerry_value_t BuildProxyHandlerMethod(const v8::NamedPropertyHandlerConfiguration* proxy_handler,
+static jerry_value_t BuildProxyHandlerMethod(JerryV8ProxyHandlerConfiguration* proxy_handler,
                                              JerryV8ProxyHandlerType handler_type) {
     jerry_value_t func = jerry_create_external_function(JerryV8ProxyHandler);
+
+    proxy_handler->ref_count++;
 
     JerryV8ProxyHandlerData* data = new JerryV8ProxyHandlerData();
     data->configuration = proxy_handler;
     data->handler_type = handler_type;
 
-    jerry_set_object_native_pointer(func, data, &JerryV8ProxyHandlerData::TypeInfo);
+    /* Create weak reference. */
+    jerry_value_t name = jerry_create_string((const jerry_char_t *)"0");
+    jerry_set_internal_property(func, name, proxy_handler->genericData);
+    jerry_release_value(name);
 
+    jerry_set_object_native_pointer(func, data, &JerryV8ProxyHandlerData::TypeInfo);
     return func;
 }
 

@@ -11,7 +11,6 @@
 #include "jerryscript-port-default.h"
 
 #include "v8jerry_allocator.hpp"
-#include "v8jerry_atomics.hpp"
 #include "v8jerry_value.hpp"
 #include "v8jerry_utils.hpp"
 
@@ -60,7 +59,7 @@ public:
     JerryValue* GetRawError(void) { return m_current_error; }
 
     void PushContext(JerryValue* context);
-    void PopContext(JerryValue* context);
+    void PopContext();
     JerryValue* CurrentContext(void);
     JerryValue* GetGlobalSymbol(JerryValue* name);
 
@@ -101,6 +100,11 @@ public:
         return reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex]);
     }
 
+    JerryValue* Hole() {
+        int root_offset = v8::internal::Internals::kIsolateRootsOffset / v8::internal::kApiSystemPointerSize;
+        return reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kTheHoleValueRootIndex]);
+    }
+
     JerryObjectTemplate* HiddenObjectTemplate(void);
 
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }
@@ -128,7 +132,7 @@ private:
     friend class v8::Locker;
 
     std::deque<JerryHandleScope*> m_handleScopes;
-    std::deque<JerryValue*> m_contexts;
+    std::deque<std::pair<JerryValue*, jerry_value_t>> m_contexts;
     std::vector<JerryTemplate*> m_templates;
     std::vector<JerryValue*> m_eternals;
     std::vector<std::pair<jerry_value_t, jerry_value_t>> m_global_symbols;

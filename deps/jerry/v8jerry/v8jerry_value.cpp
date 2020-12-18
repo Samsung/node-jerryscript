@@ -74,11 +74,6 @@ bool JerryValue::DeleteInternalProperty(JerryValue* key) {
     return jerry_delete_internal_property(m_value, key->value());
 }
 
-JerryValue* JerryValue::GetInternalProperty(JerryValue* key) {
-    jerry_value_t prop = jerry_get_internal_property(m_value, key->value());
-    return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);
-}
-
 JerryValue* JerryValue::GetOwnPropertyDescriptor(const JerryValue& jkey) const {
     jerry_value_t key = jkey.value();
     jerry_value_t descriptor = JerryIsolate::GetCurrent()->HelperGetOwnPropDesc().Call(m_value, &key, 1);
@@ -197,7 +192,11 @@ static jerry_object_native_info_t JerryV8ContextTypeInfo = {
 
 /* static */
 JerryValue* JerryValue::NewContextObject(JerryIsolate* iso) {
-    jerry_value_t object = jerry_create_object();
+    jerry_value_t object = jerry_create_realm();
+
+    jerry_value_t old_realm = jerry_set_realm(object);
+    InjectGlobalFunctions();
+    jerry_set_realm(old_realm);
 
     JerryV8ContextData* ctx_data = new JerryV8ContextData{iso, {}};
 
@@ -242,7 +241,7 @@ void JerryValue::ContextExit(void) {
 
     JerryV8ContextData* ctx = ContextGetData();
 
-    ctx->isolate->PopContext(this);
+    ctx->isolate->PopContext();
     ctx->isolate->Exit();
 }
 
@@ -294,26 +293,40 @@ JerryV8InternalFieldData* JerryValue::GetInternalFieldData(int idx) {
 
 void JerryValue::SetInternalField(int idx, JerryValue* value) {
     JerryV8InternalFieldData* data = GetInternalFieldData(idx);
+
     if (data == NULL) {
         fprintf(stderr, "ERROR!\n");
         abort();
         return;
     }
 
-    data->fields[idx] = NULL;
-    data->is_value[idx] = true;
+    data->fields[idx] = reinterpret_cast<void*>(value->value());
 
-    std::string internal_name = "$$internal_" + idx;
-    JerryValue name(jerry_create_string_from_utf8((const jerry_char_t*)internal_name.c_str()));
+    /* Create reference to the property */
+    char buffer[16];
+    char* buffer_ptr = buffer + sizeof(buffer) - 1;
+
+    *buffer_ptr = '\0';
+
+    do {
+        *(--buffer_ptr) = (idx % 10) + '0';
+        idx /= 10;
+    } while (idx > 0);
+
+    JerryValue name(jerry_create_string_from_utf8((const jerry_char_t *)buffer_ptr));
     SetInternalProperty(&name, value);
 }
 
 void JerryValue::SetInternalField(int idx, void* value) {
     JerryV8InternalFieldData* data = GetInternalFieldData(idx);
 
-    // TODO: maybe delete "$$internal_<x>" properties?
+    if (data == NULL) {
+        fprintf(stderr, "ERROR!\n");
+        abort();
+        return;
+    }
+
     data->fields[idx] = value;
-    data->is_value[idx] = false;
 }
 
 int JerryValue::InternalFieldCount(void) {

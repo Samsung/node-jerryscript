@@ -13,8 +13,6 @@
 #include "v8jerry_templates.hpp"
 #include "v8jerry_utils.hpp"
 
-#define DEBUG_PRINT 1
-
 JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
 
 JerryIsolate::JerryIsolate() {
@@ -24,119 +22,9 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     this->InitializeJerryIsolate(params);
 }
 
-#if DEBUG_PRINT
-
-static jerry_value_t
-jerryx_handler_print (const jerry_value_t func_obj_val,
-                      const jerry_value_t this_p,
-                      const jerry_value_t args_p[],
-                      const jerry_length_t args_cnt) {
-  (void) func_obj_val; /* unused */
-  (void) this_p; /* unused */
-
-  const char * const null_str = "\\u0000";
-
-  jerry_value_t ret_val = jerry_create_undefined ();
-
-  for (jerry_length_t arg_index = 0; arg_index < args_cnt; arg_index++)
-  {
-    jerry_value_t str_val;
-
-    if (jerry_value_is_symbol (args_p[arg_index]))
-    {
-      str_val = jerry_get_symbol_descriptive_string (args_p[arg_index]);
-    }
-    else
-    {
-      str_val = jerry_value_to_string (args_p[arg_index]);
-    }
-
-    if (jerry_value_is_error (str_val))
-    {
-      /* There is no need to free the undefined value. */
-      ret_val = str_val;
-      break;
-    }
-
-    jerry_length_t length = jerry_get_utf8_string_length (str_val);
-    jerry_length_t substr_pos = 0;
-    jerry_char_t substr_buf[256];
-
-    do
-    {
-      jerry_size_t substr_size = jerry_substring_to_utf8_char_buffer (str_val,
-                                                                      substr_pos,
-                                                                      length,
-                                                                      substr_buf,
-                                                                      256 - 1);
-
-      jerry_char_t *buf_end_p = substr_buf + substr_size;
-
-      /* Update start position by the number of utf-8 characters. */
-      for (jerry_char_t *buf_p = substr_buf; buf_p < buf_end_p; buf_p++)
-      {
-        /* Skip intermediate utf-8 octets. */
-        if ((*buf_p & 0xc0) != 0x80)
-        {
-          substr_pos++;
-        }
-      }
-
-      if (substr_pos == length)
-      {
-        *buf_end_p++ = (arg_index < args_cnt - 1) ? ' ' : '\n';
-      }
-
-      for (jerry_char_t *buf_p = substr_buf; buf_p < buf_end_p; buf_p++)
-      {
-        char chr = (char) *buf_p;
-
-        if (chr != '\0')
-        {
-          jerry_port_print_char (chr);
-          continue;
-        }
-
-        for (jerry_size_t null_index = 0; null_str[null_index] != '\0'; null_index++)
-        {
-          jerry_port_print_char (null_str[null_index]);
-        }
-      }
-    }
-    while (substr_pos < length);
-
-    jerry_release_value (str_val);
-  }
-
-  if (args_cnt == 0 || jerry_value_is_error (ret_val))
-  {
-    jerry_port_print_char ('\n');
-  }
-
-  return ret_val;
-}
-
-static jerry_value_t
-jerryx_handler_string_normalize (const jerry_value_t func_obj_val,
-                                 const jerry_value_t this_p,
-                                 const jerry_value_t args_p[],
-                                 const jerry_length_t args_cnt) {
-  (void) func_obj_val; /* unused */
-  (void) args_p; /* unused */
-  (void) args_cnt; /* unused */
-
-  return jerry_acquire_value(this_p);
-}
-
-#endif
-
 void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& params) {
     m_terminated = false;
     jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
-#if DEBUG_PRINT
-    JerryxHandlerRegisterGlobal((const jerry_char_t *)"print", jerryx_handler_print);
-#endif
-    JerryxHandlerRegisterString((const jerry_char_t *)"normalize", jerryx_handler_string_normalize);
 
     m_fatalErrorCallback = nullptr;
 
@@ -150,7 +38,6 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_fn_set_integrity = new JerryPolyfill("set_integrity", "prop", "Object[prop](this)");
 
     InitalizeSlots();
-    JerryAtomics::Initialize();
 
     m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
     m_last_try_catch = NULL;
@@ -242,6 +129,7 @@ void JerryIsolate::Dispose(void) {
     {
         int root_offset = v8::internal::Internals::kIsolateRootsOffset / v8::internal::kApiSystemPointerSize;
         delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex]);
+        delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kTheHoleValueRootIndex]);
         delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kNullValueRootIndex]);
         delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kTrueValueRootIndex]);
         delete reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kFalseValueRootIndex]);
@@ -320,20 +208,18 @@ void JerryIsolate::TryReportError(void) {
 void JerryIsolate::PushContext(JerryValue* context) {
     // Contexts are managed by HandleScopes, here we only need the stack to correctly
     // return the current context if needed.
-    m_contexts.push_back(context);
-
+    jerry_value_t old_realm = jerry_set_realm(context->value());
+    m_contexts.push_back(std::pair<JerryValue*, jerry_value_t>(context, old_realm));
     JerryIsolate::s_currentIsolate = this;
 }
 
-void JerryIsolate::PopContext(JerryValue* context) {
-    JerryValue* ctx = m_contexts.back();
-    assert(ctx == context);
-
+void JerryIsolate::PopContext() {
+    jerry_set_realm(m_contexts.back().second);
     m_contexts.pop_back();
 }
 
 JerryValue* JerryIsolate::CurrentContext(void) {
-    return m_contexts.back();
+    return m_contexts.back().first;
 }
 
 JerryValue* JerryIsolate::GetGlobalSymbol(JerryValue* name) {
@@ -426,6 +312,8 @@ void JerryIsolate::InitalizeSlots(void) {
 
     // Undefined
     m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex] = new JerryValue(jerry_create_undefined(), JerryHandle::PersistentValue);
+    // Hole
+    m_slot[root_offset + v8::internal::Internals::kTheHoleValueRootIndex] = new JerryValue(jerry_create_undefined(), JerryHandle::PersistentValue);
     // Null
     m_slot[root_offset + v8::internal::Internals::kNullValueRootIndex] = new JerryValue(jerry_create_null(), JerryHandle::PersistentValue);
     // Boolean True

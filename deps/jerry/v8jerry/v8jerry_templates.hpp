@@ -150,9 +150,22 @@ enum JerryV8ProxyHandlerType {
     GET_OWN_PROPERTY_DESC,
 };
 
+struct JerryV8ProxyHandlerConfiguration {
+    size_t ref_count;
+    v8::GenericNamedPropertyGetterCallback genericGetter;
+    v8::GenericNamedPropertySetterCallback genericSetter;
+    v8::GenericNamedPropertyQueryCallback genericQuery;
+    v8::GenericNamedPropertyDeleterCallback genericDeleter;
+    v8::GenericNamedPropertyEnumeratorCallback genericEnumerator;
+    v8::GenericNamedPropertyDefinerCallback genericDefiner;
+    v8::GenericNamedPropertyDescriptorCallback genericDescriptor;
+    v8::PropertyHandlerFlags genericFlags;
+    jerry_value_t genericData;
+};
+
 struct JerryV8ProxyHandlerData {
     JerryV8ProxyHandlerType handler_type;
-    const v8::NamedPropertyHandlerConfiguration* configuration;
+    JerryV8ProxyHandlerConfiguration* configuration;
 
     static jerry_object_native_info_t TypeInfo;
 };
@@ -172,7 +185,11 @@ public:
         ReleaseProperties();
 
         if (m_proxy_handler) {
-            delete m_proxy_handler;
+            jerry_release_value(m_proxy_handler->genericData);
+
+            if (--m_proxy_handler->ref_count == 0) {
+                delete m_proxy_handler;
+            }
         }
     }
 
@@ -211,10 +228,7 @@ public:
         }
     }
 
-    void SetProxyHandler(const v8::NamedPropertyHandlerConfiguration& configuration) {
-        m_proxy_handler = new v8::NamedPropertyHandlerConfiguration(configuration);
-    }
-
+    void SetProxyHandler(const v8::NamedPropertyHandlerConfiguration& configuration);
     bool HasProxyHandler(void) { return m_proxy_handler != NULL; }
 
     void InstallProperties(const jerry_value_t target);
@@ -228,7 +242,7 @@ private:
     JerryFunctionTemplate* m_constructor;
     std::vector<AccessorEntry*> m_accessors;
     int m_internal_field_count;
-    v8::NamedPropertyHandlerConfiguration* m_proxy_handler;
+    JerryV8ProxyHandlerConfiguration* m_proxy_handler;
 };
 
 struct JerryV8FunctionHandlerData {
