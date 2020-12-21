@@ -30,7 +30,12 @@ static void error_object_created_callback (const jerry_value_t error_object, voi
 
 void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& params) {
     m_terminated = false;
-    jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
+    jerry_init_flag_t flag = (jerry_init_flag_t) JERRY_INIT_EMPTY;
+#if (defined JERRY_MEM_STATS && JERRY_MEM_STATS)
+    jerry_port_default_set_log_level (JERRY_LOG_LEVEL_DEBUG);
+    flag = (jerry_init_flag_t) (JERRY_INIT_MEM_STATS | JERRY_INIT_EMPTY);
+#endif
+    jerry_init(flag);
 
     m_fatalErrorCallback = NULL;
     m_messageCallback = NULL;
