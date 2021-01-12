@@ -388,7 +388,6 @@ void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8
 
 void* JerryValue::ClearWeak() {
     m_type = PersistentValue;
-    jerry_acquire_value(value());
 
     void* data = NULL;
     jerry_get_object_native_pointer(value(), &data, &JerryV8WeakReferenceInfo);

@@ -16,14 +16,14 @@
         {
           'action_name': 'jerrysource',
           'inputs': [
-            'jerryscript/tools/srcgenerator.py',
+            'jerryscript/tools/amalgam.py',
           ],
           'outputs': [
             '<@(generated_sources)',
           ],
           'action': [
             'python',
-            'jerryscript/tools/srcgenerator.py',
+            'jerryscript/tools/amalgam.py',
             '--output-dir=<(SHARED_INTERMEDIATE_DIR)/jerry/',
             '--jerry-core',
             '--jerry-port-default',

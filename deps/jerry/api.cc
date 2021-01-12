@@ -250,6 +250,7 @@ void* V8::ClearWeak(i::Address* location) {
       return NULL;
   }
 
+  jerry_acquire_value(object->value());
   return object->ClearWeak();
 }
 
@@ -269,6 +270,8 @@ void V8::DisposeGlobal(i::Address* location) {
 
   if (object->type() == JerryHandle::PersistentWeakValue) {
       object->ClearWeak();
+      JerryValue::DeleteValueWithoutRelease(object);
+      return;
   }
 
   delete object;
@@ -3549,7 +3552,7 @@ void Isolate::SetHostInitializeImportMetaObjectCallback(
 
 void Isolate::SetPrepareStackTraceCallback(PrepareStackTraceCallback callback) {
   V8_CALL_TRACE();
-  // No further specification
+  JerryIsolate::fromV8(this)->SetPrepareStackTraceCallback(callback);
 }
 
 Isolate::DisallowJavascriptExecutionScope::DisallowJavascriptExecutionScope(

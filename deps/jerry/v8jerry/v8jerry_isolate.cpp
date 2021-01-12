@@ -26,7 +26,9 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_terminated = false;
     jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
 
-    m_fatalErrorCallback = nullptr;
+    m_fatalErrorCallback = NULL;
+    m_messageCallback = NULL;
+    m_prepare_stack_trace_callback = NULL;
 
     m_fn_map_set = new JerryPolyfill("map_set", "map, key, value", "return map.set(key, value);");
     m_fn_set_add = new JerryPolyfill("set_add", "set, value", "return map.add(key);");
@@ -40,6 +42,14 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     InitalizeSlots();
 
     m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
+
+    char *call_site_prototype = "({"
+                                "  getLineNumber() { return this.lineNumber_ },"
+                                "  getColumnNumber() { return 1 },"
+                                "  getFileName() { return this.fileName_ },"
+                                "})";
+    m_call_site_prototype = new JerryValue(jerry_eval((jerry_char_t*)call_site_prototype, strlen(call_site_prototype), 0));
+
     m_last_try_catch = NULL;
     m_current_error = NULL;
     m_hidden_object_template = NULL;
@@ -110,8 +120,10 @@ void JerryIsolate::Dispose(void) {
         jerry_release_value (it.second);
     }
 
-    delete m_magic_string_stack;
     ClearError(NULL);
+
+    delete m_magic_string_stack;
+    delete m_call_site_prototype;
 
 #ifdef __POSIX__
     pthread_mutex_destroy(&m_lock);

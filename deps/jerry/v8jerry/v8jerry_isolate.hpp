@@ -40,6 +40,9 @@ public:
     const JerryPolyfill& HelperGetOwnPropNames(void) const { return *m_fn_get_own_names; }
     const JerryPolyfill& HelperSetIntegrityLevel(void) const { return *m_fn_set_integrity; }
 
+    JerryValue *MagicStringStack() { return m_magic_string_stack; }
+    JerryValue *CallSitePrototype() { return m_call_site_prototype; }
+
     void Enter(void);
     void Exit(void);
     bool IsTerminated(void) const { return m_terminated; }
@@ -84,6 +87,9 @@ public:
 
     void SetPromiseHook(v8::PromiseHook promise_hook) { m_promise_hook = promise_hook; }
     void SetPromiseRejectCallback(v8::PromiseRejectCallback callback) { m_promise_reject_calback = callback; }
+
+    void SetPrepareStackTraceCallback(v8::PrepareStackTraceCallback callback) { m_prepare_stack_trace_callback = callback; }
+    v8::PrepareStackTraceCallback PrepareStackTraceCallback() { return m_prepare_stack_trace_callback; }
 
     void SetEternal(JerryValue* value, int* index);
     void ClearEternal(JerryValue* value);
@@ -149,12 +155,14 @@ private:
     JerryPolyfill* m_fn_set_integrity;
 
     JerryValue* m_magic_string_stack;
+    JerryValue* m_call_site_prototype;
 
     v8::TryCatch* m_last_try_catch;
     JerryValue* m_current_error;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
     v8::MessageCallback m_messageCallback;
+    v8::PrepareStackTraceCallback m_prepare_stack_trace_callback;
 
     bool m_terminated;
     bool m_autorun_tasks;

@@ -1,11 +1,13 @@
 #include "v8jerry_utils.hpp"
 
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
 
 #include "v8jerry_atomics.hpp"
 #include "v8jerry_flags.hpp"
+#include "v8jerry_isolate.hpp"
 #include "v8jerry_value.hpp"
 
 #define DEBUG_PRINT 1
@@ -143,29 +145,233 @@ jerryx_handler_string_normalize (const jerry_value_t func_obj_val,
   return jerry_acquire_value(this_p);
 }
 
+static char* extract_number(jerry_value_t call_site, jerry_value_t name_string, char* start, char* end) {
+    char* num_start = end;
+    while (num_start > start && num_start[-1] >= '0' && num_start[-1] <= '9') {
+        num_start--;
+    }
+
+    char* new_end = num_start;
+    uint32_t value = 0;
+
+    while (num_start < end) {
+        value = value * 10 + (uint32_t)(*num_start++ - '0');
+    }
+
+    jerry_value_t number = jerry_create_number(value);
+    jerry_release_value(jerry_set_property(call_site, name_string, number));
+    jerry_release_value(number);
+
+    if (new_end > start && new_end[-1] == ':') {
+        new_end--;
+    }
+
+    return new_end;
+}
+
+static void create_structured_trace(jerry_value_t raw_trace) {
+    char buf[128];
+    uint32_t length = jerry_get_array_length(raw_trace);
+    jerry_value_t line_number_string = jerry_create_string((const jerry_char_t*)"lineNumber_");
+    jerry_value_t file_name_string = jerry_create_string((const jerry_char_t*)"fileName_");
+    JerryValue *prototype = JerryIsolate::GetCurrent()->CallSitePrototype();
+
+    for (uint32_t i = 0; i < length; i++) {
+        jerry_value_t call_site = jerry_create_object();
+        jerry_release_value(jerry_set_prototype(call_site, prototype->value()));
+
+        jerry_value_t str_value = jerry_get_property_by_index(raw_trace, i);
+        jerry_size_t size = jerry_get_string_size(str_value);
+        char* start;
+
+        if (size <= sizeof(buf)) {
+            start = buf;
+        } else {
+            start = (char*)malloc(size);
+        }
+
+        jerry_string_to_char_buffer(str_value, (jerry_char_t*)start, size);
+        jerry_release_value(str_value);
+        char* end = start + size;
+
+        end = extract_number(call_site, line_number_string, start, end);
+
+        jerry_value_t file_name = jerry_create_string_sz((jerry_char_t*)start, (jerry_size_t)(end - start));
+        jerry_release_value(jerry_set_property(call_site, file_name_string, file_name));
+        jerry_release_value(file_name);
+
+        if (size > sizeof(buf)) {
+            free(start);
+        }
+
+        jerry_release_value(jerry_set_property_by_index(raw_trace, i, call_site));
+        jerry_release_value(call_site);
+    }
+
+    jerry_release_value(line_number_string);
+    jerry_release_value(file_name_string);
+}
+
+static jerry_value_t JerryHandlerStackTraceGetter(const jerry_value_t func,
+                                                  const jerry_value_t this_val,
+                                                  const jerry_value_t args_p[],
+                                                  const jerry_length_t args_count)
+{
+    jerry_value_t raw_string = jerry_create_string((const jerry_char_t*)"raw");
+    JerryValue raw_trace(jerry_get_property(func, raw_string));
+
+    if (jerry_value_is_undefined(raw_trace.value()))
+    {
+      jerry_release_value(raw_string);
+
+      jerry_value_t value_string = jerry_create_string((const jerry_char_t*)"value");
+      jerry_value_t value_result = jerry_get_property(func, value_string);
+      jerry_release_value(value_string);
+      return value_result;
+    }
+
+    jerry_delete_property(func, raw_string);
+    jerry_release_value(raw_string);
+
+    JerryIsolate* isolate = JerryIsolate::GetCurrent();
+    v8::HandleScope handle_scope(JerryIsolate::toV8(isolate));
+
+    v8::PrepareStackTraceCallback callback = isolate->PrepareStackTraceCallback();
+    assert(callback);
+
+    JerryValue jerry_context(jerry_acquire_value(isolate->CurrentContext()->value()));
+    v8::Local<v8::Context> context = jerry_context.AsLocal<v8::Context>();
+
+    JerryValue jerry_error(jerry_acquire_value(this_val));
+    v8::Local<v8::Value> error = jerry_error.AsLocal<v8::Value>();
+
+    create_structured_trace(raw_trace.value());
+    v8::Local<v8::Array> sites = raw_trace.AsLocal<v8::Array>();
+
+    v8::MaybeLocal<v8::Value> result = callback(context, error, sites);
+
+    jerry_value_t final_result;
+
+    if (isolate->HasError()) {
+        JerryValue* jerror = isolate->GetRawError();
+        final_result = jerry_create_error_from_value(jerror->value(), false);
+        isolate->ClearError(NULL);
+    } else if (!result.IsEmpty()) {
+        JerryValue* result_value = *reinterpret_cast<JerryValue**>(&result);
+        final_result = jerry_acquire_value(result_value->value());
+    } else {
+        final_result = jerry_create_undefined();
+    }
+
+    jerry_value_t value_string = jerry_create_string((const jerry_char_t*)"value");
+    jerry_value_t value_result = jerry_set_property(func, value_string, final_result);
+    jerry_release_value(value_string);
+    return final_result;
+}
+
+static jerry_value_t JerryHandlerStackTraceSetter(const jerry_value_t func,
+                                                  const jerry_value_t this_val,
+                                                  const jerry_value_t args_p[],
+                                                  const jerry_length_t args_count)
+{
+    jerry_value_t getter_string = jerry_create_string((const jerry_char_t*)"getter");
+    jerry_value_t getter_value = jerry_get_property(func, getter_string);
+    jerry_release_value(getter_string);
+
+    jerry_value_t raw_string = jerry_create_string((const jerry_char_t*)"raw");
+    jerry_delete_property(getter_value, raw_string);
+    jerry_release_value(raw_string);
+
+    jerry_value_t value_string = jerry_create_string((const jerry_char_t*)"value");
+    jerry_value_t set_result = jerry_set_property(getter_value, value_string, args_p[0]);
+    jerry_release_value(set_result);
+    jerry_release_value(value_string);
+
+    jerry_release_value(getter_value);
+    return jerry_create_undefined();
+}
+
 static jerry_value_t JerryHandlerStackTrace(const jerry_value_t func,
                                             const jerry_value_t this_val,
                                             const jerry_value_t args_p[],
                                             const jerry_length_t args_count)
 {
-    if (!jerry_is_feature_enabled(JERRY_FEATURE_LINE_INFO) || args_count == 0 || !jerry_value_is_object(args_p[0]))
-    {
-        printf("Line info is disabled or the argument is not an object.\n");
+    if (!jerry_is_feature_enabled(JERRY_FEATURE_LINE_INFO) || args_count == 0 || !jerry_value_is_object(args_p[0])) {
         return jerry_create_undefined();
     }
 
-    jerry_value_t stack_string = jerry_create_string((const jerry_char_t*)"stack");
-    jerry_value_t stack_trace = jerry_get_backtrace(0);
-    jerry_value_t set_result = jerry_set_property(args_p[0], stack_string, stack_trace);
+    jerry_value_t global_object = jerry_get_global_object();
+    jerry_value_t error_string = jerry_create_string((const jerry_char_t*)"Error");
+    jerry_value_t error_result = jerry_get_property(global_object, error_string);
+    jerry_release_value(error_string);
+    jerry_release_value(global_object);
 
-    if (jerry_value_is_error(set_result))
-    {
-        printf("Cannot set stack property.\n");
+    if (jerry_value_is_error(error_result)) {
+        return error_result;
     }
 
-    jerry_release_value(stack_string);
-    jerry_release_value(stack_trace);
+    jerry_value_t limit_string = jerry_create_string((const jerry_char_t*)"stackTraceLimit");
+    jerry_value_t limit_result = jerry_get_property(error_result, limit_string);
+    jerry_release_value(limit_string);
+    jerry_release_value(error_result);
+
+    if (jerry_value_is_error(limit_result)) {
+        return limit_result;
+    }
+
+    uint32_t max_depth = 0;
+
+    if (jerry_value_is_number(limit_result)) {
+        double depth = jerry_get_number_value(limit_result);
+        if (depth < 1) {
+            max_depth = UINT32_MAX;
+        } else if (depth < UINT32_MAX) {
+            max_depth = (uint32_t)depth;
+        }
+    }
+    jerry_release_value(limit_result);
+
+    // https://v8.dev/docs/stack-trace-api
+    jerry_value_t stack_string = jerry_create_string((const jerry_char_t*)"stack");
+
+    jerry_property_descriptor_t prop_desc;
+    jerry_init_property_descriptor_fields(&prop_desc);
+
+    prop_desc.is_get_defined = true;
+    prop_desc.getter = jerry_create_external_function(JerryHandlerStackTraceGetter);
+    prop_desc.is_set_defined = true;
+    prop_desc.setter = jerry_create_external_function(JerryHandlerStackTraceSetter);
+
+    jerry_value_t stack_trace;
+    if (max_depth != UINT32_MAX) {
+        if (args_count >= 2) {
+            stack_trace = jerry_get_backtrace_from(max_depth, args_p[1]);
+        } else {
+            stack_trace = jerry_get_backtrace(max_depth);
+        }
+    } else {
+        stack_trace = jerry_create_array(0);
+    }
+
+    jerry_value_t raw_string = jerry_create_string((const jerry_char_t*)"raw");
+    jerry_value_t set_result = jerry_set_property(prop_desc.getter, raw_string, stack_trace);
     jerry_release_value(set_result);
+    jerry_release_value(raw_string);
+    jerry_release_value(stack_trace);
+
+    jerry_value_t getter_string = jerry_create_string((const jerry_char_t*)"getter");
+    set_result = jerry_set_property(prop_desc.setter, getter_string, prop_desc.getter);
+    jerry_release_value(set_result);
+    jerry_release_value(getter_string);
+
+    prop_desc.is_enumerable_defined = true;
+    prop_desc.is_enumerable = false;
+    prop_desc.is_configurable_defined = true;
+    prop_desc.is_configurable = true;
+
+    jerry_define_own_property(args_p[0], stack_string, &prop_desc);
+    jerry_free_property_descriptor_fields(&prop_desc);
+    jerry_release_value(stack_string);
 
     return jerry_create_undefined();
 }
