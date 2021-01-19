@@ -189,7 +189,7 @@ public:
     }
 
 
-    JerryValue* GetObjectCreationContext(void);
+    jerry_value_t GetObjectCreationContext(void);
 
     static JerryValue* NewPromise(void);
     static JerryValue* NewObject(void);

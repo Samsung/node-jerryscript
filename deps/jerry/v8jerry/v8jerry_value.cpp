@@ -85,19 +85,11 @@ JerryValue* JerryValue::GetOwnPropertyNames() const {
     return new JerryValue(JerryIsolate::GetCurrent()->HelperGetOwnPropNames().Call(m_value, NULL, 0));
 }
 
-static const jerry_object_native_info_t JerryV8ObjectContextTypeInfo = {
-    /* native_pointer stores JerryContext (aka JerryValue*) which will be freed via the handlescope */
-    .free_cb = NULL
-};
-
-JerryValue* JerryValue::GetObjectCreationContext(void) {
-    void* data_p;
-    bool has_p = jerry_get_object_native_pointer(m_value, &data_p, &JerryV8ObjectContextTypeInfo);
-    if (!has_p) {
-        return NULL;
-    }
-
-    return reinterpret_cast<JerryValue*>(data_p);
+jerry_value_t JerryValue::GetObjectCreationContext(void) {
+    jerry_value_t name = jerry_create_string((const jerry_char_t*)"_CC_");
+    jerry_value_t result = jerry_get_internal_property(value(), name);
+    jerry_release_value(name);
+    return result;
 }
 
 /* static */
@@ -106,7 +98,9 @@ JerryValue* JerryValue::NewPromise(void) {
 
     JerryValue* ctx = JerryIsolate::GetCurrent()->CurrentContext();
 
-    jerry_set_object_native_pointer(promise, ctx, &JerryV8ObjectContextTypeInfo);
+    jerry_value_t name = jerry_create_string((const jerry_char_t*)"_CC_");
+    jerry_set_internal_property(promise, name, ctx->value());
+    jerry_release_value(name);
 
     return new JerryValue(promise);
 }
@@ -117,7 +111,9 @@ JerryValue* JerryValue::NewObject(void) {
 
     JerryValue* ctx = JerryIsolate::GetCurrent()->CurrentContext();
 
-    jerry_set_object_native_pointer(object, ctx, &JerryV8ObjectContextTypeInfo);
+    jerry_value_t name = jerry_create_string((const jerry_char_t*)"_CC_");
+    jerry_set_internal_property(object, name, ctx->value());
+    jerry_release_value(name);
 
     return new JerryValue(object);
 }

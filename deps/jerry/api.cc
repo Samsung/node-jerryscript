@@ -1869,18 +1869,18 @@ Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
       .is_get_defined = false,
       .is_set_defined = false,
       .is_writable_defined = true,
-      .is_writable = (bool)(attributes & ~PropertyAttribute::ReadOnly),
+      .is_writable = !(attributes & PropertyAttribute::ReadOnly),
       .is_enumerable_defined = true,
-      .is_enumerable = (bool)(attributes & ~PropertyAttribute::DontEnum),
+      .is_enumerable = !(attributes & PropertyAttribute::DontEnum),
       .is_configurable_defined = true,
-      .is_configurable = (bool)(attributes & ~PropertyAttribute::DontDelete),
+      .is_configurable = !(attributes & PropertyAttribute::DontDelete),
       .value = prop_value->value(),
       .getter = jerry_create_undefined(),
       .setter = jerry_create_undefined()
   };
 
   jerry_value_t result = jerry_define_own_property (obj->value(), prop_name->value(), &prop_desc);
-  bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+  bool isOk = jerry_get_boolean_value(result);
   jerry_release_value(result);
 
   return Just(isOk);
@@ -2179,7 +2179,7 @@ Maybe<bool> v8::Object::HasOwnProperty(Local<Context> context,
 
   jerry_value_t has_prop = jerry_has_own_property(jobject->value(), jkey->value());
   bool property_exists = jerry_get_boolean_value(has_prop);
-  jerry_release_value(property_exists);
+  jerry_release_value(has_prop);
 
   return Just(property_exists);
 }
@@ -2272,15 +2272,15 @@ Local<v8::Context> v8::Object::CreationContext() {
     V8_CALL_TRACE();
     JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
 
-    JerryValue* jctx = jobj->GetObjectCreationContext();
+    jerry_value_t context = jobj->GetObjectCreationContext();
 
     // TODO: remove the hack:
-    if (jctx == NULL) {
-        jctx = JerryIsolate::GetCurrent()->CurrentContext();
+    if (jerry_value_is_undefined(context)) {
+        RETURN_HANDLE(Context, GetIsolate(), JerryIsolate::GetCurrent()->CurrentContext()->Copy());
     }
 
     // Copy the context
-    RETURN_HANDLE(Context, GetIsolate(), jctx->Copy());
+    RETURN_HANDLE(Context, GetIsolate(), new JerryValue(context));
 }
 
 int v8::Object::GetIdentityHash() {

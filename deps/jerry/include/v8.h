@@ -11382,7 +11382,9 @@ Local<String> String::Empty(Isolate* isolate) {
   typedef internal::Internals I;
   I::CheckInitialized(isolate);
   S* slot = I::GetRoot(isolate, I::kEmptyStringRootIndex);
-  return Local<String>(reinterpret_cast<String*>(slot));
+  // [[V8_API_CHANGE]]
+  // return Local<String>(reinterpret_cast<String*>(slot));
+  return Local<String>(reinterpret_cast<String*>(*slot));
 }
 
 

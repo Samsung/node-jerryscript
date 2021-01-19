@@ -42,7 +42,7 @@ private:
         JerryHandle **values = new JerryHandle*[kImplicitArgsSize];
         JerryIsolate *isolate = JerryIsolate::fromV8(v8::Isolate::GetCurrent());
 
-        values[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = 0; // TODO: fix this
+        values[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = (JerryHandle*)v8::internal::IntToSmi(v8::internal::Internals::kDontThrow); // TODO: fix this
         values[v8::PropertyCallbackInfo<T>::kHolderIndex] = new JerryValue(jerry_acquire_value(this_val)); // TODO: 'this' object is not correct
         // TODO: correctly fill the arguments:
         values[v8::PropertyCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(isolate);
