@@ -291,45 +291,32 @@ static jerry_value_t JerryHandlerStackTraceSetter(const jerry_value_t func,
     return jerry_create_undefined();
 }
 
-static jerry_value_t JerryHandlerStackTrace(const jerry_value_t func,
-                                            const jerry_value_t this_val,
-                                            const jerry_value_t args_p[],
-                                            const jerry_length_t args_count)
-{
-    if (!jerry_is_feature_enabled(JERRY_FEATURE_LINE_INFO) || args_count == 0 || !jerry_value_is_object(args_p[0])) {
-        return jerry_create_undefined();
-    }
-
+void CreateStackTrace(const jerry_value_t object, const jerry_value_t *ignored_function) {
     jerry_value_t global_object = jerry_get_global_object();
     jerry_value_t error_string = jerry_create_string((const jerry_char_t*)"Error");
     jerry_value_t error_result = jerry_get_property(global_object, error_string);
     jerry_release_value(error_string);
     jerry_release_value(global_object);
 
-    if (jerry_value_is_error(error_result)) {
-        return error_result;
-    }
+    uint32_t max_depth = UINT32_MAX;
 
-    jerry_value_t limit_string = jerry_create_string((const jerry_char_t*)"stackTraceLimit");
-    jerry_value_t limit_result = jerry_get_property(error_result, limit_string);
-    jerry_release_value(limit_string);
-    jerry_release_value(error_result);
+    if (!jerry_value_is_error(error_result)) {
+        jerry_value_t limit_string = jerry_create_string((const jerry_char_t*)"stackTraceLimit");
+        jerry_value_t limit_result = jerry_get_property(error_result, limit_string);
+        jerry_release_value(limit_string);
 
-    if (jerry_value_is_error(limit_result)) {
-        return limit_result;
-    }
+        if (!jerry_value_is_error(limit_result)) {
+            if (jerry_value_is_number(limit_result)) {
+                double depth = jerry_get_number_value(limit_result);
 
-    uint32_t max_depth = 0;
-
-    if (jerry_value_is_number(limit_result)) {
-        double depth = jerry_get_number_value(limit_result);
-        if (depth < 1) {
-            max_depth = UINT32_MAX;
-        } else if (depth < UINT32_MAX) {
-            max_depth = (uint32_t)depth;
+                if (depth >= 0 && depth < UINT32_MAX) {
+                    max_depth = (uint32_t)depth;
+                }
+            }
         }
+        jerry_release_value(limit_result);
     }
-    jerry_release_value(limit_result);
+    jerry_release_value(error_result);
 
     // https://v8.dev/docs/stack-trace-api
     jerry_value_t stack_string = jerry_create_string((const jerry_char_t*)"stack");
@@ -343,9 +330,13 @@ static jerry_value_t JerryHandlerStackTrace(const jerry_value_t func,
     prop_desc.setter = jerry_create_external_function(JerryHandlerStackTraceSetter);
 
     jerry_value_t stack_trace;
-    if (max_depth != UINT32_MAX) {
-        if (args_count >= 2) {
-            stack_trace = jerry_get_backtrace_from(max_depth, args_p[1]);
+    if (max_depth > 0) {
+        if (max_depth == UINT32_MAX) {
+            max_depth = 0;
+        }
+
+        if (ignored_function != NULL) {
+            stack_trace = jerry_get_backtrace_from(max_depth, *ignored_function);
         } else {
             stack_trace = jerry_get_backtrace(max_depth);
         }
@@ -369,10 +360,21 @@ static jerry_value_t JerryHandlerStackTrace(const jerry_value_t func,
     prop_desc.is_configurable_defined = true;
     prop_desc.is_configurable = true;
 
-    jerry_define_own_property(args_p[0], stack_string, &prop_desc);
+    jerry_define_own_property(object, stack_string, &prop_desc);
     jerry_free_property_descriptor_fields(&prop_desc);
     jerry_release_value(stack_string);
+}
 
+static jerry_value_t JerryHandlerStackTrace(const jerry_value_t func,
+                                            const jerry_value_t this_val,
+                                            const jerry_value_t args_p[],
+                                            const jerry_length_t args_count)
+{
+    if (args_count == 0 || !jerry_value_is_object(args_p[0])) {
+        return jerry_create_undefined();
+    }
+
+    CreateStackTrace(args_p[0], (const jerry_value_t*)(args_count >= 2 ? (args_p + 1) : NULL));
     return jerry_create_undefined();
 }
 

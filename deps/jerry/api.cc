@@ -981,9 +981,6 @@ v8::TryCatch::~TryCatch() {
         JerryValue error(jerry_acquire_value(iso->GetRawError()->value()));
         Local<Value> exception(reinterpret_cast<Value*>(&error));
 
-        // Replace "stack" property on exception as V8 creates a stack string and not an array.
-        iso->UpdateErrorStackProp(error);
-
         Local<v8::Message> message;
         iso->ReportMessage(message, exception);
     }

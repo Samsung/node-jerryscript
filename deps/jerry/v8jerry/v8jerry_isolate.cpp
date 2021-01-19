@@ -22,6 +22,12 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     this->InitializeJerryIsolate(params);
 }
 
+static void error_object_created_callback (const jerry_value_t error_object, void *user_p)
+{
+    (void) user_p;
+    CreateStackTrace(error_object, NULL);
+}
+
 void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& params) {
     m_terminated = false;
     jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
@@ -63,12 +69,13 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 
     InjectGlobalFunctions();
 
+    jerry_set_error_object_created_callback (error_object_created_callback, NULL);
+
 #if (defined JERRY_DEBUGGER && JERRY_DEBUGGER)
     bool protocol = jerryx_debugger_tcp_create (5001);
     jerryx_debugger_after_connect (protocol && jerryx_debugger_ws_create ());
 #endif
 }
-
 
 void JerryIsolate::Enter(void) {
     JerryIsolate::s_currentIsolate = this;
@@ -209,9 +216,6 @@ void JerryIsolate::TryReportError(void) {
 
     ClearError(NULL);
     v8::Local<v8::Value> exception = error.AsLocal<v8::Value>();
-
-    // Replace "stack" property on exception as V8 creates a stack string and not an array.
-    UpdateErrorStackProp(error);
 
     v8::Local<v8::Message> message;
     ReportMessage(message, exception);
@@ -394,58 +398,6 @@ void JerryIsolate::RemoveUTF16String(uint16_t* buffer) {
 
     delete iter->second;
     m_utf16strs.erase(iter);
-}
-
-void JerryIsolate::FormatError(const JerryValue& error, std::ostream& out) {
-    {
-        jerry_value_t errorStr = jerry_value_to_string(error.value());
-        jerry_size_t msg_size = jerry_get_string_size(errorStr);
-
-        std::vector<jerry_char_t> msg;
-        msg.resize(msg_size + 1);
-
-        jerry_size_t copied = jerry_string_to_char_buffer(errorStr, &msg[0], msg_size + 1);
-        jerry_release_value(errorStr);
-
-        assert(copied == msg_size);
-        msg[copied] = static_cast<jerry_char_t>('\0');
-
-        out << (const char*)&msg[0] << std::endl;
-    }
-
-    // No default handler print out trace
-    jerry_value_t stack_trace = jerry_get_property(error.value(), m_magic_string_stack->value());
-
-    assert(!jerry_value_is_error(stack_trace));
-
-    uint32_t array_length = jerry_get_array_length(stack_trace);
-    for (uint32_t idx = 0; idx < array_length; idx++)
-    {
-        jerry_value_t property = jerry_get_property_by_index(stack_trace, idx);
-
-        jerry_size_t msg_size = jerry_get_string_size(property);
-
-        std::vector<jerry_char_t> msg;
-        msg.resize(msg_size + 1);
-
-        jerry_size_t copied = jerry_string_to_char_buffer(property, &msg[0], msg_size + 1);
-        assert(copied == msg_size);
-        msg[copied] = static_cast<jerry_char_t>('\0');
-
-        out << "# " << idx << ": " << (const char*)&msg[0] << std::endl;
-
-        jerry_release_value(property);
-    }
-
-    jerry_release_value(stack_trace);
-}
-
-void JerryIsolate::UpdateErrorStackProp(JerryValue& error) {
-    std::ostringstream errorMessage;
-    FormatError(error, errorMessage);
-
-    JerryValue newMessage(jerry_create_string((const jerry_char_t*)errorMessage.str().c_str()));
-    error.SetProperty(m_magic_string_stack, &newMessage);
 }
 
 JerryObjectTemplate* JerryIsolate::HiddenObjectTemplate(void) {

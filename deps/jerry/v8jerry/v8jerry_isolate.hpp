@@ -98,9 +98,6 @@ public:
     void AddUTF16String(std::u16string*);
     void RemoveUTF16String(uint16_t*);
 
-    void FormatError(const JerryValue& error, std::ostream& out);
-    void UpdateErrorStackProp(JerryValue& error);
-
     JerryValue* Undefined() {
         int root_offset = v8::internal::Internals::kIsolateRootsOffset / v8::internal::kApiSystemPointerSize;
         return reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex]);

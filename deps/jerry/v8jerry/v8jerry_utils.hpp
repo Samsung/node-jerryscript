@@ -18,6 +18,7 @@ private:
 };
 
 void InjectGlobalFunctions(void);
+void CreateStackTrace(const jerry_value_t object, const jerry_value_t *ignored_function);
 void JerryForceCleanup(void);
 
 void JerryxHandlerRegister(const jerry_char_t* name_p,
