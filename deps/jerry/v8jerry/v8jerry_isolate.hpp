@@ -58,8 +58,10 @@ public:
     void ClearError(JerryValue* exception);
     void *TakeError(void);
     bool HasError(void);
-    void TryReportError(void);
+    void ProcessError(void);
     JerryValue* GetRawError(void) { return m_current_error; }
+    void IncTryDepth() { m_try_depth++; }
+    void DecTryDepth() { m_try_depth--; }
 
     void PushContext(JerryValue* context);
     void PopContext();
@@ -81,6 +83,9 @@ public:
 
     void SetFatalErrorHandler(v8::FatalErrorCallback callback) { m_fatalErrorCallback = callback; }
     void ReportFatalError(const char* location, const char* message);
+    void SetAbortOnUncaughtExceptionCallback(v8::Isolate::AbortOnUncaughtExceptionCallback callback) {
+        m_abortOnUncaughtExceptionCallback = callback;
+    }
 
     void EnqueueMicrotask(JerryValue* func);
     void RunMicrotasks(void);
@@ -156,8 +161,10 @@ private:
 
     v8::TryCatch* m_last_try_catch;
     JerryValue* m_current_error;
+    size_t m_try_depth;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
+    v8::Isolate::AbortOnUncaughtExceptionCallback m_abortOnUncaughtExceptionCallback;
     v8::MessageCallback m_messageCallback;
     v8::PrepareStackTraceCallback m_prepare_stack_trace_callback;
 

@@ -3,7 +3,7 @@
 
 #define FLAGS(F) \
     F(BOOL, expose_gc, false) \
-    F(BOOL, MAX_FLAG_VALUE, false)
+    F(BOOL, abort_on_uncaught_exception, false)
 
 struct Flag {
     enum Type {

@@ -5426,7 +5426,8 @@ void DiffieHellman::SetPrivateKey(const FunctionCallbackInfo<Value>& args) {
 
 
 void DiffieHellman::VerifyErrorGetter(const FunctionCallbackInfo<Value>& args) {
-  HandleScope scope(args.GetIsolate());
+  // [[V8JERRY_CHANGE]]
+  //HandleScope scope(args.GetIsolate());
 
   DiffieHellman* diffieHellman;
   ASSIGN_OR_RETURN_UNWRAP(&diffieHellman, args.Holder());

@@ -115,7 +115,10 @@ void V8::SetFlagsFromString(const char* str, size_t length) {
 void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
   V8_CALL_TRACE();
 
-  for (int idx = 0; idx < *argc; idx++) {
+  int length = *argc;
+  bool found = false;
+
+  for (int idx = 0; idx < length; idx++) {
       const char* arg = argv[idx];
 
       if (strncmp("--", arg, 2) != 0) {
@@ -124,10 +127,10 @@ void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
       }
       arg += 2;
 
-      bool negate = false;
+      bool result = true;
 
       if (strncmp("no-", arg, 3) == 0) {
-          negate = true;
+          result = false;
           arg += 3;
       }
 
@@ -136,10 +139,12 @@ void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
       if (flag == NULL) {
           continue;
       }
+
       /* Flag found, update it's value */
+      found = true;
 
       if (flag->type == Flag::BOOL) {
-          flag->u.bool_value = !negate;
+          flag->u.bool_value = result;
       }
 
       if (remove_flags) {
@@ -147,15 +152,19 @@ void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
       }
   }
 
-  if (remove_flags) {
-      int targetIdx = 0;
-      for (int idx = 0; idx < *argc; idx++) {
-          if (argv[idx] != NULL) {
-              argv[targetIdx++] = argv[idx];
-          }
-      }
-      *argc = targetIdx;
+  if (!remove_flags || !found) {
+      return;
   }
+
+  int dst = 0;
+
+  for (int idx = 0; idx < length; idx++) {
+      if (argv[idx] != NULL) {
+          argv[dst++] = argv[idx];
+      }
+  }
+
+  *argc = dst;
 }
 
 void ResourceConstraints::ConfigureDefaults(uint64_t physical_memory,
@@ -617,13 +626,25 @@ ScriptCompiler::CachedData::~CachedData() {
 }
 
 struct UnboundScriptData {
-  UnboundScriptData(Isolate* isolate) : isolate(isolate) {}
-
   Isolate* isolate;
+  jerry_char_t *file_name;
+  size_t file_name_length;
+  jerry_char_t *source;
+  size_t source_length;
 };
 
 void unboundScriptFreeCallback(void *native_p) {
-  delete (UnboundScriptData*)native_p;
+  UnboundScriptData* unboundScriptData = (UnboundScriptData*)native_p;
+
+  if (unboundScriptData->file_name_length > 0) {
+      delete[] unboundScriptData->file_name;
+  }
+
+  if (unboundScriptData->source_length > 0) {
+      delete[] unboundScriptData->source;
+  }
+
+  delete unboundScriptData;
 }
 
 static jerry_object_native_info_t unboundScriptInfo {
@@ -633,18 +654,34 @@ static jerry_object_native_info_t unboundScriptInfo {
 Local<Script> UnboundScript::BindToCurrentContext() {
   V8_CALL_TRACE();
   const JerryValue* unboundScript = reinterpret_cast<const JerryValue*>(this);
-  void* unboundScriptData;
-  jerry_get_object_native_pointer(unboundScript->value(), &unboundScriptData, &unboundScriptInfo);
-  RETURN_HANDLE(Script, ((UnboundScriptData*)unboundScriptData)->isolate, unboundScript->clone());
+  UnboundScriptData* unboundScriptData;
+  jerry_get_object_native_pointer(unboundScript->value(), (void**)&unboundScriptData, &unboundScriptInfo);
+
+  jerry_value_t scriptFunction = jerry_parse(unboundScriptData->file_name,
+                                             unboundScriptData->file_name_length,
+                                             unboundScriptData->source,
+                                             unboundScriptData->source_length,
+                                             JERRY_PARSE_NO_OPTS);
+
+  /* Should never happen (except out of memory) */
+  if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
+      jerry_release_value(scriptFunction);
+      return Local<Script>();
+  }
+
+  RETURN_HANDLE(Script, unboundScriptData->isolate, new JerryValue(scriptFunction));
 }
 
 MaybeLocal<Value> Script::Run(Local<Context> context) {
   V8_CALL_TRACE();
   const JerryValue* script = reinterpret_cast<const JerryValue*>(this);
+  Isolate* v8_isolate = context->GetIsolate();
 
+  JerryIsolate::fromV8(v8_isolate)->IncTryDepth();
   jerry_value_t result = jerry_run(script->value());
+  JerryIsolate::fromV8(v8_isolate)->DecTryDepth();
 
-  RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(result));
+  RETURN_HANDLE(Value, v8_isolate, new JerryValue(result));
 }
 
 Local<PrimitiveArray> ScriptOrModule::GetHostDefinedOptions() {
@@ -770,40 +807,68 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
   V8_CALL_TRACE();
 
   if (options == CompileOptions::kConsumeCodeCache) {
-    String::Utf8Value text(v8_isolate, source->source_string);
-    CachedData* data = source->cached_data;
-    if (data->length != text.length() || memcmp(data->data, (const uint8_t*) *text, text.length())) {
-        data->rejected = true;
-    }
+      String::Utf8Value text(v8_isolate, source->source_string);
+      CachedData* data = source->cached_data;
+      if (data->length != text.length() || memcmp(data->data, (const uint8_t*) *text, text.length())) {
+          data->rejected = true;
+      }
   }
 
   Local<String> file;
 
   if (source->resource_name.IsEmpty()) {
-    file = source->resource_name.As<String>();
+      file = source->resource_name.As<String>();
   } else {
-    bool isOk =source->resource_name->ToString(v8_isolate->GetCurrentContext()).ToLocal(&file);
+      bool isOk =source->resource_name->ToString(v8_isolate->GetCurrentContext()).ToLocal(&file);
 
-    if (!isOk) {
-      return MaybeLocal<UnboundScript>();
-    }
+      if (!isOk) {
+        return MaybeLocal<UnboundScript>();
+      }
   }
 
-  String::Utf8Value text(v8_isolate, source->source_string);
-  String::Utf8Value fileName(v8_isolate,file);
+  String::Utf8Value file_name(v8_isolate, file);
+  String::Utf8Value source_string(v8_isolate, source->source_string);
 
-  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
-                                             fileName.length(),
-                                             (const jerry_char_t*)*text,
-                                             text.length(),
+  size_t file_name_length = (size_t)file_name.length();
+  size_t source_string_length = (size_t)source_string.length();
+
+  /* Compiling for checking syntax errors. */
+  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*file_name,
+                                             file_name_length,
+                                             (const jerry_char_t*)*source_string,
+                                             source_string_length,
                                              JERRY_PARSE_NO_OPTS);
 
-  JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(v8_isolate), scriptFunction);
+  if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
+      JerryIsolate::fromV8(v8_isolate)->SetError(scriptFunction);
+      return MaybeLocal<UnboundScript>();
+  }
 
-  UnboundScriptData *unboundScriptData = new UnboundScriptData(v8_isolate);
-  jerry_set_object_native_pointer(scriptFunction, unboundScriptData, &unboundScriptInfo);
+  jerry_release_value(scriptFunction);
 
-  RETURN_HANDLE(UnboundScript, v8_isolate, result);
+  UnboundScriptData *unboundScriptData = new UnboundScriptData;
+  unboundScriptData->isolate = v8_isolate;
+
+  unboundScriptData->file_name_length = file_name_length;
+  if (file_name_length > 0) {
+      unboundScriptData->file_name = new jerry_char_t[file_name_length];
+      memcpy(unboundScriptData->file_name, *file_name, file_name_length);
+  } else {
+      unboundScriptData->file_name = NULL;
+  }
+
+  unboundScriptData->source_length = source_string_length;
+  if (source_string_length > 0) {
+      unboundScriptData->source = new jerry_char_t[source_string_length];
+      memcpy(unboundScriptData->source, *source_string, source_string_length);
+  } else {
+      unboundScriptData->source = NULL;
+  }
+
+  jerry_value_t result = jerry_create_object();
+  jerry_set_object_native_pointer(result, unboundScriptData, &unboundScriptInfo);
+
+  RETURN_HANDLE(UnboundScript, v8_isolate, new JerryValue(result));
 }
 
 MaybeLocal<Module> ScriptCompiler::CompileModule(
@@ -812,23 +877,23 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
   V8_CALL_TRACE();
 
   if (options == CompileOptions::kConsumeCodeCache) {
-    String::Utf8Value text(isolate, source->source_string);
-    CachedData* data = source->cached_data;
-    if (data->length != text.length() || memcmp(data->data, (const uint8_t*) *text, text.length())) {
-        data->rejected = true;
-    }
+      String::Utf8Value text(isolate, source->source_string);
+      CachedData* data = source->cached_data;
+      if (data->length != text.length() || memcmp(data->data, (const uint8_t*) *text, text.length())) {
+          data->rejected = true;
+      }
   }
 
   Local<String> file;
 
   if (source->resource_name.IsEmpty()) {
-    file = source->resource_name.As<String>();
+      file = source->resource_name.As<String>();
   } else {
-    bool isOk =source->resource_name->ToString(isolate->GetCurrentContext()).ToLocal(&file);
+      bool isOk =source->resource_name->ToString(isolate->GetCurrentContext()).ToLocal(&file);
 
-    if (!isOk) {
-      return MaybeLocal<Module>();
-    }
+      if (!isOk) {
+          return MaybeLocal<Module>();
+      }
   }
 
   String::Utf8Value text(isolate, source->source_string);
@@ -2327,14 +2392,19 @@ MaybeLocal<v8::Value> Function::Call(Local<Context> context,
       arguments[idx] = reinterpret_cast<JerryValue*>(*argv[idx])->value();
   }
 
-  jerry_value_t result = jerry_call_function(jfunc->value(), jthis->value(), &arguments[0], argc);
-  JerryValue* return_value = JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), result);
+  JerryIsolate* isolate = JerryIsolate::GetCurrent();
 
-  if (return_value == NULL) {
-      JerryIsolate::GetCurrent()->TryReportError();
+  isolate->IncTryDepth();
+  jerry_value_t result = jerry_call_function(jfunc->value(), jthis->value(), &arguments[0], argc);
+  isolate->DecTryDepth();
+
+  if (V8_UNLIKELY(jerry_value_is_error(result))) {
+      isolate->SetError(result);
+      isolate->ProcessError();
+      return MaybeLocal<v8::Value>();
   }
 
-  RETURN_HANDLE(Value, Isolate::GetCurrent(), return_value);
+  RETURN_HANDLE(Value, JerryIsolate::toV8(isolate), new JerryValue(result));
 }
 
 void Function::SetName(v8::Local<v8::String> name) {
@@ -2351,7 +2421,7 @@ Local<Value> Function::GetDebugName() const {
 Local<v8::Value> Function::GetBoundFunction() const {
   V8_CALL_TRACE();
   // TODO: only used by node_perf.cc
-  return Local<Value>();;
+  return Local<Value>();
 }
 
 int Name::GetIdentityHash() {
@@ -2377,8 +2447,24 @@ int String::WriteUtf8(Isolate* v8_isolate, char* buffer, int capacity,
   jerry_length_t length = jerry_get_utf8_string_length(jvalue->value());
   jerry_size_t bytes = jerry_substring_to_utf8_char_buffer(jvalue->value(), 0, length, (jerry_char_t *)buffer, capacity);
 
-  if ((options & String::NO_NULL_TERMINATION) == 0) {
+  if (!(options & String::NO_NULL_TERMINATION) && bytes < capacity) {
       buffer[bytes] = '\0';
+  }
+
+  if (options & String::REPLACE_INVALID_UTF8) {
+      uint8_t* ptr = (uint8_t*)buffer;
+      uint8_t* buffer_end = ptr + bytes;
+      ptr += 2;
+
+      while (ptr < buffer_end) {
+          if (ptr[-2] >= 0xed && ptr[-2] < 0xee && ptr[-1] >= 0xa0) {
+              ptr[-2] = 0xef;
+              ptr[-1] = 0xbf;
+              ptr[0] = 0xbd;
+              ptr += 2;
+          }
+          ptr++;
+      }
   }
 
   return (int)bytes;
@@ -3529,7 +3615,7 @@ void Isolate::Exit() {
 void Isolate::SetAbortOnUncaughtExceptionCallback(
     AbortOnUncaughtExceptionCallback callback) {
   V8_CALL_TRACE();
-  // All uncaught exceptions will "terminate"
+  JerryIsolate::fromV8(this)->SetAbortOnUncaughtExceptionCallback(callback);
 }
 
 void Isolate::SetFatalErrorHandler(FatalErrorCallback that) {
@@ -3736,7 +3822,7 @@ String::Value::Value(v8::Isolate* isolate, v8::Local<v8::Value> obj)
     length_ = wstring->length();
 
     reinterpret_cast<JerryIsolate*>(isolate)->AddUTF16String(wstring);
-    delete buffer;
+    delete[] buffer;
 
     if (!jvalue->IsString()) {
         jerry_release_value(value);

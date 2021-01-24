@@ -9,33 +9,33 @@ static Flag BuildFlag(Flag::Type type, const char* name, bool default_value) {
     return newFlag;
 }
 
-struct Flag flagsStore[] = {
+static struct Flag flagsStore[] = {
 #define FLAG_EXPAND(TYPE, NAME, DEFAULT_VALUE) BuildFlag(Flag::Type::TYPE, #NAME, DEFAULT_VALUE),
 FLAGS(FLAG_EXPAND)
 #undef FLAG_EXPAND
 };
 
 static bool CompareFlag(const char* expected, const char* name) {
-    for (size_t idx = 0; expected[idx] != '\0' && name[idx] != '\0'; idx++) {
+    size_t idx;
+
+    for (idx = 0; expected[idx] != '\0'; idx++) {
         const char ch = expected[idx];
         const char inCh = name[idx];
 
-        /* Treat '-' and '_' as same characters. */
-        if ((ch == '_' && inCh == '-')
-            || (ch == '-' && inCh == '_')) {
-            continue;
-        }
-
-        if (expected[idx] != name[idx]) {
-            return false;
+        if (ch != inCh) {
+            if (ch != '_' || inCh != '-') {
+                return false;
+            }
         }
     }
 
-    return true;
+    return name[idx] == '\0';
 }
 
 Flag* Flag::Get(const char* name) {
-    for (size_t idx = 0; idx < sizeof(flagsStore) / sizeof(flagsStore[0]); idx++) {
+    const size_t size = sizeof(flagsStore) / sizeof(flagsStore[0]);
+
+    for (size_t idx = 0; idx < size; idx++) {
         if (CompareFlag(flagsStore[idx].name, name)) {
             return &flagsStore[idx];
         }
@@ -45,7 +45,9 @@ Flag* Flag::Get(const char* name) {
 }
 
 Flag* Flag::Get(FlagID id) {
-    if (id < 0 || id >= MAX_FLAG_VALUE) {
+    const size_t size = sizeof(flagsStore) / sizeof(flagsStore[0]);
+
+    if (id < 0 || id >= size) {
         return NULL;
     }
 

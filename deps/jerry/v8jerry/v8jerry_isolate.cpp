@@ -53,11 +53,13 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
                                 "  getLineNumber() { return this.lineNumber_ },"
                                 "  getColumnNumber() { return 1 },"
                                 "  getFileName() { return this.fileName_ },"
+                                "  toString() { return this.fileName_ + ':' + this.lineNumber_ + ':1' },"
                                 "})";
     m_call_site_prototype = new JerryValue(jerry_eval((jerry_char_t*)call_site_prototype, strlen(call_site_prototype), 0));
 
     m_last_try_catch = NULL;
     m_current_error = NULL;
+    m_try_depth = 0;
     m_hidden_object_template = NULL;
 
     // Initialize random for math functions
@@ -206,18 +208,23 @@ bool JerryIsolate::HasError(void) {
     return m_current_error != NULL;
 }
 
-void JerryIsolate::TryReportError(void) {
-    if (m_last_try_catch != NULL) {
+void JerryIsolate::ProcessError(void) {
+    if (m_last_try_catch != NULL || m_try_depth > 0) {
         return;
     }
 
-    // Copy the error to corectly report error
-    JerryValue error(jerry_acquire_value(GetRawError()->value()));
+    if (Flag::Get(Flag::abort_on_uncaught_exception)->u.bool_value
+            && (m_abortOnUncaughtExceptionCallback == NULL || m_abortOnUncaughtExceptionCallback(toV8(this)))) {
+        abort();
+    }
 
-    ClearError(NULL);
+    // Move the error
+    JerryValue error(GetRawError()->value());
+    m_current_error = NULL;
+
     v8::Local<v8::Value> exception = error.AsLocal<v8::Value>();
-
     v8::Local<v8::Message> message;
+
     ReportMessage(message, exception);
 }
 
