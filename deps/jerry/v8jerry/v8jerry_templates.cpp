@@ -197,7 +197,7 @@ JerryValue* JerryObjectTemplate::Proxify(JerryValue* target_instance) {
     } types[] = {
         { "get", GET, },
         { "set", SET, },
-        { "delete", DELETE, },
+        { "deleteProperty", DELETE, },
         { "has", QUERY, },
         { "ownKeys", ENUMERATE, },
         { "defineProperty", DEFINE_PROPERTY, },

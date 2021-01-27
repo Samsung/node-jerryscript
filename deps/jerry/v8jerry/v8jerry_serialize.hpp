@@ -88,7 +88,7 @@ class ValueSerializer {
     bool WriteJerryObject(jerry_value_t value);
 
     SerializerBuffer buffer_;
-    i::Isolate* const isolate_;
+    i::Isolate* isolate_;
     v8::ValueSerializer::Delegate* const delegate_;
 
     bool treat_array_buffer_views_as_host_objects_;
@@ -128,11 +128,12 @@ class ValueDeserializer {
     jerry_value_t ReadJerryArrayBufferView(jerry_value_t array_buffer);
     jerry_value_t ReadJerryError();
     jerry_value_t ReadJerryObject();
+    jerry_value_t ReadHostObject();
 
     const uint8_t* buffer_;
     size_t position_;
     const size_t size_;
-    i::Isolate* const isolate_;
+    i::Isolate* isolate_;
     v8::ValueDeserializer::Delegate* const delegate_;
 };
 

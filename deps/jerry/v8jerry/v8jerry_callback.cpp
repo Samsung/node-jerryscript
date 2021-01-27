@@ -311,7 +311,11 @@ jerry_value_t JerryV8FunctionHandler(
 
 static void setPropertyDescriptorHelperBoolean(jerry_value_t object, const char *name, bool value)
 {
-    setPropertyDescriptorHelperBoolean(object, name, jerry_create_boolean (value));
+    jerry_value_t prop_name = jerry_create_string ((const jerry_char_t *) name);
+    jerry_value_t boolean_value = jerry_create_boolean (value);
+    jerry_set_property (object, prop_name, boolean_value);
+    jerry_release_value (boolean_value);
+    jerry_release_value (prop_name);
 }
 
 static void setPropertyDescriptorHelper(jerry_value_t object, const char *name, jerry_value_t value)
@@ -366,7 +370,6 @@ jerry_value_t JerryV8ProxyHandler(
 
                 return jerry_get_property(args_p[0], args_p[1]);
             }
-
             break;
         }
         case SET: {
@@ -535,6 +538,31 @@ jerry_value_t JerryV8ProxyHandler(
                     return jerry_acquire_value(retVal->value());
                 }
                 break;
+            }
+
+            if (data->configuration->genericGetter) {
+                MAKE_NAME(args_p[1]);
+                JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
+
+                data->configuration->genericGetter(__name.AsLocal<v8::Name>(), info);
+
+                if (iso->HasError()) {
+                    break;
+                }
+
+                v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+
+                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+
+                if (retVal != iso->Hole()) {
+                    jerry_value_t result = jerry_create_object();
+
+                    setPropertyDescriptorHelper(result, "value", retVal->value());
+                    setPropertyDescriptorHelperBoolean(result, "writable", true);
+                    setPropertyDescriptorHelperBoolean(result, "enumerable", true);
+                    setPropertyDescriptorHelperBoolean(result, "configurable", true);
+                    return result;
+                }
             }
 
             jerry_value_t result;

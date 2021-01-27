@@ -164,7 +164,8 @@ enum class ErrorTag : uint8_t {
 
 ValueSerializer::ValueSerializer(i::Isolate* isolate,
                                  v8::ValueSerializer::Delegate* delegate)
-    : isolate_(isolate), delegate_(delegate) {}
+    : isolate_(isolate),
+      delegate_(delegate) {}
 
 void ValueSerializer::WriteHeader() {
     WriteTag(SerializationTag::kVersion);
@@ -488,6 +489,13 @@ void ValueSerializer::WriteJerryError(jerry_value_t value) {
 }
 
 bool ValueSerializer::WriteJerryObject(jerry_value_t value) {
+    JerryValue hostObject(jerry_acquire_value(value));
+    if (hostObject.InternalFieldCount() > 0) {
+        WriteTag(SerializationTag::kHostObject);
+        v8::Maybe<bool> result = delegate_->WriteHostObject(reinterpret_cast<v8::Isolate*>(isolate_), hostObject.AsLocal<v8::Object>());
+        return result.IsJust() && result.FromJust();
+    }
+
     uint32_t properties_written = 0;
     WriteTag(SerializationTag::kBeginJSObject);
     jerry_value_t keys =
@@ -633,6 +641,9 @@ jerry_value_t ValueDeserializer::ReadValueInternal() {
         }
         case SerializationTag::kBeginJSObject: {
             return ReadJerryObject();
+        }
+        case SerializationTag::kHostObject: {
+            return ReadHostObject();
         }
         case SerializationTag::kError:
             return ReadJerryError();
@@ -959,6 +970,21 @@ jerry_value_t ValueDeserializer::ReadJerryObject() {
     }
     jerry_release_value(result);
     return jerry_create_undefined();
+}
+
+jerry_value_t ValueDeserializer::ReadHostObject() {
+    v8::HandleScope scope(reinterpret_cast<v8::Isolate*>(isolate_));
+
+    v8::MaybeLocal<v8::Object> result = delegate_->ReadHostObject(reinterpret_cast<v8::Isolate*>(isolate_));
+
+    v8::Local<v8::Object> object;
+    if (result.ToLocal(&object)) {
+        return jerry_acquire_value(((JerryValue*)*object)->value());
+    }
+
+    return jerry_create_error(
+        JERRY_ERROR_TYPE,
+        (const jerry_char_t*)"Host object cannot be Deserialized");
 }
 
 }  // namespace JerrySerialize

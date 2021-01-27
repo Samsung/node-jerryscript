@@ -207,7 +207,6 @@ public:
     void ContextSetEmbedderData(int index, void* value);
     void* ContextGetEmbedderData(int index);
 
-
     JerryBackingStore* GetBackingStore(void) const;
     void* GetExternalData(void) const;
     bool IsExternal() const;
@@ -223,6 +222,7 @@ public:
     JerryV8InternalFieldData* GetInternalFieldData(int idx);
     void SetInternalField(int idx, JerryValue* value);
     void SetInternalField(int idx, void* value);
+    int InternalFieldCount(void);
 
     template<typename T>
     T GetInternalField(int idx) {
@@ -238,8 +238,6 @@ public:
 
         return reinterpret_cast<T>(data->fields[idx]);
     }
-
-    int InternalFieldCount(void);
 
     JerryValue(JerryValue& that) = delete;
 

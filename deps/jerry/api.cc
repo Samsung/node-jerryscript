@@ -1275,7 +1275,7 @@ struct ValueSerializer::PrivateData {
 };
 
 ValueSerializer::ValueSerializer(Isolate* isolate, Delegate* delegate)
-    : private_(new PrivateData(reinterpret_cast<i::Isolate*>(isolate), nullptr)) {
+    : private_(new PrivateData(reinterpret_cast<i::Isolate*>(isolate), delegate)) {
 }
 
 ValueSerializer::~ValueSerializer() {
@@ -1356,7 +1356,7 @@ ValueDeserializer::ValueDeserializer(Isolate* isolate,
                                      size_t size,
                                      Delegate* delegate)
     : private_(
-          new ValueDeserializer::PrivateData(reinterpret_cast<i::Isolate*>(isolate), data, size, nullptr)) {}
+          new ValueDeserializer::PrivateData(reinterpret_cast<i::Isolate*>(isolate), data, size, delegate)) {}
 
 ValueDeserializer::~ValueDeserializer() {
   delete private_;
@@ -3090,7 +3090,7 @@ Local<v8::Array> v8::Array::New(Isolate* isolate, Local<Value>* elements,
                                 size_t length) {
   V8_CALL_TRACE();
 
-  jerry_value_t array_value = jerry_create_array(length);
+  jerry_value_t array_value = jerry_create_array(0);
 
   uint32_t length_limit = std::min<uint32_t>(UINT32_MAX, length);
   for (size_t i = 0; i < length_limit; i++) {
