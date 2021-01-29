@@ -50,6 +50,7 @@
       'defines': [
         'JERRY_CPOINTER_32_BIT=1',
         'JERRY_GLOBAL_HEAP_SIZE=16384',
+        'JERRY_STACK_LIMIT=4096',
         'JERRY_LINE_INFO=1',
         'JERRY_DEBUGGER=0',
         'JERRY_ERROR_MESSAGES=1',
