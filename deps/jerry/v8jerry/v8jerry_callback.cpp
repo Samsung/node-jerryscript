@@ -114,9 +114,7 @@ jerry_value_t JerryV8GetterSetterHandler(
 
             jret = jerry_acquire_value(retVal->value());
         } else {
-            JerryValue* jerror = iso->GetRawError();
-            jret = jerry_create_error_from_value(jerror->value(), false);
-            iso->ClearError(NULL);
+            jret = jerry_create_error_from_value(iso->TakeError(), true);
         }
     }
 
@@ -296,9 +294,7 @@ jerry_value_t JerryV8FunctionHandler(
 
             jret = jerry_acquire_value(retVal->value());
         } else {
-            JerryValue* jerror = iso->GetRawError();
-            jret = jerry_create_error_from_value(jerror->value(), false);
-            iso->ClearError(NULL);
+            jret = jerry_create_error_from_value(iso->TakeError(), true);
         }
     }
 
@@ -598,8 +594,6 @@ jerry_value_t JerryV8ProxyHandler(
         }
     }
 
-    JerryValue* jerror = iso->GetRawError();
-    jret = jerry_create_error_from_value(jerror->value(), false);
-    iso->ClearError(NULL);
+    jret = jerry_create_error_from_value(iso->TakeError(), true);
     return jret;
 }

@@ -31,9 +31,8 @@ static void _LogTrace(int line, std::string file_name, std::string func_name) {
 #endif
 
 #define RETURN_HANDLE(T, ISOLATE, HANDLE) \
-do {                                                                    \
-    JerryHandle *__handle = HANDLE;                                    \
-    return v8::Local<T>::New(ISOLATE, reinterpret_cast<T*>(__handle)); \
+do { \
+    return (HANDLE)->NewLocal<T>(ISOLATE); \
 } while (0)
 
 namespace i = v8::internal;

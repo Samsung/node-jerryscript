@@ -52,11 +52,9 @@ static void _LogTrace(int line, std::string file_name, std::string func_name) {
 
 /* V8 API helpers */
 #define RETURN_HANDLE(T, ISOLATE, HANDLE) \
-do {                                                                    \
-    JerryHandle *__handle = HANDLE;                                    \
-    return v8::Local<T>::New(ISOLATE, reinterpret_cast<T*>(__handle)); \
+do { \
+    return (HANDLE)->NewLocal<T>(ISOLATE); \
 } while (0)
-
 
 namespace i = v8::internal;
 
@@ -973,7 +971,7 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
   if (script_or_module_out != nullptr) {
     jerry_value_t object = jerry_create_object();
     JerryValue* script_or_module = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), object);
-    *script_or_module_out = Local<ScriptOrModule>::New(isolate, reinterpret_cast<ScriptOrModule*>(script_or_module));
+    *script_or_module_out = script_or_module->NewLocal<ScriptOrModule>(isolate);
   }
 
   JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
@@ -1015,48 +1013,76 @@ v8::TryCatch::TryCatch(v8::Isolate* isolate)
       can_continue_(true),
       capture_message_(true),
       rethrow_(false),
-      has_terminated_(false) {
+      has_terminated_(false),
+      exception_(NULL),
+      message_obj_(NULL) {
   V8_CALL_TRACE();
 
-  JerryIsolate* iso = JerryIsolate::fromV8(isolate_);
+  JerryIsolate* jisolate = JerryIsolate::fromV8(isolate_);
 
-  next_ = reinterpret_cast<v8::TryCatch*>(iso->PushTryCatch(this));
-  exception_ = iso->TakeError();
+  next_ = jisolate->GetLastTryCatch();
+  jisolate->SetLastTryCatch(this);
+
+  if (jisolate->HasError()) {
+      if (next_ == NULL) {
+          jisolate->SetGlobalError(new JerryValue(jisolate->TakeError()));
+          return;
+      }
+
+      if (next_->exception_ != NULL) {
+          delete reinterpret_cast<JerryValue*>(next_->exception_);
+      }
+      next_->exception_ = new JerryValue(jisolate->TakeError());
+  }
 }
 
 v8::TryCatch::~TryCatch() {
-    V8_CALL_TRACE();
-    // TODO: remove from isolate stack
-    JerryIsolate* iso = JerryIsolate::fromV8(isolate_);
-    iso->PopTryCatch(this->next_);
+  V8_CALL_TRACE();
+  JerryIsolate* isolate = JerryIsolate::fromV8(isolate_);
 
-    if (!iso->HasError()) {
-        iso->ClearError(reinterpret_cast<JerryValue*>(exception_));
-        return;
-    }
+  isolate->SetLastTryCatch(next_);
 
-    if (rethrow_) {
-        if (exception_ != NULL) {
-            delete reinterpret_cast<JerryValue*>(exception_);
-        }
-        return;
-    }
+  if (isolate->HasError()) {
+      if (rethrow_) {
+          if (next_ == NULL) {
+              if (isolate->GetGlobalError()) {
+                  delete isolate->GetGlobalError();
+                  isolate->SetGlobalError(NULL);
+              }
 
-    if (is_verbose_) {
-        JerryValue error(jerry_acquire_value(iso->GetRawError()->value()));
-        Local<Value> exception(reinterpret_cast<Value*>(&error));
+              isolate->ProcessError(false);
+              return;
+          }
 
-        Local<v8::Message> message;
-        iso->ReportMessage(message, exception);
-    }
+          if (next_->exception_ != NULL) {
+              delete reinterpret_cast<JerryValue*>(next_->exception_);
+              next_->exception_ = NULL;
+          }
+          return;
+      }
 
-    iso->ClearError(reinterpret_cast<JerryValue*>(exception_));
+      if (is_verbose_) {
+          isolate->ProcessError(true);
+      }
+  }
+
+  if (next_ == NULL) {
+      isolate->RestoreError(isolate->TakeGlobalError());
+  } else {
+      isolate->RestoreError(reinterpret_cast<JerryValue*>(next_->exception_));
+  }
 }
 
 bool v8::TryCatch::HasCaught() const {
   V8_CALL_TRACE();
-  // TODO: return error from isolate/context
-  return JerryIsolate::fromV8(isolate_)->HasError();
+
+  JerryIsolate* isolate = JerryIsolate::fromV8(isolate_);
+
+  if (isolate->GetLastTryCatch() != this) {
+      return exception_ != NULL;
+  }
+
+  return isolate->HasError();
 }
 
 bool v8::TryCatch::CanContinue() const {
@@ -1065,7 +1091,7 @@ bool v8::TryCatch::CanContinue() const {
 }
 
 bool v8::TryCatch::HasTerminated() const {
-  V8_CALL_TRACE();;
+  V8_CALL_TRACE();
   return has_terminated_;
 }
 
@@ -1073,15 +1099,30 @@ v8::Local<v8::Value> v8::TryCatch::ReThrow() {
   V8_CALL_TRACE();
   rethrow_ = true;
 
-  // TODO: push error to "try catch" stack above?
   // TODO: return what?
   return Local<Value>();
 }
 
 v8::Local<Value> v8::TryCatch::Exception() const {
   V8_CALL_TRACE();
-  // TODO: return the current error object
-  return Local<Value>(reinterpret_cast<Value*>(JerryIsolate::fromV8(isolate_)->GetRawError()));
+
+  JerryIsolate* isolate = JerryIsolate::fromV8(isolate_);
+  jerry_value_t exception;
+
+  if (isolate->GetLastTryCatch() != this) {
+      if (exception_ == NULL ) {
+          return Local<Value>();
+      }
+
+      exception = reinterpret_cast<JerryValue*>(exception_)->value();
+  } else {
+      if (!isolate->HasError()) {
+          return Local<Value>();
+      }
+      exception = isolate->GetError();
+  }
+
+  RETURN_HANDLE(Value, reinterpret_cast<v8::Isolate*>(isolate_), new JerryValue(jerry_acquire_value(exception)));
 }
 
 v8::Local<v8::Message> v8::TryCatch::Message() const {
@@ -2400,7 +2441,7 @@ MaybeLocal<v8::Value> Function::Call(Local<Context> context,
 
   if (V8_UNLIKELY(jerry_value_is_error(result))) {
       isolate->SetError(result);
-      isolate->ProcessError();
+      isolate->ProcessError(false);
       return MaybeLocal<v8::Value>();
   }
 
@@ -3125,7 +3166,7 @@ MaybeLocal<Map> Map::Set(Local<Context> context, Local<Value> key,
   jerry_value_t result = JerryIsolate::fromV8(context->GetIsolate())->HelperMapSet().Call(jerry_create_undefined(), args, 3);
   jerry_release_value(result);
 
-  return Local<Map>(this);
+  return jmap->AsLocal<Map>();
 }
 
 Local<v8::Set> v8::Set::New(Isolate* isolate) {
@@ -3142,7 +3183,7 @@ MaybeLocal<Set> Set::Add(Local<Context> context, Local<Value> key) {
   jerry_value_t result = JerryIsolate::fromV8(context->GetIsolate())->HelperSetAdd().Call(jerry_create_undefined(), args, 3);
   jerry_release_value(result);
 
-  return Local<Set>(this);
+  return jset->AsLocal<Set>();
 }
 
 MaybeLocal<Promise::Resolver> Promise::Resolver::New(Local<Context> context) {
@@ -3220,14 +3261,6 @@ Local<Value> Proxy::GetHandler() {
   UNIMPLEMENTED(7163);
   return Local<Value>();
 }
-
-class Utils {
-public:
-  static inline CompiledWasmModule Convert(
-      std::shared_ptr<i::wasm::NativeModule> native_module) {
-    return CompiledWasmModule{std::move(native_module)};
-  }
-};
 
 CompiledWasmModule::CompiledWasmModule(std::shared_ptr<internal::wasm::NativeModule>) {
   V8_CALL_TRACE();

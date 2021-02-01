@@ -253,9 +253,7 @@ static jerry_value_t JerryHandlerStackTraceGetter(const jerry_value_t func,
     jerry_value_t final_result;
 
     if (isolate->HasError()) {
-        JerryValue* jerror = isolate->GetRawError();
-        final_result = jerry_create_error_from_value(jerror->value(), false);
-        isolate->ClearError(NULL);
+        final_result = jerry_create_error_from_value(isolate->TakeError(), true);
     } else if (!result.IsEmpty()) {
         JerryValue* result_value = *reinterpret_cast<JerryValue**>(&result);
         final_result = jerry_acquire_value(result_value->value());

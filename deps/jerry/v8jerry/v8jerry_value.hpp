@@ -11,7 +11,28 @@
 #include "jerryscript.h"
 
 class JerryIsolate;
+class JerryHandle;
 struct JerryV8ContextData;
+
+namespace v8 {
+    class Utils {
+    public:
+        template <typename T> static
+        v8::Local<T> AsLocal(JerryHandle* ptr) {
+            return v8::Local<T>(reinterpret_cast<T*>(ptr));
+        }
+
+        template <typename T> static
+        v8::Local<T> NewLocal(v8::Isolate* isolate, JerryHandle* ptr) {
+            return v8::Local<T>::New(isolate, reinterpret_cast<T*>(ptr));
+        }
+
+        static inline CompiledWasmModule Convert(
+           std::shared_ptr<internal::wasm::NativeModule> native_module) {
+           return CompiledWasmModule{std::move(native_module)};
+        }
+    };
+}
 
 static void JerryV8WeakCallback(void* data);
 
@@ -41,6 +62,16 @@ public:
 
     static bool IsValueType(JerryHandle* handle) {
         return (handle != NULL && handle->type() >= LocalValue);
+    }
+
+    template <typename T>
+    v8::Local<T> AsLocal(void) {
+        return v8::Utils::AsLocal<T>(this);
+    }
+
+    template <typename T>
+    v8::Local<T> NewLocal(v8::Isolate* isolate) {
+        return v8::Utils::NewLocal<T>(isolate, this);
     }
 
 protected:
@@ -240,16 +271,6 @@ public:
     }
 
     JerryValue(JerryValue& that) = delete;
-
-    template <typename T>
-    v8::Local<T> AsLocal(void) {
-        /* Magical dragons from the depths are present in this method!
-         * You have been warned! Proceed with caution!
-         */
-        JerryValue* value_ptr = this;
-        v8::Local<T>* v8_value = reinterpret_cast<v8::Local<T>*>(&value_ptr);
-        return *v8_value;
-    }
 
 private:
     jerry_value_t m_value;

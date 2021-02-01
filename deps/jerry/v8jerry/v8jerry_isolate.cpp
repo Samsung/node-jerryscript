@@ -63,7 +63,9 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_call_site_prototype = new JerryValue(jerry_eval((jerry_char_t*)call_site_prototype, strlen(call_site_prototype), 0));
 
     m_last_try_catch = NULL;
-    m_current_error = NULL;
+    m_has_current_error = false;
+    m_current_error = jerry_create_undefined();
+    m_global_error = NULL;
     m_try_depth = 0;
     m_hidden_object_template = NULL;
 
@@ -134,7 +136,9 @@ void JerryIsolate::Dispose(void) {
         jerry_release_value (it.second);
     }
 
-    ClearError(NULL);
+    if (HasError()) {
+        jerry_release_value(GetError());
+    }
 
     delete m_magic_string_stack;
     delete m_call_site_prototype;
@@ -178,43 +182,34 @@ void JerryIsolate::Dispose(void) {
     delete this;
 }
 
-void* JerryIsolate::PushTryCatch(void* try_catch_obj) {
-   void *result = m_last_try_catch;
-   m_last_try_catch = reinterpret_cast<v8::TryCatch*>(try_catch_obj);
-   return result;
-}
-
-void JerryIsolate::PopTryCatch(void* try_catch_obj) {
-    m_last_try_catch = reinterpret_cast<v8::TryCatch*>(try_catch_obj);
-}
-
 void JerryIsolate::SetError(const jerry_value_t error_value) {
     assert(jerry_value_is_error(error_value));
 
-    jerry_value_t error_obj = jerry_get_value_from_error(error_value, true);
-    ClearError(new JerryValue(error_obj));
-}
-
-void JerryIsolate::ClearError(JerryValue* exception) {
-    if (m_current_error != NULL) {
-        delete m_current_error;
+    if (HasError()) {
+        jerry_release_value(GetError());
     }
-    m_current_error = exception;
+
+    m_has_current_error = true;
+    m_current_error = jerry_get_value_from_error(error_value, true);
 }
 
-void *JerryIsolate::TakeError(void)
-{
-    void *result = m_current_error;
-    m_current_error = NULL;
-    return result;
+void JerryIsolate::RestoreError(JerryValue* error) {
+    if (error == NULL) {
+        return;
+    }
+
+    if (HasError()) {
+        jerry_release_value(GetError());
+    }
+
+    m_has_current_error = true;
+    m_current_error = error->value();
+
+    JerryValue::DeleteValueWithoutRelease(error);
 }
 
-bool JerryIsolate::HasError(void) {
-    return m_current_error != NULL;
-}
-
-void JerryIsolate::ProcessError(void) {
-    if (m_last_try_catch != NULL || m_try_depth > 0) {
+void JerryIsolate::ProcessError(bool force) {
+    if (!force && (m_last_try_catch != NULL || m_try_depth > 0)) {
         return;
     }
 
@@ -224,13 +219,17 @@ void JerryIsolate::ProcessError(void) {
     }
 
     // Move the error
-    JerryValue error(GetRawError()->value());
-    m_current_error = NULL;
-
-    v8::Local<v8::Value> exception = error.AsLocal<v8::Value>();
+    JerryValue* current_error = new JerryValue(TakeError());
+    v8::Local<v8::Value> exception(current_error->AsLocal<v8::Value>());
     v8::Local<v8::Message> message;
 
     ReportMessage(message, exception);
+
+    delete current_error;
+
+    if (HasError()) {
+        jerry_release_value(TakeError());
+    }
 }
 
 void JerryIsolate::PushContext(JerryValue* context) {

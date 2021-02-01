@@ -51,17 +51,29 @@ public:
 
     void Dispose(void);
 
-    void* PushTryCatch(void* try_catch_obj);
-    void PopTryCatch(void* try_catch_obj);
-    void SetErrorVerbose(bool value);
+    v8::TryCatch* GetLastTryCatch() { return m_last_try_catch; }
+    void SetLastTryCatch(v8::TryCatch* try_catch) { m_last_try_catch = try_catch; }
+    bool HasError(void) { return m_has_current_error; }
+    jerry_value_t GetError(void) { return m_current_error; }
+    JerryValue* GetGlobalError(void) { return m_global_error; }
     void SetError(const jerry_value_t error_value);
-    void ClearError(JerryValue* exception);
-    void *TakeError(void);
-    bool HasError(void);
-    void ProcessError(void);
-    JerryValue* GetRawError(void) { return m_current_error; }
+    void RestoreError(JerryValue* error);
+    void SetGlobalError(JerryValue* error) { m_global_error = error; }
+    void ProcessError(bool force);
+    void SetErrorVerbose(bool value);
     void IncTryDepth() { m_try_depth++; }
     void DecTryDepth() { m_try_depth--; }
+
+    jerry_value_t TakeError(void) {
+        m_has_current_error = false;
+        return m_current_error;
+    }
+
+    JerryValue *TakeGlobalError(void) {
+        JerryValue *global_error = m_global_error;
+        m_global_error = NULL;
+        return global_error;
+    }
 
     void PushContext(JerryValue* context);
     void PopContext();
@@ -160,7 +172,9 @@ private:
     JerryValue* m_call_site_prototype;
 
     v8::TryCatch* m_last_try_catch;
-    JerryValue* m_current_error;
+    bool m_has_current_error;
+    jerry_value_t m_current_error;
+    JerryValue* m_global_error;
     size_t m_try_depth;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
