@@ -348,12 +348,13 @@ jerry_value_t JerryV8ProxyHandler(
 
     switch(data->handler_type) {
         case GET: {
+            if (!data->configuration->genericGetter) {
+                return jerry_get_property(args_p[0], args_p[1]);
+            }
+
             MAKE_NAME(args_p[1]);
             JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
-
-            if (data->configuration->genericGetter) {
-                data->configuration->genericGetter(__name.AsLocal<v8::Name>(), info);
-            }
+            data->configuration->genericGetter(__name.AsLocal<v8::Name>(), info);
 
             if (!iso->HasError()) {
                 v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
@@ -369,14 +370,16 @@ jerry_value_t JerryV8ProxyHandler(
             break;
         }
         case SET: {
+            if (!data->configuration->genericSetter) {
+                return jerry_set_property(args_p[0], args_p[1], args_p[2]);
+            }
+
             MAKE_NAME(args_p[1]);
             JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
 
-            if (data->configuration->genericSetter) {
-                JerryValue new_value(jerry_acquire_value(args_p[2]));
-                v8::Local<v8::Value> v8_value = new_value.AsLocal<v8::Value>();
-                data->configuration->genericSetter(__name.AsLocal<v8::Name>(), v8_value, info);
-            }
+            JerryValue new_value(jerry_acquire_value(args_p[2]));
+            v8::Local<v8::Value> v8_value = new_value.AsLocal<v8::Value>();
+            data->configuration->genericSetter(__name.AsLocal<v8::Name>(), v8_value, info);
 
             if (!iso->HasError()) {
                 v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
@@ -384,7 +387,7 @@ jerry_value_t JerryV8ProxyHandler(
                 JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
 
                 if (retVal != iso->Hole()) {
-                    return jerry_acquire_value(retVal->value());
+                    return jerry_create_boolean(true);
                 }
 
                 return jerry_set_property(args_p[0], args_p[1], args_p[2]);
@@ -392,27 +395,38 @@ jerry_value_t JerryV8ProxyHandler(
             break;
         }
         case QUERY: {
-            MAKE_NAME(args_p[1]);
+            if (!data->configuration->genericQuery && !data->configuration->genericGetter) {
+                return jerry_has_property(args_p[0], args_p[1]);
+            }
 
-            JerryValue* retVal;
+            MAKE_NAME(args_p[1]);
 
             if (data->configuration->genericQuery) {
                 JerryPropertyCallbackInfo<v8::Integer> info(function_obj, this_val, args_p, args_cnt, external);
                 data->configuration->genericQuery(__name.AsLocal<v8::Name>(), info);
 
                 v8::ReturnValue<v8::Integer> returnValue = info.GetReturnValue();
-                retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-            } else if (data->configuration->genericGetter) {
-                JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
-                data->configuration->genericGetter(__name.AsLocal<v8::Name>(), info);
+                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
 
-                v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
-                retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+                if (!iso->HasError()) {
+                    if (retVal != iso->Hole()) {
+                        return jerry_create_boolean(true);
+                    }
+
+                    return jerry_has_property(args_p[0], args_p[1]);
+                }
+                break;
             }
+
+            JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
+            data->configuration->genericGetter(__name.AsLocal<v8::Name>(), info);
+
+            v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+            JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
 
             if (!iso->HasError()) {
                 if (retVal != iso->Hole()) {
-                    return jerry_create_boolean(!jerry_value_is_undefined(retVal->value()));
+                    return jerry_create_boolean(true);
                 }
 
                 return jerry_has_property(args_p[0], args_p[1]);
