@@ -211,7 +211,8 @@ JerryValue* JerryObjectTemplate::Proxify(JerryValue* target_instance) {
         handler->SetProperty(&key, &method);
     }
 
-    jerry_value_t proxy = jerry_create_proxy(target_instance->value(), handler->value());
+    uint32_t options = JERRY_PROXY_SKIP_GET_CHECKS | JERRY_PROXY_SKIP_GET_OWN_PROPERTY_CHECKS;
+    jerry_value_t proxy = jerry_create_special_proxy(target_instance->value(), handler->value(), options);
 
     delete target_instance;
     delete handler;

@@ -1907,12 +1907,11 @@ v8::Local<Value> v8::PropertyDescriptor::value() const {
 }
 
 v8::Local<Value> v8::PropertyDescriptor::get() const {
-  UNIMPLEMENTED(4123);
-  return Local<Value>();
+  return private_->get;
 }
 
 v8::Local<Value> v8::PropertyDescriptor::set() const {
-  return private_->get;
+  return private_->set;
 }
 
 bool v8::PropertyDescriptor::has_value() const {

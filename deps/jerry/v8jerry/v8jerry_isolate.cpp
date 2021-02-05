@@ -22,7 +22,7 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     this->InitializeJerryIsolate(params);
 }
 
-static void error_object_created_callback (const jerry_value_t error_object, void *user_p)
+static void error_object_created_callback(const jerry_value_t error_object, void *user_p)
 {
     (void) user_p;
     CreateStackTrace(error_object, NULL);
@@ -55,10 +55,11 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
 
     char *call_site_prototype = "({"
-                                "  getLineNumber() { return this.lineNumber_ },"
+                                "  getLineNumber() { return this.line__ },"
                                 "  getColumnNumber() { return 1 },"
-                                "  getFileName() { return this.fileName_ },"
-                                "  toString() { return this.fileName_ + ':' + this.lineNumber_ + ':1' },"
+                                "  getFileName() { return this.resource__ },"
+                                "  getFunctionName() { return (this.function__ && this.function__.name) ? new String(this.function__.name) : null },"
+                                "  toString() { return this.resource__ + ':' + this.line__ + ':1' },"
                                 "})";
     m_call_site_prototype = new JerryValue(jerry_eval((jerry_char_t*)call_site_prototype, strlen(call_site_prototype), 0));
 
