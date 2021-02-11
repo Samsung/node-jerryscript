@@ -18,7 +18,6 @@
 #include <pthread.h>
 #endif
 
-class JerryHandle;
 class JerryHandleScope;
 enum JerryHandleScopeType : int;
 class JerryTemplate;
@@ -78,14 +77,16 @@ public:
     void PushContext(JerryValue* context);
     void PopContext();
     JerryValue* CurrentContext(void);
+    JerryValue** GetLastReturnValue() { return m_last_return_value; }
+    void SetLastReturnValue(JerryValue** return_value) { m_last_return_value = return_value; }
     JerryValue* GetGlobalSymbol(JerryValue* name);
 
-    void PushHandleScope(JerryHandleScopeType type, void* handle_scope);
-    void PopHandleScope(void* handle_scope);
+    void PushHandleScope(JerryHandleScopeType type);
+    void PopHandleScope();
     JerryHandleScope* CurrentHandleScope(void);
 
-    void AddToHandleScope(JerryHandle* jvalue);
-    void EscapeHandle(JerryHandle* jvalue);
+    void AddToHandleScope(JerryValue* jvalue);
+    void EscapeHandle(JerryValue* jvalue);
     void SealHandleScope(void* handle_scope);
 
     void AddTemplate(JerryTemplate* handle);
@@ -151,7 +152,6 @@ private:
     v8::Locker* m_lock_owner;
     friend class v8::Locker;
 
-    std::deque<JerryHandleScope*> m_handleScopes;
     std::deque<std::pair<JerryValue*, jerry_value_t>> m_contexts;
     std::vector<JerryTemplate*> m_templates;
     std::vector<JerryValue*> m_eternals;
@@ -171,6 +171,8 @@ private:
     JerryValue* m_magic_string_stack;
     JerryValue* m_call_site_prototype;
 
+    JerryHandleScope* m_last_handle_scope;
+    JerryValue** m_last_return_value;
     v8::TryCatch* m_last_try_catch;
     bool m_has_current_error;
     jerry_value_t m_current_error;

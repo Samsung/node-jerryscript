@@ -6,6 +6,15 @@
 #include "v8jerry_templates.hpp"
 #include "v8jerry_isolate.hpp"
 
+#define DEFINE_RETURN_VALUE() \
+    v8::ReturnValue<v8::Value> returnValueSlot = info.GetReturnValue(); \
+    JerryValue** returnValue = *reinterpret_cast<JerryValue***>(&returnValueSlot); \
+    JerryValue** savedReturnValue = isolate->GetLastReturnValue(); \
+    isolate->SetLastReturnValue(returnValue);
+
+#define RESTORE_RETURN_VALUE() \
+    isolate->SetLastReturnValue(savedReturnValue);
+
 template<typename T>
 class JerryPropertyCallbackInfo : public v8::PropertyCallbackInfo<T> {
 /* From parent:
@@ -28,40 +37,31 @@ public:
         const jerry_value_t args_p[],
         const jerry_length_t args_cnt,
         const jerry_value_t external_data)
-        : v8::PropertyCallbackInfo<T>(reinterpret_cast<v8::internal::Address*>(BuildArgs(this_val, external_data)))
-        , m_args(reinterpret_cast<JerryHandle**>(this->args_))
+        : m_this_value(this_val)
+        , m_external_data_value(external_data)
+        , v8::PropertyCallbackInfo<T>(reinterpret_cast<v8::internal::Address*>(m_implicit_args))
     {
-    }
-
-    ~JerryPropertyCallbackInfo() {
-        delete [] m_args;
+        BuildArgs(this_val, external_data);
     }
 
 private:
-    static JerryHandle** BuildArgs(const jerry_value_t this_val, const jerry_value_t external_data) {
-        JerryHandle **values = new JerryHandle*[kImplicitArgsSize];
+    void BuildArgs(const jerry_value_t this_val, const jerry_value_t external_data) {
         JerryIsolate *isolate = JerryIsolate::fromV8(v8::Isolate::GetCurrent());
 
-        values[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = (JerryHandle*)v8::internal::IntToSmi(v8::internal::Internals::kDontThrow); // TODO: fix this
-        values[v8::PropertyCallbackInfo<T>::kHolderIndex] = new JerryValue(jerry_acquire_value(this_val)); // TODO: 'this' object is not correct
+        m_implicit_args[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = (JerryHandle*)v8::internal::IntToSmi(v8::internal::Internals::kDontThrow); // TODO: fix this
+        m_implicit_args[v8::PropertyCallbackInfo<T>::kHolderIndex] = &m_this_value; // TODO: 'this' object is not correct
         // TODO: correctly fill the arguments:
-        values[v8::PropertyCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(isolate);
-        //values[v8::PropertyCallbackInfo<T>::kReturnValueDefaultValueIndex] = new JerryValue(jerry_create_undefined()); // TODO
-        values[v8::PropertyCallbackInfo<T>::kReturnValueIndex] = isolate->Hole();
+        m_implicit_args[v8::PropertyCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(isolate);
+        //values[v8::PropertyCallbackInfo<T>::kReturnValueDefaultValueIndex] = ; // TODO
+        m_implicit_args[v8::PropertyCallbackInfo<T>::kReturnValueIndex] = isolate->Hole();
 
-        values[v8::PropertyCallbackInfo<T>::kDataIndex] = new JerryValue(jerry_acquire_value(external_data)); /* data; */
-        values[v8::PropertyCallbackInfo<T>::kThisIndex] = new JerryValue(jerry_acquire_value(this_val));
-
-        // HandleScope will do the cleanup for us at a later stage
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kHolderIndex]);
-        //JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kReturnValueDefaultValueIndex]);
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kDataIndex]);
-        JerryIsolate::GetCurrent()->AddToHandleScope(values[v8::PropertyCallbackInfo<T>::kThisIndex]);
-
-        return values;
+        m_implicit_args[v8::PropertyCallbackInfo<T>::kDataIndex] = &m_external_data_value;
+        m_implicit_args[v8::PropertyCallbackInfo<T>::kThisIndex] = &m_this_value;
     }
 
-    JerryHandle** m_args;
+    JerryHandle* m_implicit_args[kImplicitArgsSize];
+    JerryValueNoRelease m_this_value;
+    JerryValueNoRelease m_external_data_value;
 };
 
 jerry_value_t JerryV8GetterSetterHandler(
@@ -88,7 +88,7 @@ jerry_value_t JerryV8GetterSetterHandler(
         JerryPropertyCallbackInfo<void> info(function_obj, this_val, args_p, args_cnt, data->external);
 
         // TODO: assert on args[0]?
-        JerryValue new_value(jerry_acquire_value(args_p[0]));
+        JerryValueNoRelease new_value(args_p[0]);
 
         v8::Local<v8::Value> v8_value = new_value.AsLocal<v8::Value>();
 
@@ -98,28 +98,23 @@ jerry_value_t JerryV8GetterSetterHandler(
             data->v8.setter.stringed(v8_name.As<v8::String>(), v8_value, info);
         }
     } else {
+        JerryIsolate* isolate = JerryIsolate::GetCurrent();
         JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data->external);
+
+        DEFINE_RETURN_VALUE();
         if (data->is_named) {
             data->v8.getter.named(v8_name, info);
         } else {
             data->v8.getter.stringed(v8_name.As<v8::String>(), info);
         }
+        RESTORE_RETURN_VALUE();
 
-        JerryIsolate* iso = JerryIsolate::GetCurrent();
-        if (!iso->HasError()) {
-            v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
-
-            // Again: dragons!
-            JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-
-            jret = jerry_acquire_value(retVal->value());
+        if (!isolate->HasError()) {
+            jret = jerry_acquire_value((*returnValue)->value());
         } else {
-            jret = jerry_create_error_from_value(iso->TakeError(), true);
+            jret = jerry_create_error_from_value(isolate->TakeError(), true);
         }
     }
-
-    // No need to delete the JerryValue here, the HandleScope will take (should) care of it!
-    //delete retVal;
 
     return jret;
 }
@@ -147,19 +142,25 @@ public:
         const jerry_value_t args_p[],
         const jerry_length_t args_cnt,
         const JerryV8FunctionHandlerData* handlerData)
-        // Please note there is a "Hack"/"Fix" in the v8.h file where the FunctionCallbackInfo's "values_" member is accessed!
-        : v8::FunctionCallbackInfo<T>(reinterpret_cast<v8::internal::Address*>(implicit_args_data_),
-                                      reinterpret_cast<v8::internal::Address*>(BuildArgs(this_val, args_p, args_cnt) + args_cnt - 1),
+        : m_this_value(this_val)
+        , m_new_target_value(new_target_val)
+        , m_external_data_value(handlerData->function_template->external())
+        , v8::FunctionCallbackInfo<T>(reinterpret_cast<v8::internal::Address*>(m_implicit_args),
+                                      reinterpret_cast<v8::internal::Address*>(BuildArgs(args_p, args_cnt)),
                                       args_cnt)
     {
-        BuildImplicitArgs(function_obj, this_val, new_target_val, handlerData);
+        BuildImplicitArgs();
     }
 
     ~JerryFunctionCallbackInfo() {
         /* The values_ points to the end */
-        JerryHandle **values = reinterpret_cast<JerryHandle**>(this->values_) - this->Length() + 1;
+        JerryValue **values = reinterpret_cast<JerryValue**>(this->values_) - this->Length() + 1;
 
-        delete [] values;
+        for (int i = 0; i < this->Length(); i++) {
+            JerryValue::DeleteValueWithoutRelease(values[i]);
+        }
+
+        delete[] values;
     }
 
 private:
@@ -170,29 +171,25 @@ private:
         return jvalue;
     }
 
-    static JerryHandle** BuildArgs(
-        const jerry_value_t this_val,
-        const jerry_value_t args_p[],
-        const jerry_length_t args_cnt) {
+    JerryHandle** BuildArgs(const jerry_value_t args_p[], const jerry_length_t args_cnt) {
 
-        JerryHandle **values = new JerryHandle*[args_cnt + 1 /* this */];
-        /* this should be at 'values + 1' */
+        JerryHandle **values = new JerryHandle*[args_cnt + 1 /* for this */];
+        JerryIsolate *isolate = JerryIsolate::GetCurrent();
 
         /* args_p[0]  is at 'values - 0' */
         /* args_p[1]  is at 'values - 1' */
         /* args_p[2]  is at 'values - 2' */
         for (jerry_length_t idx = 0; idx < args_cnt; idx++) {
-            values[args_cnt - idx - 1] = newValue(args_p[idx]);
+            values[args_cnt - idx - 1] = new JerryValue(args_p[idx]);
         }
-        values[args_cnt] = newValue(this_val);
 
-        return values;
+        /* this should be at 'values + 1' */
+        values[args_cnt] = &m_this_value;
+
+        return values + args_cnt - 1;
     }
 
-    void BuildImplicitArgs(const jerry_value_t function_obj,
-                           const jerry_value_t this_val,
-                           const jerry_value_t new_target_val,
-                           const JerryV8FunctionHandlerData* handlerData) {
+    void BuildImplicitArgs() {
         /* TODO: From the docs:
          * If the callback was created without a Signature, this is the same
          * value as This(). If there is a signature, and the signature didn't match
@@ -202,16 +199,19 @@ private:
         v8::Isolate* isolate = v8::Isolate::GetCurrent();
         JerryIsolate* jerry_isolate = reinterpret_cast<JerryIsolate*>(isolate);
 
-        implicit_args_data_[v8::FunctionCallbackInfo<T>::kHolderIndex] = newValue(this_val);
+        m_implicit_args[v8::FunctionCallbackInfo<T>::kHolderIndex] = &m_this_value;
         // TODO: correctly fill the arguments:
-        implicit_args_data_[v8::FunctionCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(isolate);
-        implicit_args_data_[v8::FunctionCallbackInfo<T>::kReturnValueIndex] = jerry_isolate->Undefined();
+        m_implicit_args[v8::FunctionCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(isolate);
+        m_implicit_args[v8::FunctionCallbackInfo<T>::kReturnValueIndex] = jerry_isolate->Undefined();
 
-        implicit_args_data_[v8::FunctionCallbackInfo<T>::kDataIndex] = newValue(handlerData->function_template->external()); /* data; */
-        implicit_args_data_[v8::FunctionCallbackInfo<T>::kNewTargetIndex] = newValue(new_target_val); /* new_target; */
+        m_implicit_args[v8::FunctionCallbackInfo<T>::kDataIndex] = &m_external_data_value;
+        m_implicit_args[v8::FunctionCallbackInfo<T>::kNewTargetIndex] = &m_new_target_value;
     }
 
-    JerryHandle* implicit_args_data_[kImplicitArgsSize];
+    JerryHandle* m_implicit_args[kImplicitArgsSize];
+    JerryValueNoRelease m_this_value;
+    JerryValueNoRelease m_new_target_value;
+    JerryValueNoRelease m_external_data_value;
 };
 
 JerryV8FunctionHandlerData* JerryGetFunctionHandlerData(jerry_value_t target) {
@@ -245,23 +245,14 @@ jerry_value_t JerryV8FunctionHandler(
     jerry_value_t new_target = jerry_get_new_target ();
 
     // If this is a constructor call do a few extra things
-    // TODO: this should be really checked correcty
     if (!jerry_value_is_undefined(new_target)) {
-
-        // TODO: remove this "constructor" call check.
         if (!jerry_get_object_native_pointer(this_val, NULL, &JerryV8FunctionHandlerData::TypeInfo)) {
             // Add reference to the function template
-            // TODO: really do a correct is constructor call check and only set the constructor function template on the new instance.
-            //jerry_set_object_native_pointer(this_val, data, &JerryV8FunctionHandlerData::TypeInfo);
-
             if (data->function_template->HasInstanceTemplate()) {
                 JerryObjectTemplate* tmplt = data->function_template->InstanceTemplate();
                 tmplt->InstallProperties(this_val);
             }
 
-            // The method was called with a "this" object and there was no "JerryV8ObjectConstructed" set
-            // assume that this is a constructo call.
-            // TODO: this is not always correct logic. Propert constructor call check is needed.
             data->ref_count++;
             jerry_set_object_native_pointer(this_val, data, &JerryV8FunctionHandlerData::TypeInfo);
         }
@@ -281,25 +272,19 @@ jerry_value_t JerryV8FunctionHandler(
     jerry_value_t jret = jerry_create_undefined();
 
     if (data->v8callback != NULL) {
+        JerryIsolate* isolate = JerryIsolate::GetCurrent();
         JerryFunctionCallbackInfo<v8::Value> info(function_obj, this_val, new_target, args_p, args_cnt, data);
 
+        DEFINE_RETURN_VALUE();
         data->v8callback(info);
+        RESTORE_RETURN_VALUE();
 
-        JerryIsolate* iso = JerryIsolate::GetCurrent();
-        if (!iso->HasError()) {
-            v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
-
-            // Again: dragons!
-            JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-
-            jret = jerry_acquire_value(retVal->value());
+        if (!isolate->HasError()) {
+            jret = jerry_acquire_value((*returnValue)->value());
         } else {
-            jret = jerry_create_error_from_value(iso->TakeError(), true);
+            jret = jerry_create_error_from_value(isolate->TakeError(), true);
         }
     }
-
-    // No need to delete the JerryValue here, the HandleScope will take (should) care of it!
-    //delete retVal;
 
     jerry_release_value(new_target);
     return jret;
@@ -338,12 +323,9 @@ jerry_value_t JerryV8ProxyHandler(
     // Make sure that Localy allocated vars will be freed upon exit.
     v8::Isolate* v8isolate = v8::Isolate::GetCurrent();
     v8::HandleScope handle_scope(v8isolate);
-    JerryIsolate* iso = JerryIsolate::fromV8(v8isolate);
+    JerryIsolate* isolate = JerryIsolate::fromV8(v8isolate);
 
     jerry_value_t jret = jerry_create_undefined();
-
-#define MAKE_NAME(VALUE) JerryValue __name(jerry_acquire_value(VALUE));
-
     jerry_value_t external = data->configuration->genericData;
 
     switch(data->handler_type) {
@@ -352,17 +334,16 @@ jerry_value_t JerryV8ProxyHandler(
                 return jerry_get_property(args_p[0], args_p[1]);
             }
 
-            MAKE_NAME(args_p[1]);
+            JerryValueNoRelease name(args_p[1]);
             JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
-            data->configuration->genericGetter(__name.AsLocal<v8::Name>(), info);
 
-            if (!iso->HasError()) {
-                v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+            DEFINE_RETURN_VALUE();
+            data->configuration->genericGetter(name.AsLocal<v8::Name>(), info);
+            RESTORE_RETURN_VALUE();
 
-                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-
-                if (retVal != iso->Hole()) {
-                    return jerry_acquire_value(retVal->value());
+            if (!isolate->HasError()) {
+                if (*returnValue != isolate->Hole()) {
+                    return jerry_acquire_value((*returnValue)->value());
                 }
 
                 return jerry_get_property(args_p[0], args_p[1]);
@@ -374,19 +355,18 @@ jerry_value_t JerryV8ProxyHandler(
                 return jerry_set_property(args_p[0], args_p[1], args_p[2]);
             }
 
-            MAKE_NAME(args_p[1]);
             JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
 
-            JerryValue new_value(jerry_acquire_value(args_p[2]));
+            JerryValueNoRelease name(args_p[1]);
+            JerryValueNoRelease new_value(args_p[2]);
             v8::Local<v8::Value> v8_value = new_value.AsLocal<v8::Value>();
-            data->configuration->genericSetter(__name.AsLocal<v8::Name>(), v8_value, info);
 
-            if (!iso->HasError()) {
-                v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+            DEFINE_RETURN_VALUE();
+            data->configuration->genericSetter(name.AsLocal<v8::Name>(), v8_value, info);
+            RESTORE_RETURN_VALUE();
 
-                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-
-                if (retVal != iso->Hole()) {
+            if (!isolate->HasError()) {
+                if (*returnValue != isolate->Hole()) {
                     return jerry_create_boolean(true);
                 }
 
@@ -399,17 +379,17 @@ jerry_value_t JerryV8ProxyHandler(
                 return jerry_has_property(args_p[0], args_p[1]);
             }
 
-            MAKE_NAME(args_p[1]);
+            JerryValueNoRelease name(args_p[1]);
 
             if (data->configuration->genericQuery) {
                 JerryPropertyCallbackInfo<v8::Integer> info(function_obj, this_val, args_p, args_cnt, external);
-                data->configuration->genericQuery(__name.AsLocal<v8::Name>(), info);
 
-                v8::ReturnValue<v8::Integer> returnValue = info.GetReturnValue();
-                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+                DEFINE_RETURN_VALUE();
+                data->configuration->genericQuery(name.AsLocal<v8::Name>(), info);
+                RESTORE_RETURN_VALUE();
 
-                if (!iso->HasError()) {
-                    if (retVal != iso->Hole()) {
+                if (!isolate->HasError()) {
+                    if (*returnValue != isolate->Hole()) {
                         return jerry_create_boolean(true);
                     }
 
@@ -419,13 +399,13 @@ jerry_value_t JerryV8ProxyHandler(
             }
 
             JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
-            data->configuration->genericGetter(__name.AsLocal<v8::Name>(), info);
 
-            v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
-            JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
+            DEFINE_RETURN_VALUE();
+            data->configuration->genericGetter(name.AsLocal<v8::Name>(), info);
+            RESTORE_RETURN_VALUE();
 
-            if (!iso->HasError()) {
-                if (retVal != iso->Hole()) {
+            if (!isolate->HasError()) {
+                if (*returnValue != isolate->Hole()) {
                     return jerry_create_boolean(true);
                 }
 
@@ -434,21 +414,18 @@ jerry_value_t JerryV8ProxyHandler(
             break;
         }
         case DELETE: {
-            MAKE_NAME(args_p[1]);
             JerryPropertyCallbackInfo<v8::Boolean> info(function_obj, this_val, args_p, args_cnt, external);
+            JerryValueNoRelease name(args_p[1]);
 
+            DEFINE_RETURN_VALUE();
             if (data->configuration->genericDeleter) {
-                data->configuration->genericDeleter(__name.AsLocal<v8::Name>(), info);
+                data->configuration->genericDeleter(name.AsLocal<v8::Name>(), info);
             }
+            RESTORE_RETURN_VALUE();
 
-            if (!iso->HasError()) {
-                v8::ReturnValue<v8::Boolean> returnValue = info.GetReturnValue();
-
-                // Again: dragons!
-                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-
-                if (retVal != iso->Hole()) {
-                    return jerry_acquire_value(retVal->value());
+            if (!isolate->HasError()) {
+                if (*returnValue != isolate->Hole()) {
+                    return jerry_acquire_value((*returnValue)->value());
                 }
 
                 return jerry_delete_property(args_p[0], args_p[1]);
@@ -457,22 +434,18 @@ jerry_value_t JerryV8ProxyHandler(
         }
         case ENUMERATE: {
             JerryPropertyCallbackInfo<v8::Array> info(function_obj, this_val, args_p, args_cnt, external);
+
+            DEFINE_RETURN_VALUE();
             data->configuration->genericEnumerator(info);
+            RESTORE_RETURN_VALUE();
 
-            if (!iso->HasError()) {
-                v8::ReturnValue<v8::Array> returnValue = info.GetReturnValue();
-
-                // Again: dragons!
-                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-                return jerry_acquire_value(retVal->value());
+            if (!isolate->HasError()) {
+                return jerry_acquire_value((*returnValue)->value());
             }
             break;
         }
         case DEFINE_PROPERTY:
         {
-            MAKE_NAME(args_p[1]);
-            JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
-
             jerry_property_descriptor_t descriptor;
 
             jerry_value_t result = jerry_to_property_descriptor(args_p[2], &descriptor);
@@ -480,6 +453,11 @@ jerry_value_t JerryV8ProxyHandler(
                 return result;
             }
             jerry_release_value(result);
+
+            JerryValueNoRelease name(args_p[1]);
+            JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
+
+            DEFINE_RETURN_VALUE();
 
             if (data->configuration->genericDefiner) {
                 if (descriptor.is_value_defined) {
@@ -494,7 +472,7 @@ jerry_value_t JerryV8ProxyHandler(
                         propertyDescriptor.set_enumerable(descriptor.is_enumerable);
                     }
 
-                    data->configuration->genericDefiner(__name.AsLocal<v8::Name>(), propertyDescriptor, info);
+                    data->configuration->genericDefiner(name.AsLocal<v8::Name>(), propertyDescriptor, info);
                 } else {
                     JerryValue getter(jerry_acquire_value(descriptor.getter));
                     JerryValue setter(jerry_acquire_value(descriptor.setter));
@@ -508,19 +486,16 @@ jerry_value_t JerryV8ProxyHandler(
                         propertyDescriptor.set_enumerable(descriptor.is_enumerable);
                     }
 
-                    data->configuration->genericDefiner(__name.AsLocal<v8::Name>(), propertyDescriptor, info);
+                    data->configuration->genericDefiner(name.AsLocal<v8::Name>(), propertyDescriptor, info);
                 }
             }
 
-            if (!iso->HasError()) {
-                v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
+            RESTORE_RETURN_VALUE();
 
-                // Again: dragons!
-                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-
-                if (retVal != iso->Hole()) {
+            if (!isolate->HasError()) {
+                if (*returnValue != isolate->Hole()) {
                     jerry_free_property_descriptor_fields(&descriptor);
-                    return jerry_acquire_value(retVal->value());
+                    return jerry_acquire_value((*returnValue)->value());
                 }
 
                 jerry_value_t result = jerry_define_own_property(args_p[0], args_p[1], &descriptor);
@@ -534,40 +509,35 @@ jerry_value_t JerryV8ProxyHandler(
         case GET_OWN_PROPERTY_DESC:
         {
             if (data->configuration->genericDescriptor) {
-                MAKE_NAME(args_p[1]);
+                JerryValueNoRelease name(args_p[1]);
                 JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
 
-                data->configuration->genericDescriptor(__name.AsLocal<v8::Name>(), info);
+                DEFINE_RETURN_VALUE();
+                data->configuration->genericDescriptor(name.AsLocal<v8::Name>(), info);
+                RESTORE_RETURN_VALUE();
 
-                if (!iso->HasError()) {
-                    v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
-
-                    // Again: dragons!
-                    JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-
-                    return jerry_acquire_value(retVal->value());
+                if (!isolate->HasError()) {
+                    return jerry_acquire_value((*returnValue)->value());
                 }
                 break;
             }
 
             if (data->configuration->genericGetter) {
-                MAKE_NAME(args_p[1]);
+                JerryValueNoRelease name(args_p[1]);
                 JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
 
-                data->configuration->genericGetter(__name.AsLocal<v8::Name>(), info);
+                DEFINE_RETURN_VALUE();
+                data->configuration->genericGetter(name.AsLocal<v8::Name>(), info);
+                RESTORE_RETURN_VALUE();
 
-                if (iso->HasError()) {
+                if (isolate->HasError()) {
                     break;
                 }
 
-                v8::ReturnValue<v8::Value> returnValue = info.GetReturnValue();
-
-                JerryValue* retVal = **reinterpret_cast<JerryValue***>(&returnValue);
-
-                if (retVal != iso->Hole()) {
+                if ((*returnValue) != isolate->Hole()) {
                     jerry_value_t result = jerry_create_object();
 
-                    setPropertyDescriptorHelper(result, "value", retVal->value());
+                    setPropertyDescriptorHelper(result, "value", (*returnValue)->value());
                     setPropertyDescriptorHelperBoolean(result, "writable", true);
                     setPropertyDescriptorHelperBoolean(result, "enumerable", true);
                     setPropertyDescriptorHelperBoolean(result, "configurable", true);
@@ -608,6 +578,6 @@ jerry_value_t JerryV8ProxyHandler(
         }
     }
 
-    jret = jerry_create_error_from_value(iso->TakeError(), true);
+    jret = jerry_create_error_from_value(isolate->TakeError(), true);
     return jret;
 }

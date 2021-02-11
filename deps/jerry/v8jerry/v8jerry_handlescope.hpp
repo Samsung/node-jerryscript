@@ -3,7 +3,7 @@
 
 #include <vector>
 
-class JerryHandle;
+class JerryValue;
 
 enum JerryHandleScopeType : int {
     Normal = 0, // Normal and Escapable scopes are treated the as same atm.
@@ -13,25 +13,24 @@ enum JerryHandleScopeType : int {
 
 class JerryHandleScope {
 public:
-    JerryHandleScope(JerryHandleScopeType type, void* handle_scope)
+    JerryHandleScope(JerryHandleScopeType type, JerryHandleScope* prev_handle_scope)
         : m_type(type)
-        , m_v8handle_scope(handle_scope)
+        , m_prev_handle_scope(prev_handle_scope)
     {
     }
 
-    ~JerryHandleScope();
+    void AddHandle(JerryValue* jvalue);
+    bool RemoveHandle(JerryValue* jvalue);
+    void FreeHandles(JerryValue* LastReturnValue);
 
-    void AddHandle(JerryHandle* jvalue);
-    bool RemoveHandle(JerryHandle* jvalue);
-
-    void* V8HandleScope(void) { return m_v8handle_scope; }
+    JerryHandleScope* PrevHandleScope(void) { return m_prev_handle_scope; }
 
     void Seal(void) { m_type = Sealed; }
 
 private:
     JerryHandleScopeType m_type;
-    void* m_v8handle_scope;
-    std::vector<JerryHandle*> m_handles;
+    JerryHandleScope* m_prev_handle_scope;
+    std::vector<JerryValue*> m_handles;
 };
 
 #endif /* V8JERRY_HANDLESCOPE_HPP */

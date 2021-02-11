@@ -63,6 +63,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
                                 "})";
     m_call_site_prototype = new JerryValue(jerry_eval((jerry_char_t*)call_site_prototype, strlen(call_site_prototype), 0));
 
+    m_last_handle_scope = NULL;
     m_last_try_catch = NULL;
     m_has_current_error = false;
     m_current_error = jerry_create_undefined();
@@ -263,45 +264,39 @@ JerryValue* JerryIsolate::GetGlobalSymbol(JerryValue* name) {
     return new JerryValue(symbol);
 }
 
-void JerryIsolate::PushHandleScope(JerryHandleScopeType type, void* handle_scope) {
-    m_handleScopes.push_back(new JerryHandleScope(type, handle_scope));
+void JerryIsolate::PushHandleScope(JerryHandleScopeType type) {
+    m_last_handle_scope = new JerryHandleScope(type, m_last_handle_scope);
 }
 
-void JerryIsolate::PopHandleScope(void* handle_scope) {
-    JerryHandleScope* handleScope = m_handleScopes.back();
+void JerryIsolate::PopHandleScope() {
+    JerryHandleScope* handle_scope = m_last_handle_scope;
 
-    assert(handleScope->V8HandleScope() == handle_scope);
-
-    m_handleScopes.pop_back();
-
-    delete handleScope;
+    m_last_handle_scope = m_last_handle_scope->PrevHandleScope();
+    handle_scope->FreeHandles(*GetLastReturnValue());
+    delete handle_scope;
 }
 
 JerryHandleScope* JerryIsolate::CurrentHandleScope(void) {
-    return m_handleScopes.back();
+    return m_last_handle_scope;
 }
 
-void JerryIsolate::AddToHandleScope(JerryHandle* jvalue) {
-    m_handleScopes.back()->AddHandle(jvalue);
+void JerryIsolate::AddToHandleScope(JerryValue* jvalue) {
+    m_last_handle_scope->AddHandle(jvalue);
 }
 
-void JerryIsolate::EscapeHandle(JerryHandle* jvalue) {
-    assert(m_handleScopes.size() > 1);
+void JerryIsolate::EscapeHandle(JerryValue* jvalue) {
+    assert(m_last_handle_scope->PrevHandleScope() != NULL);
 
-    std::deque<JerryHandleScope*>::reverse_iterator end = m_handleScopes.rbegin();
-    bool was_removed = (*end)->RemoveHandle(jvalue);
     // If the handle was removed simply add it to the parent handle scope.
     // However if it was not in the current handle scope (was not removed)
     // then the value is a refernece to an enternal element, thus there is nothing to do.
-    if (was_removed) {
-        ++end; // Step to a parent handleScope
-        (*end)->AddHandle(jvalue);
+    if (m_last_handle_scope->RemoveHandle(jvalue)) {
+        m_last_handle_scope->PrevHandleScope()->AddHandle(jvalue);
     }
 }
 
 void JerryIsolate::SealHandleScope(void* handle_scope) {
-    assert(m_handleScopes.back()->V8HandleScope() == handle_scope);
-    m_handleScopes.back()->Seal();
+    reinterpret_cast<JerryHandleScope*>(handle_scope)->Seal();
 }
 
 void JerryIsolate::AddTemplate(JerryTemplate* handle) {
@@ -334,9 +329,10 @@ void JerryIsolate::InitalizeSlots(void) {
     ::memset(m_slot, 0, sizeof(m_slot));
 
     int root_offset = v8::internal::Internals::kIsolateRootsOffset / v8::internal::kApiSystemPointerSize;
+
     m_slot[v8::internal::Internals::kExternalMemoryOffset / v8::internal::kApiSystemPointerSize] = (void*) 0;
     m_slot[v8::internal::Internals::kExternalMemoryLimitOffset / v8::internal::kApiSystemPointerSize] = (void*) (1024*1024);
-                // v8::internal::kExternalAllocationSoftLimit
+    // v8::internal::kExternalAllocationSoftLimit
 
     // Undefined
     m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex] = new JerryValue(jerry_create_undefined(), JerryHandle::PersistentValue);
@@ -351,12 +347,14 @@ void JerryIsolate::InitalizeSlots(void) {
     // Empty string
     m_slot[root_offset + v8::internal::Internals::kEmptyStringRootIndex] = new JerryValue(jerry_create_string_sz((const jerry_char_t*)"", 0), JerryHandle::PersistentValue);
 
-    assert((sizeof(m_slot) / sizeof(m_slot[0])) > root_offset + v8::internal::Internals::kEmptyStringRootIndex);
-
     // TODO: do we need these?
     //m_slot[root_offset + v8::internal::Internals::kInt32ReturnValuePlaceholderIndex] =
     //m_slot[root_offset + v8::internal::Internals::kUint32ReturnValuePlaceholderIndex] =
     //m_slot[root_offset + v8::internal::Internals::kDoubleReturnValuePlaceholderIndex] =
+
+    m_last_return_value = (JerryValue**) &m_slot[root_offset + v8::internal::Internals::kTheHoleValueRootIndex];
+
+    assert((sizeof(m_slot) / sizeof(m_slot[0])) > root_offset + v8::internal::Internals::kEmptyStringRootIndex);
 }
 
 void JerryIsolate::EnqueueMicrotask(JerryValue *func) {

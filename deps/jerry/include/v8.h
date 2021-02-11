@@ -1208,8 +1208,9 @@ class V8_EXPORT HandleScope {
   void operator delete[](void*, size_t);
 
   internal::Isolate* isolate_;
-  internal::Address* prev_next_;
-  internal::Address* prev_limit_;
+  // [[V8_API_CHANGE]]
+  //internal::Address* prev_next_;
+  //internal::Address* prev_limit_;
 
   // Local::New uses CreateHandle with an Isolate* parameter.
   template<class F> friend class Local;
@@ -1258,7 +1259,8 @@ class V8_EXPORT EscapableHandleScope : public HandleScope {
   void operator delete[](void*, size_t);
 
   internal::Address* Escape(internal::Address* escape_value);
-  internal::Address* escape_slot_;
+  // [[V8_API_CHANGE]]
+  //internal::Address* escape_slot_;
 };
 
 /**

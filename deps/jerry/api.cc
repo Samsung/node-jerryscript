@@ -309,12 +309,12 @@ void V8::ToLocalEmpty() {
 HandleScope::HandleScope(Isolate* isolate)
   : isolate_(reinterpret_cast<internal::Isolate*>(isolate)) {
   V8_CALL_TRACE();
-  JerryIsolate::fromV8(isolate_)->PushHandleScope(JerryHandleScopeType::Normal, this);
+  JerryIsolate::fromV8(isolate_)->PushHandleScope(JerryHandleScopeType::Normal);
 }
 
 HandleScope::~HandleScope() {
   V8_CALL_TRACE();
-  JerryIsolate::fromV8(isolate_)->PopHandleScope(this);
+  JerryIsolate::fromV8(isolate_)->PopHandleScope();
 }
 
 i::Address* HandleScope::CreateHandle(i::Isolate* isolate, i::Address value) {
@@ -333,13 +333,12 @@ i::Address* HandleScope::CreateHandle(i::Isolate* isolate, i::Address value) {
         case JerryHandle::PersistentValue:
         case JerryHandle::PersistentWeakValue: {
             // A persistent or global object should never be in a handle scope
-            JerryHandle* jcopy = reinterpret_cast<JerryValue*>(jhandle)->Copy();
-            iso->AddToHandleScope(jcopy);
-            return reinterpret_cast<internal::Address*>(jcopy);
-            break;
+            JerryValue* value = reinterpret_cast<JerryValue*>(jhandle)->Copy();
+            iso->AddToHandleScope(value);
+            return reinterpret_cast<internal::Address*>(value);
         }
         case JerryHandle::LocalValue:
-            iso->AddToHandleScope(jhandle);
+            iso->AddToHandleScope(reinterpret_cast<JerryValue*>(jhandle));
             break;
         default:
             abort();
@@ -362,12 +361,12 @@ i::Address* EscapableHandleScope::Escape(i::Address* escape_value) {
 SealHandleScope::SealHandleScope(Isolate* isolate)
     : isolate_(reinterpret_cast<v8::internal::Isolate*>(isolate)) {
     V8_CALL_TRACE();
-    JerryIsolate::fromV8(isolate_)->PushHandleScope(JerryHandleScopeType::Sealed, this);
+    JerryIsolate::fromV8(isolate_)->PushHandleScope(JerryHandleScopeType::Sealed);
 }
 
 SealHandleScope::~SealHandleScope() {
     V8_CALL_TRACE();
-    JerryIsolate::fromV8(isolate_)->PopHandleScope(this);
+    JerryIsolate::fromV8(isolate_)->PopHandleScope();
 }
 void Context::Enter() {
   V8_CALL_TRACE();

@@ -5,13 +5,20 @@
 #include "v8jerry_isolate.hpp"
 #include "v8jerry_value.hpp"
 
-JerryHandleScope::~JerryHandleScope(void) {
-    for (std::vector<JerryHandle*>::reverse_iterator it = m_handles.rbegin(); it != m_handles.rend(); it++) {
-        delete reinterpret_cast<JerryValue*>(*it);
+void JerryHandleScope::FreeHandles(JerryValue* LastReturnValue) {
+    std::vector<JerryValue*>::iterator end = m_handles.end();
+    for (std::vector<JerryValue*>::iterator it = m_handles.begin(); it != end; it++) {
+        JerryValue* value = *it;
+
+        if (value == LastReturnValue) {
+            PrevHandleScope()->AddHandle(value);
+        } else {
+            delete value;
+        }
     }
 }
 
-void JerryHandleScope::AddHandle(JerryHandle* jvalue) {
+void JerryHandleScope::AddHandle(JerryValue* jvalue) {
     if (m_type == Sealed) {
         fprintf(stderr, "Invalid usage of handles: Using SealHandleScope for variables\n");
         JerryIsolate::GetCurrent()->ReportFatalError("", "Trying to add handle to SealHandleScope");
@@ -26,8 +33,8 @@ void JerryHandleScope::AddHandle(JerryHandle* jvalue) {
     m_handles.push_back(jvalue);
 }
 
-bool JerryHandleScope::RemoveHandle(JerryHandle* jvalue) {
-    std::vector<JerryHandle*>::iterator it = std::find(m_handles.begin(), m_handles.end(), jvalue);
+bool JerryHandleScope::RemoveHandle(JerryValue* jvalue) {
+    std::vector<JerryValue*>::iterator it = std::find(m_handles.begin(), m_handles.end(), jvalue);
 
     if (it == m_handles.end()) {
         return false;

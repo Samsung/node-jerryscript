@@ -195,13 +195,13 @@ JerryValue* JerryObjectTemplate::Proxify(JerryValue* target_instance) {
         const char* name;
         JerryV8ProxyHandlerType type;
     } types[] = {
-        { "get", GET, },
-        { "set", SET, },
-        { "deleteProperty", DELETE, },
-        { "has", QUERY, },
-        { "ownKeys", ENUMERATE, },
-        { "defineProperty", DEFINE_PROPERTY, },
-        { "getOwnPropertyDescriptor", GET_OWN_PROPERTY_DESC, },
+        { "get", GET },
+        { "set", SET },
+        { "deleteProperty", DELETE },
+        { "has", QUERY },
+        { "ownKeys", ENUMERATE },
+        { "defineProperty", DEFINE_PROPERTY },
+        { "getOwnPropertyDescriptor", GET_OWN_PROPERTY_DESC },
     };
 
     for (size_t idx = 0; idx < sizeof(types) / sizeof(types[0]); idx++) {
@@ -286,10 +286,24 @@ JerryValue* JerryFunctionTemplate::GetFunction(void) {
         m_prototype_template->InstallProperties(m_prototype);
 
         JerryValue proto_string(jerry_create_string((const jerry_char_t*)"prototype"));
+        jerry_release_value (jerry_set_property(m_function->value(), proto_string.value(), m_prototype));
 
-        jerry_set_property(m_function->value(), proto_string.value(), m_prototype);
+        jerry_property_descriptor_t desc;
+        jerry_init_property_descriptor_fields(&desc);
+        desc.is_value_defined = true;
+        desc.is_writable_defined = true;
+        desc.is_writable = true;
+        desc.is_enumerable_defined = true;
+        desc.is_enumerable = false;
+        desc.is_configurable_defined = true;
+        desc.is_configurable = true;
+        desc.value = jerry_acquire_value (jfunction);
 
-        if (m_proto_template)
+        JerryValue constructor_string(jerry_create_string((const jerry_char_t*)"constructor"));
+        jerry_release_value (jerry_define_own_property(m_prototype, constructor_string.value(), &desc));
+        jerry_free_property_descriptor_fields(&desc);
+
+        if (m_proto_template != NULL)
         {
             jerry_set_prototype (m_prototype, m_proto_template->GetPrototype());
         }

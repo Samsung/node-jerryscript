@@ -110,20 +110,36 @@ struct JerryV8WeakReference {
 };
 
 class JerryString;
+class JerryValue;
 
-class JerryValue : public JerryHandle {
+class JerryValueNoRelease : public JerryHandle {
 public:
-    JerryValue(jerry_value_t value, JerryHandle::Type type)
+    JerryValueNoRelease(jerry_value_t value)
+        : JerryHandle(JerryHandle::LocalValue)
+        , m_value(value)
+    {}
+
+protected:
+    JerryValueNoRelease(jerry_value_t value, JerryHandle::Type type)
         : JerryHandle(type)
         , m_value(value)
     {}
 
+    jerry_value_t m_value;
+};
+
+class JerryValue : public JerryValueNoRelease {
+public:
+    JerryValue(jerry_value_t value, JerryHandle::Type type)
+        : JerryValueNoRelease(value, type)
+    {}
+
     JerryValue()
-        : JerryValue(jerry_create_undefined(), JerryHandle::LocalValue)
+        : JerryValueNoRelease(jerry_create_undefined(), JerryHandle::LocalValue)
     {}
 
     JerryValue(jerry_value_t value)
-        : JerryValue(value, JerryHandle::LocalValue)
+        : JerryValueNoRelease(value, JerryHandle::LocalValue)
     {}
 
     /* Create a JerryValue if there is no error.
@@ -133,8 +149,7 @@ public:
 
     /* Deletes the value without releasing the internal Jerry value. */
     static void DeleteValueWithoutRelease(JerryValue *value) {
-        value->m_value = jerry_create_undefined();
-        delete value;
+        delete reinterpret_cast<JerryValueNoRelease*>(value);
     }
 
     ~JerryValue(void) {
@@ -271,9 +286,6 @@ public:
     }
 
     JerryValue(JerryValue& that) = delete;
-
-private:
-    jerry_value_t m_value;
 };
 
 enum JerryStringType {
