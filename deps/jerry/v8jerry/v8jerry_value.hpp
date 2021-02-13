@@ -119,6 +119,8 @@ public:
         , m_value(value)
     {}
 
+    jerry_value_t value() const { return m_value; }
+
 protected:
     JerryValueNoRelease(jerry_value_t value, JerryHandle::Type type)
         : JerryHandle(type)
@@ -155,8 +157,6 @@ public:
     ~JerryValue(void) {
         jerry_release_value(m_value);
     }
-
-    jerry_value_t value() const { return m_value; }
 
     JerryValue *clone() const { return new JerryValue(jerry_acquire_value(m_value)); }
 

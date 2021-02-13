@@ -1,6 +1,7 @@
 #include "v8jerry_templates.hpp"
 
 #include "v8jerry_isolate.hpp"
+#include "v8jerry_callback.hpp"
 
 void JerryTemplate::InstallProperties(const jerry_value_t target) {
     for (PropertyEntry* prop : m_properties) {
@@ -162,12 +163,6 @@ static void JerryV8ProxyHandlerDataFree(void *data_p) {
 jerry_object_native_info_t JerryV8ProxyHandlerData::TypeInfo = {
     .free_cb = JerryV8ProxyHandlerDataFree,
 };
-
-jerry_value_t JerryV8ProxyHandler(
-    const jerry_value_t function_obj,
-    const jerry_value_t this_val,
-    const jerry_value_t args_p[],
-    const jerry_length_t args_cnt);
 
 static jerry_value_t BuildProxyHandlerMethod(JerryV8ProxyHandlerConfiguration* proxy_handler,
                                              JerryV8ProxyHandlerType handler_type) {

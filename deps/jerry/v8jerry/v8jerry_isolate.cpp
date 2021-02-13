@@ -22,8 +22,7 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     this->InitializeJerryIsolate(params);
 }
 
-static void error_object_created_callback(const jerry_value_t error_object, void *user_p)
-{
+static void error_object_created_callback(const jerry_value_t error_object, void *user_p) {
     (void) user_p;
     CreateStackTrace(error_object, NULL);
 }
@@ -69,6 +68,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_current_error = jerry_create_undefined();
     m_global_error = NULL;
     m_try_depth = 0;
+    m_promise_hook = NULL;
     m_hidden_object_template = NULL;
 
     // Initialize random for math functions
@@ -416,4 +416,120 @@ JerryObjectTemplate* JerryIsolate::HiddenObjectTemplate(void) {
     }
 
     return m_hidden_object_template;
+}
+
+struct PromiseData {
+    jerry_value_t await_promise;
+    jerry_value_t job_promise;
+};
+
+void PromiseDataFree(void *native_p) {
+    PromiseData* data = reinterpret_cast<PromiseData*>(native_p);
+    jerry_release_value(data->await_promise);
+    jerry_release_value(data->job_promise);
+    delete data;
+}
+
+static jerry_object_native_info_t PromiseDataTypeInfo = {
+    .free_cb = PromiseDataFree,
+};
+
+static void promise_callback (jerry_promise_event_type_t event_type,
+                              const jerry_value_t object, const jerry_value_t value, void *user_p) {
+    JerryIsolate* isolate = reinterpret_cast<JerryIsolate*>(user_p);
+    v8::PromiseHook promise_hook = isolate->GetPromiseHook();
+
+    if (promise_hook == NULL) {
+        return;
+    }
+
+    v8::HandleScope handle_scope(JerryIsolate::toV8(isolate));
+
+    switch (event_type) {
+    case JERRY_PROMISE_EVENT_CREATE: {
+        JerryValueNoRelease promise(object);
+        JerryValueNoRelease parent(value);
+
+        promise_hook(v8::PromiseHookType::kInit, promise.AsLocal<v8::Promise>(), parent.AsLocal<v8::Value>());
+        return;
+    }
+    case JERRY_PROMISE_EVENT_RESOLVE:
+    case JERRY_PROMISE_EVENT_REJECT:
+    case JERRY_PROMISE_EVENT_BEFORE_REACTION_JOB:
+    case JERRY_PROMISE_EVENT_AFTER_REACTION_JOB: {
+        v8::PromiseHookType type = v8::PromiseHookType::kResolve;
+
+        if (event_type == JERRY_PROMISE_EVENT_BEFORE_REACTION_JOB) {
+            type = v8::PromiseHookType::kBefore;
+        } else if (event_type == JERRY_PROMISE_EVENT_AFTER_REACTION_JOB) {
+            type = v8::PromiseHookType::kAfter;
+        }
+
+        JerryValueNoRelease promise(object);
+        promise_hook(type, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
+        return;
+    }
+    case JERRY_PROMISE_EVENT_ASYNC_AWAIT: {
+        PromiseData *data;
+
+        if (!jerry_get_object_native_pointer (object, reinterpret_cast<void**>(&data), &PromiseDataTypeInfo)) {
+            data = new PromiseData;
+
+            data->job_promise = jerry_create_undefined();
+
+            jerry_set_object_native_pointer(object, reinterpret_cast<void*>(data), &PromiseDataTypeInfo);
+        }
+
+        jerry_promise_set_callback (NULL, NULL);
+        JerryValueNoRelease promise(jerry_create_promise());
+        jerry_promise_set_callback (promise_callback, reinterpret_cast<void*>(isolate));
+
+        data->await_promise = promise.value();
+
+        JerryValueNoRelease parent(value);
+        promise_hook(v8::PromiseHookType::kInit, promise.AsLocal<v8::Promise>(), parent.AsLocal<v8::Value>());
+        return;
+    }
+    case JERRY_PROMISE_EVENT_ASYNC_BEFORE_RESOLVE:
+    case JERRY_PROMISE_EVENT_ASYNC_BEFORE_REJECT: {
+        PromiseData *data;
+
+        if (!jerry_get_object_native_pointer (object, reinterpret_cast<void**>(&data), &PromiseDataTypeInfo)) {
+            return;
+        }
+
+        JerryValueNoRelease promise(data->await_promise);
+
+        data->job_promise = promise.value();
+        data->await_promise = jerry_create_undefined();
+
+        promise_hook(v8::PromiseHookType::kBefore, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
+        return;
+    }
+    case JERRY_PROMISE_EVENT_ASYNC_AFTER_RESOLVE:
+    case JERRY_PROMISE_EVENT_ASYNC_AFTER_REJECT: {
+        PromiseData *data;
+
+        if (!jerry_get_object_native_pointer (object, reinterpret_cast<void**>(&data), &PromiseDataTypeInfo)) {
+            return;
+        }
+
+        JerryValue promise(data->job_promise);
+        data->job_promise = jerry_create_undefined();
+
+        promise_hook(v8::PromiseHookType::kResolve, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
+        promise_hook(v8::PromiseHookType::kAfter, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
+        return;
+    }
+    }
+}
+
+void JerryIsolate::SetPromiseHook(v8::PromiseHook promise_hook) {
+    m_promise_hook = promise_hook;
+
+    if (m_promise_hook != NULL) {
+        jerry_promise_set_callback (promise_callback, reinterpret_cast<void*>(this));
+    } else {
+        jerry_promise_set_callback (NULL, NULL);
+    }
 }

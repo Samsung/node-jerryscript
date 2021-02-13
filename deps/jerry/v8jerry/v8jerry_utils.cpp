@@ -42,12 +42,10 @@ jerry_value_t JerryPolyfill::BuildMethod(const char* name, const char* fn_args, 
 #if DEBUG_PRINT
 
 static jerry_value_t
-jerryx_handler_print (const jerry_value_t func_obj_val,
-                      const jerry_value_t this_p,
+jerryx_handler_print (const jerry_call_info_t *call_info_p,
                       const jerry_value_t args_p[],
                       const jerry_length_t args_cnt) {
-  (void) func_obj_val; /* unused */
-  (void) this_p; /* unused */
+  (void) call_info_p; /* unused */
 
   const char * const null_str = "\\u0000";
 
@@ -134,15 +132,13 @@ jerryx_handler_print (const jerry_value_t func_obj_val,
 #endif
 
 static jerry_value_t
-jerryx_handler_string_normalize (const jerry_value_t func_obj_val,
-                                 const jerry_value_t this_p,
+jerryx_handler_string_normalize (const jerry_call_info_t *call_info_p,
                                  const jerry_value_t args_p[],
                                  const jerry_length_t args_cnt) {
-    (void) func_obj_val; /* unused */
     (void) args_p; /* unused */
     (void) args_cnt; /* unused */
 
-    return jerry_acquire_value(this_p);
+    return jerry_acquire_value(call_info_p->this_value);
 }
 
 struct StackFrame {
@@ -170,21 +166,21 @@ static jerry_object_native_info_t StackDataTypeInfo = {
     .free_cb = StackDataFree,
 };
 
-static jerry_value_t JerryHandlerStackTraceGetter(const jerry_value_t func,
-                                                  const jerry_value_t this_val,
+static jerry_value_t JerryHandlerStackTraceGetter(const jerry_call_info_t *call_info_p,
                                                   const jerry_value_t args_p[],
                                                   const jerry_length_t args_count)
 {
+    jerry_value_t function = call_info_p->function;
     jerry_value_t value_string = jerry_create_string((const jerry_char_t*)"value");
-    jerry_value_t value_result = jerry_get_property(func, value_string);
+    jerry_value_t value_result = jerry_get_property(call_info_p->function, value_string);
     jerry_release_value(value_string);
 
     void *native_p;
-    if (!jerry_get_object_native_pointer(func, &native_p, &StackDataTypeInfo)) {
+    if (!jerry_get_object_native_pointer(function, &native_p, &StackDataTypeInfo)) {
         return value_result;
     }
 
-    jerry_delete_object_native_pointer(func, &StackDataTypeInfo);
+    jerry_delete_object_native_pointer(function, &StackDataTypeInfo);
 
     StackData* data = reinterpret_cast<StackData*>(native_p);
 
@@ -199,10 +195,10 @@ static jerry_value_t JerryHandlerStackTraceGetter(const jerry_value_t func,
         jerry_value_t call_site = jerry_create_object();
         jerry_release_value(jerry_set_prototype(call_site, prototype->value()));
 
-        jerry_value_t function = jerry_get_property_by_index(value_result, index);
+        jerry_value_t called_function = jerry_get_property_by_index(value_result, index);
 
-        jerry_release_value(jerry_set_property(call_site, function_string, function));
-        jerry_release_value(function);
+        jerry_release_value(jerry_set_property(call_site, function_string, called_function));
+        jerry_release_value(called_function);
 
         jerry_release_value(jerry_set_property(call_site, resource_string, it->resource));
         jerry_value_t line = jerry_create_number(it->line);
@@ -227,7 +223,7 @@ static jerry_value_t JerryHandlerStackTraceGetter(const jerry_value_t func,
     JerryValue jerry_context(jerry_acquire_value(isolate->CurrentContext()->value()));
     v8::Local<v8::Context> context = jerry_context.AsLocal<v8::Context>();
 
-    JerryValue jerry_error(jerry_acquire_value(this_val));
+    JerryValue jerry_error(jerry_acquire_value(call_info_p->this_value));
     v8::Local<v8::Value> error = jerry_error.AsLocal<v8::Value>();
 
     /* Pass ownership. */
@@ -248,18 +244,17 @@ static jerry_value_t JerryHandlerStackTraceGetter(const jerry_value_t func,
     }
 
     value_string = jerry_create_string((const jerry_char_t*)"value");
-    jerry_release_value(jerry_set_property(func, value_string, final_result));
+    jerry_release_value(jerry_set_property(function, value_string, final_result));
     jerry_release_value(value_string);
     return final_result;
 }
 
-static jerry_value_t JerryHandlerStackTraceSetter(const jerry_value_t func,
-                                                  const jerry_value_t this_val,
+static jerry_value_t JerryHandlerStackTraceSetter(const jerry_call_info_t *call_info_p,
                                                   const jerry_value_t args_p[],
                                                   const jerry_length_t args_count)
 {
     jerry_value_t getter_string = jerry_create_string((const jerry_char_t*)"getter");
-    jerry_value_t getter_value = jerry_get_property(func, getter_string);
+    jerry_value_t getter_value = jerry_get_property(call_info_p->function, getter_string);
     jerry_release_value(getter_string);
 
     void *native_p;
@@ -390,8 +385,7 @@ void CreateStackTrace(const jerry_value_t object, const jerry_value_t *ignored_f
     jerry_release_value(stack_string);
 }
 
-static jerry_value_t JerryHandlerStackTrace(const jerry_value_t func,
-                                            const jerry_value_t this_val,
+static jerry_value_t JerryHandlerStackTrace(const jerry_call_info_t *call_info_p,
                                             const jerry_value_t args_p[],
                                             const jerry_length_t args_count)
 {
@@ -403,8 +397,7 @@ static jerry_value_t JerryHandlerStackTrace(const jerry_value_t func,
     return jerry_create_undefined();
 }
 
-static jerry_value_t JerryHandlerGC(const jerry_value_t func,
-                                    const jerry_value_t thisarg,
+static jerry_value_t JerryHandlerGC(const jerry_call_info_t *call_info_p,
                                     const jerry_value_t argv[],
                                     const jerry_value_t argc) {
     jerry_gc (JERRY_GC_PRESSURE_LOW);

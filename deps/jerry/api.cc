@@ -783,7 +783,7 @@ Local<Module> Module::CreateSyntheticModule(
 
   jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
                                              fileName.length(),
-                                             (const jerry_char_t*)"",
+                                             reinterpret_cast<const jerry_char_t*>(1),
                                              0,
                                              JERRY_PARSE_NO_OPTS | 2); // [[TODO]] propagete ECMA_PARSE_MODULE to api
 
@@ -859,7 +859,7 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
       unboundScriptData->source = new jerry_char_t[source_string_length];
       memcpy(unboundScriptData->source, *source_string, source_string_length);
   } else {
-      unboundScriptData->source = NULL;
+      unboundScriptData->source = reinterpret_cast<jerry_char_t*>(1);
   }
 
   jerry_value_t result = jerry_create_object();
@@ -2841,7 +2841,7 @@ v8::Local<v8::Object> Context::Global() {
   RETURN_HANDLE(Object, GetIsolate(), new JerryValue(jerry_realm_get_this(ctx->value())));
 }
 
-static jerry_value_t trace_function(const jerry_value_t function_obj, const jerry_value_t this_val,
+static jerry_value_t trace_function(const jerry_call_info_t *call_info_p,
                                     const jerry_value_t args_p[], const jerry_length_t args_count) {
   return jerry_create_undefined();
 }

@@ -4,11 +4,9 @@
 namespace JerryAtomics {
 
 /* SharedArrayBuffer */
-static jerry_value_t shared_array_buffer_constructor(
-    const jerry_value_t func_value, /**< function object */
-    const jerry_value_t this_val,   /**< this arg */
-    const jerry_value_t args_p[],   /**< function arguments */
-    const jerry_length_t args_cnt)  /**< number of function arguments */
+static jerry_value_t shared_array_buffer_constructor(const jerry_call_info_t *call_info_p,
+                                                     const jerry_value_t args_p[],
+                                                     const jerry_length_t args_cnt)
 {
     if ((args_cnt == 0) || (jerry_value_is_number(args_p[0]) == false)) {
         return jerry_create_undefined();
@@ -23,21 +21,17 @@ static jerry_value_t shared_array_buffer_constructor(
 }
 
 /* Atomics */
-static jerry_value_t atomics_handler(
-    const jerry_value_t func_value, /**< function object */
-    const jerry_value_t this_val,   /**< this arg */
-    const jerry_value_t args_p[],   /**< function arguments */
-    const jerry_length_t args_cnt)  /**< number of function arguments */
+static jerry_value_t atomics_handler(const jerry_call_info_t *call_info_p,
+                                     const jerry_value_t args_p[],
+                                     const jerry_length_t args_cnt)
 {
     return jerry_create_undefined();
 }
 
 /* Atomics.add */
-static jerry_value_t atomics_add_handler(
-    const jerry_value_t func_value, /**< function object */
-    const jerry_value_t this_val,   /**< this arg */
-    const jerry_value_t args_p[],   /**< function arguments */
-    const jerry_length_t args_cnt)  /**< number of function arguments */
+static jerry_value_t atomics_add_handler(const jerry_call_info_t *call_info_p,
+                                         const jerry_value_t args_p[],
+                                         const jerry_length_t args_cnt)
 {
     if (args_cnt < 3) {
         return jerry_create_undefined();
@@ -68,11 +62,9 @@ static jerry_value_t atomics_add_handler(
 }
 
 /* Atomics.load */
-static jerry_value_t atomics_load_handler(
-    const jerry_value_t func_value, /**< function object */
-    const jerry_value_t this_val,   /**< this arg */
-    const jerry_value_t args_p[],   /**< function arguments */
-    const jerry_length_t args_cnt)  /**< number of function arguments */
+static jerry_value_t atomics_load_handler(const jerry_call_info_t *call_info_p,
+                                          const jerry_value_t args_p[],
+                                          const jerry_length_t args_cnt)
 {
     if (args_cnt < 2) {
         return jerry_create_undefined();

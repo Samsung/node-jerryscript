@@ -65,10 +65,10 @@ private:
 };
 
 jerry_value_t JerryV8GetterSetterHandler(
-    const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
+    const jerry_call_info_t *call_info_p, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
     // TODO: extract the native pointer extraction to a method
     void *native_p;
-    bool has_data = jerry_get_object_native_pointer(function_obj, &native_p, &JerryV8GetterSetterHandlerData::TypeInfo);
+    bool has_data = jerry_get_object_native_pointer(call_info_p->function, &native_p, &JerryV8GetterSetterHandlerData::TypeInfo);
 
     if (!has_data) {
         fprintf(stderr, "ERRR.... should not be here!(%s:%d)\n", __FILE__, __LINE__);
@@ -85,7 +85,7 @@ jerry_value_t JerryV8GetterSetterHandler(
     v8::Local<v8::Name> v8_name = data->accessor->name->AsLocal<v8::Name>();
 
     if (data->is_setter) {
-        JerryPropertyCallbackInfo<void> info(function_obj, this_val, args_p, args_cnt, data->external);
+        JerryPropertyCallbackInfo<void> info(call_info_p->function, call_info_p->this_value, args_p, args_cnt, data->external);
 
         // TODO: assert on args[0]?
         JerryValueNoRelease new_value(args_p[0]);
@@ -99,7 +99,7 @@ jerry_value_t JerryV8GetterSetterHandler(
         }
     } else {
         JerryIsolate* isolate = JerryIsolate::GetCurrent();
-        JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, data->external);
+        JerryPropertyCallbackInfo<v8::Value> info(call_info_p->function, call_info_p->this_value, args_p, args_cnt, data->external);
 
         DEFINE_RETURN_VALUE();
         if (data->is_named) {
@@ -227,10 +227,10 @@ JerryV8FunctionHandlerData* JerryGetFunctionHandlerData(jerry_value_t target) {
 }
 
 jerry_value_t JerryV8FunctionHandler(
-    const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
+    const jerry_call_info_t *call_info_p, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
 
     void *native_p;
-    bool has_data = jerry_get_object_native_pointer(function_obj, &native_p, &JerryV8FunctionHandlerData::TypeInfo);
+    bool has_data = jerry_get_object_native_pointer(call_info_p->function, &native_p, &JerryV8FunctionHandlerData::TypeInfo);
 
     if (!has_data) {
         fprintf(stderr, "ERRR.... should not be here!(%s:%d)\n", __FILE__, __LINE__);
@@ -242,25 +242,23 @@ jerry_value_t JerryV8FunctionHandler(
     // Make sure that Localy allocated vars will be freed upon exit.
     v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
 
-    jerry_value_t new_target = jerry_get_new_target ();
-
     // If this is a constructor call do a few extra things
-    if (!jerry_value_is_undefined(new_target)) {
-        if (!jerry_get_object_native_pointer(this_val, NULL, &JerryV8FunctionHandlerData::TypeInfo)) {
+    if (!jerry_value_is_undefined(call_info_p->new_target)) {
+        if (!jerry_get_object_native_pointer(call_info_p->this_value, NULL, &JerryV8FunctionHandlerData::TypeInfo)) {
             // Add reference to the function template
             if (data->function_template->HasInstanceTemplate()) {
                 JerryObjectTemplate* tmplt = data->function_template->InstanceTemplate();
-                tmplt->InstallProperties(this_val);
+                tmplt->InstallProperties(call_info_p->this_value);
             }
 
             data->ref_count++;
-            jerry_set_object_native_pointer(this_val, data, &JerryV8FunctionHandlerData::TypeInfo);
+            jerry_set_object_native_pointer(call_info_p->this_value, data, &JerryV8FunctionHandlerData::TypeInfo);
         }
     }
 
     if (data->function_template->HasSignature()) {
         void *native_p;
-        bool has_data = jerry_get_object_native_pointer(this_val, &native_p, &JerryV8FunctionHandlerData::TypeInfo);
+        bool has_data = jerry_get_object_native_pointer(call_info_p->this_value, &native_p, &JerryV8FunctionHandlerData::TypeInfo);
 
         if (!has_data
             || data->function_template->IsValidSignature(((JerryV8FunctionHandlerData*)native_p)->function_template->Signature())) {
@@ -273,7 +271,7 @@ jerry_value_t JerryV8FunctionHandler(
 
     if (data->v8callback != NULL) {
         JerryIsolate* isolate = JerryIsolate::GetCurrent();
-        JerryFunctionCallbackInfo<v8::Value> info(function_obj, this_val, new_target, args_p, args_cnt, data);
+        JerryFunctionCallbackInfo<v8::Value> info(call_info_p->function, call_info_p->this_value, call_info_p->new_target, args_p, args_cnt, data);
 
         DEFINE_RETURN_VALUE();
         data->v8callback(info);
@@ -286,7 +284,6 @@ jerry_value_t JerryV8FunctionHandler(
         }
     }
 
-    jerry_release_value(new_target);
     return jret;
 }
 
@@ -307,7 +304,8 @@ static void setPropertyDescriptorHelper(jerry_value_t object, const char *name, 
 }
 
 jerry_value_t JerryV8ProxyHandler(
-    const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
+    const jerry_call_info_t *call_info_p, const jerry_value_t args_p[], const jerry_length_t args_cnt) {
+    jerry_value_t function_obj = call_info_p->function;
 
     // TODO: extract the native pointer extraction to a method
     void *native_p;
@@ -325,7 +323,7 @@ jerry_value_t JerryV8ProxyHandler(
     v8::HandleScope handle_scope(v8isolate);
     JerryIsolate* isolate = JerryIsolate::fromV8(v8isolate);
 
-    jerry_value_t jret = jerry_create_undefined();
+    jerry_value_t this_val = call_info_p->this_value;
     jerry_value_t external = data->configuration->genericData;
 
     switch(data->handler_type) {
@@ -578,6 +576,5 @@ jerry_value_t JerryV8ProxyHandler(
         }
     }
 
-    jret = jerry_create_error_from_value(isolate->TakeError(), true);
-    return jret;
+    return jerry_create_error_from_value(isolate->TakeError(), true);
 }

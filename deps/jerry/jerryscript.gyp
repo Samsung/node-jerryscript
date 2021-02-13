@@ -48,15 +48,19 @@
          'v8jerry',
       ],
       'defines': [
+        # Mandatory flags
         'JERRY_CPOINTER_32_BIT=1',
         'JERRY_GLOBAL_HEAP_SIZE=16384',
         'JERRY_STACK_LIMIT=4096',
+        'JERRY_VM_EXEC_STOP=1',
+        'JERRY_PROMISE_CALLBACK=1',
         'JERRY_LINE_INFO=1',
-        'JERRY_DEBUGGER=0',
+        'JERRY_ERROR_MESSAGES=1',
+
+        # Optional flags
         'JERRY_MEM_STATS=0',
         'JERRY_LOGGING=JERRY_MEM_STATS',
-        'JERRY_ERROR_MESSAGES=1',
-        'JERRY_V8_DUMP_BACKTRACE=1',
+        'JERRY_DEBUGGER=0',
       ],
       'sources': [
         'api.cc',

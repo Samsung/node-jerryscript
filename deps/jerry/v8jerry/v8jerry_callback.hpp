@@ -6,8 +6,7 @@
 class JerryV8FunctionHandlerData;
 
 jerry_value_t JerryV8GetterSetterHandler(
-    const jerry_value_t function_obj,
-    const jerry_value_t this_val,
+    const jerry_call_info_t *call_info_p,
     const jerry_value_t args_p[],
     const jerry_length_t args_cnt);
 
@@ -15,14 +14,12 @@ jerry_value_t JerryV8GetterSetterHandler(
 JerryV8FunctionHandlerData* JerryGetFunctionHandlerData(jerry_value_t target);
 
 jerry_value_t JerryV8FunctionHandler(
-    const jerry_value_t function_obj,
-    const jerry_value_t this_val,
+    const jerry_call_info_t *call_info_p,
     const jerry_value_t args_p[],
     const jerry_length_t args_cnt);
 
 jerry_value_t JerryV8ProxyHandler(
-    const jerry_value_t function_obj,
-    const jerry_value_t this_val,
+    const jerry_call_info_t *call_info_p,
     const jerry_value_t args_p[],
     const jerry_length_t args_cnt);
 

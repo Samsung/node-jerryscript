@@ -103,7 +103,8 @@ public:
     void EnqueueMicrotask(JerryValue* func);
     void RunMicrotasks(void);
 
-    void SetPromiseHook(v8::PromiseHook promise_hook) { m_promise_hook = promise_hook; }
+    v8::PromiseHook GetPromiseHook() { return m_promise_hook; }
+    void SetPromiseHook(v8::PromiseHook promise_hook);
     void SetPromiseRejectCallback(v8::PromiseRejectCallback callback) { m_promise_reject_calback = callback; }
 
     void SetPrepareStackTraceCallback(v8::PrepareStackTraceCallback callback) { m_prepare_stack_trace_callback = callback; }
@@ -178,6 +179,7 @@ private:
     jerry_value_t m_current_error;
     JerryValue* m_global_error;
     size_t m_try_depth;
+    v8::PromiseHook m_promise_hook;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
     v8::Isolate::AbortOnUncaughtExceptionCallback m_abortOnUncaughtExceptionCallback;
@@ -189,7 +191,6 @@ private:
 
     std::vector<JerryValue*> m_micro_tasks;
 
-    v8::PromiseHook m_promise_hook;
     v8::PromiseRejectCallback m_promise_reject_calback;
 
     static JerryIsolate* s_currentIsolate;
