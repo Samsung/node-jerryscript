@@ -391,8 +391,7 @@ uint32_t Context::GetNumberOfEmbedderDataFields() {
 v8::Local<v8::Value> Context::SlowGetEmbedderData(int index) {
   V8_CALL_TRACE();
   JerryValue* ctx = reinterpret_cast<JerryValue*>(this);
-  JerryValue* data = ctx->GetInternalField<JerryValue*>(index);
-  RETURN_HANDLE(Value, GetIsolate(), data);
+  RETURN_HANDLE(Value, GetIsolate(), ctx->GetInternalJerryValue(index));
 }
 
 void Context::SetEmbedderData(int index, v8::Local<Value> value) {
@@ -1153,7 +1152,7 @@ ScriptOrigin Message::GetScriptOrigin() const {
   V8_CALL_TRACE();
 
   JerryValue* arr[] = {
-    new JerryValue(jerry_create_undefined()),
+    new JerryValue(jerry_create_string((const jerry_char_t*)"")),
     new JerryValue(jerry_create_number(0)),
     new JerryValue(jerry_create_number(0)),
     new JerryValue(jerry_create_boolean(false)),
@@ -1165,16 +1164,17 @@ ScriptOrigin Message::GetScriptOrigin() const {
     new JerryValue(jerry_create_array(0)),
   };
 
-  return ScriptOrigin(arr[0]->AsLocal<Value>(),
-                      arr[1]->AsLocal<Integer>(),
-                      arr[2]->AsLocal<Integer>(),
-                      arr[3]->AsLocal<Boolean>(),
-                      arr[4]->AsLocal<Integer>(),
-                      arr[5]->AsLocal<Value>(),
-                      arr[6]->AsLocal<Boolean>(),
-                      arr[7]->AsLocal<Boolean>(),
-                      arr[8]->AsLocal<Boolean>(),
-                      arr[9]->AsLocal<PrimitiveArray>());
+  v8::Isolate* isolate = GetIsolate();
+  return ScriptOrigin(arr[0]->NewLocal<Value>(isolate),
+                      arr[1]->NewLocal<Integer>(isolate),
+                      arr[2]->NewLocal<Integer>(isolate),
+                      arr[3]->NewLocal<Boolean>(isolate),
+                      arr[4]->NewLocal<Integer>(isolate),
+                      arr[5]->NewLocal<Value>(isolate),
+                      arr[6]->NewLocal<Boolean>(isolate),
+                      arr[7]->NewLocal<Boolean>(isolate),
+                      arr[8]->NewLocal<Boolean>(isolate),
+                      arr[9]->NewLocal<PrimitiveArray>(isolate));
 }
 
 v8::Local<Value> Message::GetScriptResourceName() const {
@@ -2665,29 +2665,25 @@ int v8::Object::InternalFieldCount() {
 Local<Value> v8::Object::SlowGetInternalField(int index) {
   V8_CALL_TRACE();
   JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
-  RETURN_HANDLE(Value, Isolate::GetCurrent(), jobj->GetInternalField<JerryValue*>(index));
+  RETURN_HANDLE(Value, Isolate::GetCurrent(), jobj->GetInternalJerryValue(index));
 }
 
 void v8::Object::SetInternalField(int index, v8::Local<Value> value) {
   V8_CALL_TRACE();
   JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
-  // Indexing starts from 0!
-
   jobj->SetInternalField(index, reinterpret_cast<JerryValue*>(*value));
 }
 
 void* v8::Object::SlowGetAlignedPointerFromInternalField(int index) {
   V8_CALL_TRACE();
   JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
-  return jobj->GetInternalField<void*>(index);
+  return jobj->GetInternalPointer(index);
 }
 
 void v8::Object::SetAlignedPointerInInternalField(int index, void* value) {
   V8_CALL_TRACE();
-    JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
-    // Indexing starts from 0!
-
-    jobj->SetInternalField(index, value);
+  JerryValue* jobj = reinterpret_cast<JerryValue*>(this);
+  jobj->SetInternalField(index, value);
 }
 
 void v8::V8::InitializePlatform(Platform* platform) {

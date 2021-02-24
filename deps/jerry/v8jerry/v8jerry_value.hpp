@@ -270,19 +270,23 @@ public:
     void SetInternalField(int idx, void* value);
     int InternalFieldCount(void);
 
-    template<typename T>
-    T GetInternalField(int idx) {
+    JerryValue* GetInternalJerryValue(int idx) {
+        JerryV8InternalFieldData* data = GetInternalFieldData(idx);
+        if (data == NULL) {
+            return new JerryValue(jerry_create_undefined());
+        }
+
+        uintptr_t value = reinterpret_cast<uintptr_t>(data->fields[idx]);
+        return new JerryValue(jerry_acquire_value(static_cast<jerry_value_t>(value)));
+    }
+
+    void* GetInternalPointer(int idx) {
         JerryV8InternalFieldData* data = GetInternalFieldData(idx);
         if (data == NULL) {
             return NULL;
         }
 
-        if (std::is_same<T, JerryValue*>::value) {
-            uintptr_t value = reinterpret_cast<uintptr_t>(data->fields[idx]);
-            return new JerryValue(jerry_acquire_value(static_cast<jerry_value_t>(value)));
-        }
-
-        return reinterpret_cast<T>(data->fields[idx]);
+        return data->fields[idx];
     }
 
     JerryValue(JerryValue& that) = delete;

@@ -104,8 +104,15 @@ public:
     void RunMicrotasks(void);
 
     v8::PromiseHook GetPromiseHook() { return m_promise_hook; }
-    void SetPromiseHook(v8::PromiseHook promise_hook);
-    void SetPromiseRejectCallback(v8::PromiseRejectCallback callback) { m_promise_reject_calback = callback; }
+    void SetPromiseHook(v8::PromiseHook promise_hook) {
+        m_promise_hook = promise_hook;
+        UpdatePromiseFilters();
+    }
+    v8::PromiseRejectCallback GetPromiseRejectCallback() { return m_promise_reject_callback; }
+    void SetPromiseRejectCallback(v8::PromiseRejectCallback callback) {
+        m_promise_reject_callback = callback;
+        UpdatePromiseFilters();
+    }
 
     void SetPrepareStackTraceCallback(v8::PrepareStackTraceCallback callback) { m_prepare_stack_trace_callback = callback; }
     v8::PrepareStackTraceCallback PrepareStackTraceCallback() { return m_prepare_stack_trace_callback; }
@@ -140,6 +147,8 @@ private:
 
     void InitializeSharedArrayBuffer();
     void InitializeAtomics();
+
+    void UpdatePromiseFilters(void);
 
     // Slots accessed by v8::Isolate::Get/SetData
     // They must be the first field of GraalIsolate
@@ -180,6 +189,7 @@ private:
     JerryValue* m_global_error;
     size_t m_try_depth;
     v8::PromiseHook m_promise_hook;
+    v8::PromiseRejectCallback m_promise_reject_callback;
 
     v8::FatalErrorCallback m_fatalErrorCallback;
     v8::Isolate::AbortOnUncaughtExceptionCallback m_abortOnUncaughtExceptionCallback;
@@ -190,8 +200,6 @@ private:
     bool m_autorun_tasks;
 
     std::vector<JerryValue*> m_micro_tasks;
-
-    v8::PromiseRejectCallback m_promise_reject_calback;
 
     static JerryIsolate* s_currentIsolate;
 };

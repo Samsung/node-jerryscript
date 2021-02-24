@@ -69,6 +69,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_global_error = NULL;
     m_try_depth = 0;
     m_promise_hook = NULL;
+    m_promise_reject_callback = NULL;
     m_hidden_object_template = NULL;
 
     // Initialize random for math functions
@@ -434,24 +435,28 @@ static jerry_object_native_info_t PromiseDataTypeInfo = {
     .free_cb = PromiseDataFree,
 };
 
+#define PROMISE_HOOK_FILTERS (JERRY_PROMISE_EVENT_FILTER_MAIN \
+                              | JERRY_PROMISE_EVENT_FILTER_REACTION_JOB \
+                              | JERRY_PROMISE_EVENT_FILTER_ASYNC_MAIN \
+                              | JERRY_PROMISE_EVENT_FILTER_ASYNC_REACTION_JOB)
+
 static void promise_callback (jerry_promise_event_type_t event_type,
                               const jerry_value_t object, const jerry_value_t value, void *user_p) {
     JerryIsolate* isolate = reinterpret_cast<JerryIsolate*>(user_p);
-    v8::PromiseHook promise_hook = isolate->GetPromiseHook();
-
-    if (promise_hook == NULL) {
-        return;
-    }
 
     v8::HandleScope handle_scope(JerryIsolate::toV8(isolate));
 
     switch (event_type) {
     case JERRY_PROMISE_EVENT_CREATE: {
+        /* All Promise has an internal field. */
+        JerryValue::CreateInternalFields(object, 1);
+
         JerryValueNoRelease promise(object);
         JerryValueNoRelease parent(value);
 
+        v8::PromiseHook promise_hook = isolate->GetPromiseHook();
         promise_hook(v8::PromiseHookType::kInit, promise.AsLocal<v8::Promise>(), parent.AsLocal<v8::Value>());
-        return;
+        break;
     }
     case JERRY_PROMISE_EVENT_RESOLVE:
     case JERRY_PROMISE_EVENT_REJECT:
@@ -466,8 +471,34 @@ static void promise_callback (jerry_promise_event_type_t event_type,
         }
 
         JerryValueNoRelease promise(object);
+        v8::PromiseHook promise_hook = isolate->GetPromiseHook();
         promise_hook(type, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
-        return;
+        break;
+    }
+    case JERRY_PROMISE_EVENT_RESOLVE_FULFILLED:
+    case JERRY_PROMISE_EVENT_REJECT_FULFILLED:
+    case JERRY_PROMISE_EVENT_REJECT_WITHOUT_HANDLER: {
+        v8::PromiseRejectEvent event = v8::kPromiseRejectWithNoHandler;
+
+        if (event_type == JERRY_PROMISE_EVENT_RESOLVE_FULFILLED) {
+            event = v8::kPromiseResolveAfterResolved;
+        } else if (event_type == JERRY_PROMISE_EVENT_REJECT_FULFILLED) {
+            event = v8::kPromiseRejectAfterResolved;
+        }
+
+        JerryValueNoRelease promise(object);
+        JerryValueNoRelease arg(value);
+        v8::PromiseRejectMessage message(promise.AsLocal<v8::Promise>(), event, arg.AsLocal<v8::Value>());
+        v8::PromiseRejectCallback reject_callback = isolate->GetPromiseRejectCallback();
+        reject_callback(message);
+        break;
+    }
+    case JERRY_PROMISE_EVENT_CATCH_HANDLER_ADDED: {
+        JerryValueNoRelease promise(object);
+        v8::PromiseRejectMessage message(promise.AsLocal<v8::Promise>(), v8::kPromiseHandlerAddedAfterReject, isolate->Undefined()->AsLocal<v8::Value>());
+        v8::PromiseRejectCallback reject_callback = isolate->GetPromiseRejectCallback();
+        reject_callback(message);
+        break;
     }
     case JERRY_PROMISE_EVENT_ASYNC_AWAIT: {
         PromiseData *data;
@@ -480,15 +511,23 @@ static void promise_callback (jerry_promise_event_type_t event_type,
             jerry_set_object_native_pointer(object, reinterpret_cast<void*>(data), &PromiseDataTypeInfo);
         }
 
-        jerry_promise_set_callback (NULL, NULL);
+        jerry_promise_set_callback (JERRY_PROMISE_EVENT_FILTER_DISABLE, NULL, NULL);
         JerryValueNoRelease promise(jerry_create_promise());
-        jerry_promise_set_callback (promise_callback, reinterpret_cast<void*>(isolate));
+
+        int filters = PROMISE_HOOK_FILTERS;
+
+        if (isolate->GetPromiseRejectCallback() != NULL) {
+            filters |= JERRY_PROMISE_EVENT_FILTER_ERROR;
+        }
+
+        jerry_promise_set_callback (static_cast<jerry_promise_event_filter_t>(filters), promise_callback, reinterpret_cast<void*>(isolate));
 
         data->await_promise = promise.value();
 
         JerryValueNoRelease parent(value);
+        v8::PromiseHook promise_hook = isolate->GetPromiseHook();
         promise_hook(v8::PromiseHookType::kInit, promise.AsLocal<v8::Promise>(), parent.AsLocal<v8::Value>());
-        return;
+        break;
     }
     case JERRY_PROMISE_EVENT_ASYNC_BEFORE_RESOLVE:
     case JERRY_PROMISE_EVENT_ASYNC_BEFORE_REJECT: {
@@ -503,8 +542,9 @@ static void promise_callback (jerry_promise_event_type_t event_type,
         data->job_promise = promise.value();
         data->await_promise = jerry_create_undefined();
 
+        v8::PromiseHook promise_hook = isolate->GetPromiseHook();
         promise_hook(v8::PromiseHookType::kBefore, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
-        return;
+        break;
     }
     case JERRY_PROMISE_EVENT_ASYNC_AFTER_RESOLVE:
     case JERRY_PROMISE_EVENT_ASYNC_AFTER_REJECT: {
@@ -517,19 +557,28 @@ static void promise_callback (jerry_promise_event_type_t event_type,
         JerryValue promise(data->job_promise);
         data->job_promise = jerry_create_undefined();
 
+        v8::PromiseHook promise_hook = isolate->GetPromiseHook();
         promise_hook(v8::PromiseHookType::kResolve, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
         promise_hook(v8::PromiseHookType::kAfter, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
-        return;
+        break;
     }
+    }
+
+    if (isolate->HasError()) {
+        jerry_release_value(isolate->TakeError());
     }
 }
 
-void JerryIsolate::SetPromiseHook(v8::PromiseHook promise_hook) {
-    m_promise_hook = promise_hook;
+void JerryIsolate::UpdatePromiseFilters(void) {
+    int filters = JERRY_PROMISE_EVENT_FILTER_DISABLE;
 
     if (m_promise_hook != NULL) {
-        jerry_promise_set_callback (promise_callback, reinterpret_cast<void*>(this));
-    } else {
-        jerry_promise_set_callback (NULL, NULL);
+        filters |= PROMISE_HOOK_FILTERS;
     }
+
+    if (m_promise_reject_callback != NULL) {
+        filters |= JERRY_PROMISE_EVENT_FILTER_ERROR;
+    }
+
+    jerry_promise_set_callback (static_cast<jerry_promise_event_filter_t>(filters), promise_callback, reinterpret_cast<void*>(this));
 }
