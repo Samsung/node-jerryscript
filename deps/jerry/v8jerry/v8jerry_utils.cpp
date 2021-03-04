@@ -344,12 +344,14 @@ void CreateStackTrace(const jerry_value_t object, const jerry_value_t *ignored_f
     jerry_release_value(error_result);
 
     // https://v8.dev/docs/stack-trace-api
-    jerry_property_descriptor_t prop_desc;
-    jerry_init_property_descriptor_fields(&prop_desc);
+    jerry_property_descriptor_t prop_desc = jerry_property_descriptor_create();
+    prop_desc.flags = (JERRY_PROP_IS_GET_DEFINED
+                       | JERRY_PROP_IS_SET_DEFINED
+                       | JERRY_PROP_IS_CONFIGURABLE_DEFINED
+                       | JERRY_PROP_IS_CONFIGURABLE
+                       | JERRY_PROP_IS_ENUMERABLE_DEFINED);
 
-    prop_desc.is_get_defined = true;
     prop_desc.getter = jerry_create_external_function(JerryHandlerStackTraceGetter);
-    prop_desc.is_set_defined = true;
     prop_desc.setter = jerry_create_external_function(JerryHandlerStackTraceSetter);
 
     callback_data.data = new StackData();
@@ -374,14 +376,9 @@ void CreateStackTrace(const jerry_value_t object, const jerry_value_t *ignored_f
     jerry_release_value(set_result);
     jerry_release_value(getter_string);
 
-    prop_desc.is_enumerable_defined = true;
-    prop_desc.is_enumerable = false;
-    prop_desc.is_configurable_defined = true;
-    prop_desc.is_configurable = true;
-
     jerry_value_t stack_string = jerry_create_string((const jerry_char_t*)"stack");
     jerry_define_own_property(object, stack_string, &prop_desc);
-    jerry_free_property_descriptor_fields(&prop_desc);
+    jerry_property_descriptor_free(&prop_desc);
     jerry_release_value(stack_string);
 }
 
@@ -495,14 +492,18 @@ void JerryxHandlerRegister (const jerry_char_t *name_p, jerry_value_t object_val
                             jerry_external_handler_t handler_p) {
     jerry_value_t function_name_val = jerry_create_string (name_p);
     jerry_value_t function_val = jerry_create_external_function (handler_p);
-    jerry_property_descriptor_t desc;
-    jerry_init_property_descriptor_fields(&desc);
-    desc.is_value_defined = true;
+    jerry_property_descriptor_t desc = jerry_property_descriptor_create();
+    desc.flags = (JERRY_PROP_IS_VALUE_DEFINED
+                  | JERRY_PROP_IS_CONFIGURABLE_DEFINED
+                  | JERRY_PROP_IS_CONFIGURABLE
+                  | JERRY_PROP_IS_ENUMERABLE_DEFINED
+                  | JERRY_PROP_IS_WRITABLE_DEFINED
+                  | JERRY_PROP_IS_WRITABLE);
     desc.value = function_val;
 
     jerry_value_t result_val = jerry_define_own_property (object_value, function_name_val, &desc);
 
-    jerry_free_property_descriptor_fields (&desc);
+    jerry_property_descriptor_free (&desc);
     jerry_release_value (function_name_val);
 
     if (jerry_value_is_error (result_val))

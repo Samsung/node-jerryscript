@@ -44,11 +44,15 @@ public:
         BuildArgs(this_val, external_data);
     }
 
+    void ShouldThrowOnError() {
+        m_implicit_args[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = (JerryHandle*)v8::internal::IntToSmi(v8::internal::Internals::kThrowOnError);
+    }
+
 private:
     void BuildArgs(const jerry_value_t this_val, const jerry_value_t external_data) {
         JerryIsolate *isolate = JerryIsolate::fromV8(v8::Isolate::GetCurrent());
 
-        m_implicit_args[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = (JerryHandle*)v8::internal::IntToSmi(v8::internal::Internals::kDontThrow); // TODO: fix this
+        m_implicit_args[v8::PropertyCallbackInfo<T>::kShouldThrowOnErrorIndex] = (JerryHandle*)v8::internal::IntToSmi(v8::internal::Internals::kDontThrow);
         m_implicit_args[v8::PropertyCallbackInfo<T>::kHolderIndex] = &m_this_value; // TODO: 'this' object is not correct
         // TODO: correctly fill the arguments:
         m_implicit_args[v8::PropertyCallbackInfo<T>::kIsolateIndex] = reinterpret_cast<JerryHandle*>(isolate);
@@ -287,8 +291,7 @@ jerry_value_t JerryV8FunctionHandler(
     return jret;
 }
 
-static void setPropertyDescriptorHelperBoolean(jerry_value_t object, const char *name, bool value)
-{
+static void setPropertyDescriptorHelperBoolean(jerry_value_t object, const char *name, bool value) {
     jerry_value_t prop_name = jerry_create_string ((const jerry_char_t *) name);
     jerry_value_t boolean_value = jerry_create_boolean (value);
     jerry_set_property (object, prop_name, boolean_value);
@@ -296,11 +299,17 @@ static void setPropertyDescriptorHelperBoolean(jerry_value_t object, const char 
     jerry_release_value (prop_name);
 }
 
-static void setPropertyDescriptorHelper(jerry_value_t object, const char *name, jerry_value_t value)
-{
+static void setPropertyDescriptorHelper(jerry_value_t object, const char *name, jerry_value_t value) {
     jerry_value_t prop_name = jerry_create_string ((const jerry_char_t *) name);
     jerry_set_property (object, prop_name, value);
     jerry_release_value (prop_name);
+}
+
+static bool check_strict(jerry_backtrace_frame_t *frame_p, void *user_p) {
+  if (jerry_backtrace_is_strict(frame_p)) {
+      *(bool*)user_p = true;
+  }
+  return false;
 }
 
 jerry_value_t JerryV8ProxyHandler(
@@ -349,11 +358,18 @@ jerry_value_t JerryV8ProxyHandler(
             break;
         }
         case SET: {
+            bool is_strict = false;
+            jerry_backtrace_capture(check_strict, &is_strict);
+
             if (!data->configuration->genericSetter) {
                 return jerry_set_property(args_p[0], args_p[1], args_p[2]);
             }
 
             JerryPropertyCallbackInfo<v8::Value> info(function_obj, this_val, args_p, args_cnt, external);
+
+            if (is_strict) {
+                info.ShouldThrowOnError();
+            }
 
             JerryValueNoRelease name(args_p[1]);
             JerryValueNoRelease new_value(args_p[2]);
@@ -368,7 +384,12 @@ jerry_value_t JerryV8ProxyHandler(
                     return jerry_create_boolean(true);
                 }
 
-                return jerry_set_property(args_p[0], args_p[1], args_p[2]);
+                jerry_value_t result = jerry_set_property(args_p[0], args_p[1], args_p[2]);
+                if (jerry_value_is_error (result) && !is_strict) {
+                    jerry_release_value(result);
+                    result = jerry_create_undefined();
+                }
+                return result;
             }
             break;
         }
@@ -426,7 +447,7 @@ jerry_value_t JerryV8ProxyHandler(
                     return jerry_acquire_value((*returnValue)->value());
                 }
 
-                return jerry_delete_property(args_p[0], args_p[1]);
+                return jerry_create_boolean(jerry_delete_property(args_p[0], args_p[1]));
             }
             break;
         }
@@ -458,30 +479,30 @@ jerry_value_t JerryV8ProxyHandler(
             DEFINE_RETURN_VALUE();
 
             if (data->configuration->genericDefiner) {
-                if (descriptor.is_value_defined) {
-                    JerryValue value(jerry_acquire_value(descriptor.value));
-                    v8::PropertyDescriptor propertyDescriptor(value.AsLocal<v8::Value>(), descriptor.is_writable);
-
-                    if (descriptor.is_configurable_defined) {
-                        propertyDescriptor.set_configurable(descriptor.is_configurable);
-                    }
-
-                    if (descriptor.is_enumerable_defined) {
-                        propertyDescriptor.set_enumerable(descriptor.is_enumerable);
-                    }
-
-                    data->configuration->genericDefiner(name.AsLocal<v8::Name>(), propertyDescriptor, info);
-                } else {
+                if (descriptor.flags & (JERRY_PROP_IS_GET_DEFINED | JERRY_PROP_IS_SET_DEFINED)) {
                     JerryValue getter(jerry_acquire_value(descriptor.getter));
                     JerryValue setter(jerry_acquire_value(descriptor.setter));
                     v8::PropertyDescriptor propertyDescriptor(getter.AsLocal<v8::Value>(), setter.AsLocal<v8::Value>());
 
-                    if (descriptor.is_configurable_defined) {
-                        propertyDescriptor.set_configurable(descriptor.is_configurable);
+                    if (descriptor.flags & JERRY_PROP_IS_CONFIGURABLE_DEFINED) {
+                        propertyDescriptor.set_configurable((descriptor.flags & JERRY_PROP_IS_CONFIGURABLE) != 0);
                     }
 
-                    if (descriptor.is_enumerable_defined) {
-                        propertyDescriptor.set_enumerable(descriptor.is_enumerable);
+                    if (descriptor.flags & JERRY_PROP_IS_ENUMERABLE_DEFINED) {
+                        propertyDescriptor.set_enumerable((descriptor.flags & JERRY_PROP_IS_ENUMERABLE) != 0);
+                    }
+
+                    data->configuration->genericDefiner(name.AsLocal<v8::Name>(), propertyDescriptor, info);
+                } else {
+                    JerryValue value(jerry_acquire_value(descriptor.value));
+                    v8::PropertyDescriptor propertyDescriptor(value.AsLocal<v8::Value>(), (descriptor.flags & JERRY_PROP_IS_WRITABLE) != 0);
+
+                    if (descriptor.flags & JERRY_PROP_IS_CONFIGURABLE_DEFINED) {
+                        propertyDescriptor.set_configurable((descriptor.flags & JERRY_PROP_IS_CONFIGURABLE) != 0);
+                    }
+
+                    if (descriptor.flags & JERRY_PROP_IS_ENUMERABLE_DEFINED) {
+                        propertyDescriptor.set_enumerable((descriptor.flags & JERRY_PROP_IS_ENUMERABLE) != 0);
                     }
 
                     data->configuration->genericDefiner(name.AsLocal<v8::Name>(), propertyDescriptor, info);
@@ -492,16 +513,18 @@ jerry_value_t JerryV8ProxyHandler(
 
             if (!isolate->HasError()) {
                 if (*returnValue != isolate->Hole()) {
-                    jerry_free_property_descriptor_fields(&descriptor);
+                    jerry_property_descriptor_free(&descriptor);
                     return jerry_acquire_value((*returnValue)->value());
                 }
 
+                descriptor.flags |= JERRY_PROP_IS_THROW;
+
                 jerry_value_t result = jerry_define_own_property(args_p[0], args_p[1], &descriptor);
-                jerry_free_property_descriptor_fields(&descriptor);
+                jerry_property_descriptor_free(&descriptor);
                 return result;
             }
 
-            jerry_free_property_descriptor_fields(&descriptor);
+            jerry_property_descriptor_free(&descriptor);
             break;
         }
         case GET_OWN_PROPERTY_DESC:
@@ -544,34 +567,27 @@ jerry_value_t JerryV8ProxyHandler(
             }
 
             jerry_value_t result;
-            jerry_property_descriptor_t prop_desc;
-            jerry_init_property_descriptor_fields(&prop_desc);
+            jerry_property_descriptor_t prop_desc = jerry_property_descriptor_create();
             bool status = jerry_get_own_property_descriptor (args_p[0], args_p[1], &prop_desc);
 
-            if (status)
-            {
+            if (status) {
                 result = jerry_create_object();
 
-                if (prop_desc.is_value_defined || prop_desc.is_writable_defined)
-                {
-                    setPropertyDescriptorHelperBoolean(result, "writable", prop_desc.is_writable);
+                if (prop_desc.flags & (JERRY_PROP_IS_VALUE_DEFINED | JERRY_PROP_IS_WRITABLE_DEFINED)) {
+                    setPropertyDescriptorHelperBoolean(result, "writable", (prop_desc.flags & JERRY_PROP_IS_WRITABLE) != 0);
                     setPropertyDescriptorHelper(result, "value", jerry_acquire_value (prop_desc.value));
-                }
-                else if (prop_desc.is_get_defined || prop_desc.is_set_defined)
-                {
+                } else if (prop_desc.flags & (JERRY_PROP_IS_GET_DEFINED | JERRY_PROP_IS_SET_DEFINED)) {
                     setPropertyDescriptorHelper(result, "get", jerry_acquire_value (prop_desc.getter));
                     setPropertyDescriptorHelper(result, "set", jerry_acquire_value (prop_desc.setter));
                 }
 
-                setPropertyDescriptorHelperBoolean(result, "enumerable", prop_desc.is_enumerable);
-                setPropertyDescriptorHelperBoolean(result, "configurable", prop_desc.is_configurable);
-            }
-            else
-            {
+                setPropertyDescriptorHelperBoolean(result, "configurable", (prop_desc.flags & JERRY_PROP_IS_CONFIGURABLE_DEFINED) != 0);
+                setPropertyDescriptorHelperBoolean(result, "enumerable", (prop_desc.flags & JERRY_PROP_IS_ENUMERABLE_DEFINED) != 0);
+            } else {
                 result = jerry_create_undefined ();
             }
 
-            jerry_free_property_descriptor_fields (&prop_desc);
+            jerry_property_descriptor_free(&prop_desc);
             return result;
         }
     }

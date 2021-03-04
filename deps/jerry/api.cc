@@ -1968,20 +1968,23 @@ Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
   JerryValue* prop_name = reinterpret_cast<JerryValue*> (*key);
   JerryValue* prop_value = reinterpret_cast<JerryValue*> (*value);
 
-  jerry_property_descriptor_t prop_desc = {
-      .is_value_defined = true,
-      .is_get_defined = false,
-      .is_set_defined = false,
-      .is_writable_defined = true,
-      .is_writable = !(attributes & PropertyAttribute::ReadOnly),
-      .is_enumerable_defined = true,
-      .is_enumerable = !(attributes & PropertyAttribute::DontEnum),
-      .is_configurable_defined = true,
-      .is_configurable = !(attributes & PropertyAttribute::DontDelete),
-      .value = prop_value->value(),
-      .getter = jerry_create_undefined(),
-      .setter = jerry_create_undefined()
-  };
+  jerry_property_descriptor_t prop_desc;
+  prop_desc.flags = (JERRY_PROP_IS_VALUE_DEFINED
+                     | JERRY_PROP_IS_CONFIGURABLE_DEFINED
+                     | JERRY_PROP_IS_ENUMERABLE_DEFINED
+                     | JERRY_PROP_IS_WRITABLE_DEFINED);
+  if (!(attributes & PropertyAttribute::DontDelete)) {
+      prop_desc.flags |= JERRY_PROP_IS_CONFIGURABLE;
+  }
+  if (!(attributes & PropertyAttribute::DontEnum)) {
+      prop_desc.flags |= JERRY_PROP_IS_ENUMERABLE;
+  }
+  if (!(attributes & PropertyAttribute::ReadOnly)) {
+      prop_desc.flags |= JERRY_PROP_IS_WRITABLE;
+  }
+  prop_desc.value = prop_value->value();
+  prop_desc.getter = jerry_create_undefined();
+  prop_desc.setter = jerry_create_undefined();
 
   jerry_value_t result = jerry_define_own_property (obj->value(), prop_name->value(), &prop_desc);
   bool isOk = jerry_get_boolean_value(result);
@@ -1997,39 +2000,44 @@ Maybe<bool> v8::Object::DefineProperty(v8::Local<v8::Context> context,
   JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
   JerryValue* jname = reinterpret_cast<JerryValue*>(*key);
 
-  jerry_property_descriptor_t prop_desc;
-  jerry_init_property_descriptor_fields(&prop_desc);
+  jerry_property_descriptor_t prop_desc = jerry_property_descriptor_create();
 
   if (descriptor.has_value()) {
-      prop_desc.is_value_defined = true;
+      prop_desc.flags |= JERRY_PROP_IS_VALUE_DEFINED;
       prop_desc.value = jerry_acquire_value(reinterpret_cast<JerryValue*>(*descriptor.value())->value());
   }
   if (descriptor.has_get()) {
-      prop_desc.is_get_defined = true;
+      prop_desc.flags |= JERRY_PROP_IS_GET_DEFINED;
       prop_desc.getter = jerry_acquire_value(reinterpret_cast<JerryValue*>(*descriptor.get())->value());
   }
   if (descriptor.has_set()) {
-      prop_desc.is_set_defined = true;
+      prop_desc.flags |= JERRY_PROP_IS_SET_DEFINED;
       prop_desc.setter = jerry_acquire_value(reinterpret_cast<JerryValue*>(*descriptor.set())->value());
   }
+  if (descriptor.has_configurable()) {
+      prop_desc.flags |= JERRY_PROP_IS_CONFIGURABLE_DEFINED;
+      if (descriptor.configurable()) {
+          prop_desc.flags |= JERRY_PROP_IS_CONFIGURABLE;
+      }
+  }
   if (descriptor.has_enumerable()) {
-      prop_desc.is_enumerable_defined = true;
-      prop_desc.is_enumerable = descriptor.enumerable();
+      prop_desc.flags |= JERRY_PROP_IS_ENUMERABLE_DEFINED;
+      if (descriptor.enumerable()) {
+          prop_desc.flags |= JERRY_PROP_IS_ENUMERABLE;
+      }
   }
   if (descriptor.has_writable()) {
-      prop_desc.is_writable_defined = true;
-      prop_desc.is_writable = descriptor.writable();
-  }
-  if (descriptor.has_configurable()) {
-      prop_desc.is_configurable_defined = true;
-      prop_desc.is_configurable = descriptor.configurable();
+      prop_desc.flags |= JERRY_PROP_IS_WRITABLE_DEFINED;
+      if (descriptor.writable()) {
+          prop_desc.flags |= JERRY_PROP_IS_WRITABLE;
+      }
   }
 
   jerry_value_t result = jerry_define_own_property(jobject->value(), jname->value(), &prop_desc);
   bool property_set = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
   jerry_release_value(result);
 
-  jerry_free_property_descriptor_fields(&prop_desc);
+  jerry_property_descriptor_free(&prop_desc);
 
   return Just(property_set);
 }
@@ -2291,31 +2299,43 @@ Maybe<bool> v8::Object::HasOwnProperty(Local<Context> context,
 MaybeLocal<Value> v8::Object::GetRealNamedProperty(Local<Context> context,
                                                    Local<Name> key) {
   V8_CALL_TRACE();
-  JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
-  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
+  jerry_value_t jobject = reinterpret_cast<JerryValue*>(this)->value();
+  jerry_value_t jkey = reinterpret_cast<JerryValue*>(*key)->value();
+  jerry_value_t jcurrent;
 
-  jerry_value_t property;
-
-  if (jerry_value_is_proxy(jobject->value())) {
-      jerry_value_t target = jerry_get_proxy_target(jobject->value());
-      property = jerry_get_property(target, jkey->value());
-      jerry_release_value(target);
+  if (jerry_value_is_proxy(jobject)) {
+      jcurrent = jerry_get_proxy_target(jobject);
   } else {
-      property = jerry_get_property(jobject->value(), jkey->value());
+      jcurrent = jerry_acquire_value(jobject);
   }
 
-  JerryValue* result = NULL;
-  if (!jerry_value_is_error(property)) {
-      if (jerry_value_is_undefined(property)) {
+  jerry_value_t property;
+  bool found;
+
+  while (true) {
+      property = jerry_get_own_property(jcurrent, jkey, jobject, &found);
+
+      if (jerry_value_is_error(property)) {
+          jerry_release_value(jcurrent);
+          jerry_release_value(property);
           return MaybeLocal<Value>();
       }
 
-      result = new JerryValue(property);
-  } else {
-      jerry_release_value(property);
-  }
+      if (found) {
+          jerry_release_value(jcurrent);
+          RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(property));
+      }
 
-  RETURN_HANDLE(Value, context->GetIsolate(), result);
+      jerry_value_t jprototype = jerry_get_prototype(jcurrent);
+      jerry_release_value(jcurrent);
+
+      if (jerry_value_is_error(jprototype)) {
+          jerry_release_value(jprototype);
+          return MaybeLocal<Value>();
+      }
+
+      jcurrent = jprototype;
+  }
 }
 
 Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
@@ -2338,22 +2358,29 @@ Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
 
   do {
       jerry_property_descriptor_t prop_desc;
-      jerry_init_property_descriptor_fields(&prop_desc);
 
       found = jerry_get_own_property_descriptor(target_object, jkey->value(), &prop_desc);
 
       if (found) {
-          if (prop_desc.is_writable_defined && !prop_desc.is_writable) { attributes |= PropertyAttribute::ReadOnly; }
-          if (prop_desc.is_enumerable_defined && !prop_desc.is_enumerable) { attributes |= PropertyAttribute::DontEnum; }
-          if (prop_desc.is_configurable_defined && !prop_desc.is_configurable) { attributes |= PropertyAttribute::DontDelete; }
+          if (!(prop_desc.flags & JERRY_PROP_IS_CONFIGURABLE)) {
+              attributes |= PropertyAttribute::DontDelete;
+          }
+
+          if (!(prop_desc.flags & JERRY_PROP_IS_ENUMERABLE)) {
+              attributes |= PropertyAttribute::DontEnum;
+          }
+
+          uint16_t mask = JERRY_PROP_IS_WRITABLE_DEFINED | JERRY_PROP_IS_WRITABLE;
+          if ((prop_desc.flags & mask) == JERRY_PROP_IS_WRITABLE_DEFINED) {
+              attributes |= PropertyAttribute::ReadOnly;
+          }
+          jerry_property_descriptor_free(&prop_desc);
       } else {
           jerry_value_t new_target_object = jerry_get_prototype(target_object);
           jerry_release_value(target_object);
 
           target_object = new_target_object;
       }
-
-      jerry_free_property_descriptor_fields(&prop_desc);
   } while (!found && !jerry_value_is_null(target_object));
 
   jerry_release_value(target_object);

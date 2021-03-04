@@ -5,46 +5,44 @@
 
 void JerryTemplate::InstallProperties(const jerry_value_t target) {
     for (PropertyEntry* prop : m_properties) {
-        jerry_property_descriptor_t desc;
-        jerry_init_property_descriptor_fields(&desc);
+        jerry_property_descriptor_t prop_desc = jerry_property_descriptor_create();
 
         switch (prop->type) {
             case PropertyEntry::Value: {
-                desc.is_value_defined = true;
-                desc.value = jerry_acquire_value(prop->value_or_getter->value());
+                prop_desc.flags |= JERRY_PROP_IS_VALUE_DEFINED | JERRY_PROP_IS_WRITABLE_DEFINED;
+                prop_desc.value = jerry_acquire_value(prop->value_or_getter->value());
 
-                desc.is_writable_defined = true;
                 if (!(prop->attribute & v8::PropertyAttribute::ReadOnly)) {
-                    desc.is_writable = true;
+                    prop_desc.flags |= JERRY_PROP_IS_WRITABLE;
                 }
                 break;
             }
             case PropertyEntry::Accessor: {
                 if (prop->value_or_getter != NULL) {
-                    desc.is_get_defined = true;
-                    desc.getter = jerry_acquire_value(prop->value_or_getter->value());
+                    prop_desc.flags |= JERRY_PROP_IS_GET_DEFINED;
+                    prop_desc.getter = jerry_acquire_value(prop->value_or_getter->value());
                 }
 
                 if (prop->setter != NULL) {
-                    desc.is_set_defined = true;
-                    desc.setter = jerry_acquire_value(prop->setter->value());
+                    prop_desc.flags |= JERRY_PROP_IS_SET_DEFINED;
+                    prop_desc.setter = jerry_acquire_value(prop->setter->value());
                 }
                 break;
             }
         }
 
-        desc.is_configurable_defined = true;
+        prop_desc.flags |= JERRY_PROP_IS_CONFIGURABLE_DEFINED | JERRY_PROP_IS_ENUMERABLE_DEFINED;
+
         if (!(prop->attribute & v8::PropertyAttribute::DontDelete)) {
-          desc.is_configurable = true;
+            prop_desc.flags |= JERRY_PROP_IS_CONFIGURABLE;
         }
 
-        desc.is_enumerable_defined = true;
         if (!(prop->attribute & v8::PropertyAttribute::DontEnum)) {
-          desc.is_enumerable = true;
+            prop_desc.flags |= JERRY_PROP_IS_ENUMERABLE;
         }
 
-        jerry_value_t result = jerry_define_own_property(target, prop->key->value(), &desc);
-        jerry_free_property_descriptor_fields(&desc);
+        jerry_value_t result = jerry_define_own_property(target, prop->key->value(), &prop_desc);
+        jerry_property_descriptor_free(&prop_desc);
 
         /* TODO: check isOK? */
         // bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
@@ -73,11 +71,10 @@ jerry_object_native_info_t JerryV8GetterSetterHandlerData::TypeInfo = {
 
 /* static */
 bool JerryObjectTemplate::SetAccessor(const jerry_value_t target, AccessorEntry* entry) {
-    jerry_property_descriptor_t prop_desc;
-    jerry_init_property_descriptor_fields (&prop_desc);
+    jerry_property_descriptor_t prop_desc = jerry_property_descriptor_create();
 
     // TODO: is there always a getter?
-    prop_desc.is_get_defined = true;
+    prop_desc.flags |= JERRY_PROP_IS_GET_DEFINED;
     prop_desc.getter = jerry_create_external_function(JerryV8GetterSetterHandler);
     {
         JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
@@ -89,9 +86,9 @@ bool JerryObjectTemplate::SetAccessor(const jerry_value_t target, AccessorEntry*
         jerry_set_object_native_pointer(prop_desc.getter, data, &JerryV8GetterSetterHandlerData::TypeInfo);
     }
 
-    prop_desc.is_set_defined = (entry->setter.stringed != NULL);
-    if (prop_desc.is_set_defined) {
-        prop_desc.setter = jerry_create_external_function(JerryV8GetterSetterHandler); // TODO: connect setter callback;
+    if (entry->setter.stringed != NULL) {
+        prop_desc.flags |= JERRY_PROP_IS_SET_DEFINED;
+        prop_desc.setter = jerry_create_external_function(JerryV8GetterSetterHandler);
 
         JerryV8GetterSetterHandlerData* data = new JerryV8GetterSetterHandlerData();
         data->v8.setter = entry->setter;
@@ -101,18 +98,24 @@ bool JerryObjectTemplate::SetAccessor(const jerry_value_t target, AccessorEntry*
 
         jerry_set_object_native_pointer(prop_desc.setter, data, &JerryV8GetterSetterHandlerData::TypeInfo);
     }
-    prop_desc.is_configurable_defined = true;
-    prop_desc.is_configurable = true;
 
-    prop_desc.is_enumerable_defined = true;
-    prop_desc.is_enumerable = true;
+    prop_desc.flags |= JERRY_PROP_IS_CONFIGURABLE_DEFINED | JERRY_PROP_IS_ENUMERABLE_DEFINED;
 
-    // TODO: handle settings and attributes
+    if (!(entry->attribute & v8::PropertyAttribute::DontDelete)) {
+        prop_desc.flags |= JERRY_PROP_IS_CONFIGURABLE;
+    }
+
+    if (!(entry->attribute & v8::PropertyAttribute::DontEnum)) {
+        prop_desc.flags |= JERRY_PROP_IS_ENUMERABLE;
+    }
+
+    // TODO: handle settings
+
     jerry_value_t define_result = jerry_define_own_property(target, entry->name->value(), &prop_desc);
     bool isOk = !jerry_value_is_error(define_result) && jerry_get_boolean_value(define_result);
     jerry_release_value(define_result);
 
-    jerry_free_property_descriptor_fields(&prop_desc);
+    jerry_property_descriptor_free(&prop_desc);
 
     return isOk;
 }
@@ -206,7 +209,7 @@ JerryValue* JerryObjectTemplate::Proxify(JerryValue* target_instance) {
         handler->SetProperty(&key, &method);
     }
 
-    uint32_t options = JERRY_PROXY_SKIP_GET_CHECKS | JERRY_PROXY_SKIP_GET_OWN_PROPERTY_CHECKS;
+    uint32_t options = JERRY_PROXY_SKIP_RESULT_VALIDATION;
     jerry_value_t proxy = jerry_create_special_proxy(target_instance->value(), handler->value(), options);
 
     delete target_instance;
@@ -284,19 +287,18 @@ JerryValue* JerryFunctionTemplate::GetFunction(void) {
         jerry_release_value (jerry_set_property(m_function->value(), proto_string.value(), m_prototype));
 
         jerry_property_descriptor_t desc;
-        jerry_init_property_descriptor_fields(&desc);
-        desc.is_value_defined = true;
-        desc.is_writable_defined = true;
-        desc.is_writable = true;
-        desc.is_enumerable_defined = true;
-        desc.is_enumerable = false;
-        desc.is_configurable_defined = true;
-        desc.is_configurable = true;
-        desc.value = jerry_acquire_value (jfunction);
+        desc.flags = (JERRY_PROP_IS_VALUE_DEFINED
+                      | JERRY_PROP_IS_CONFIGURABLE_DEFINED
+                      | JERRY_PROP_IS_CONFIGURABLE
+                      | JERRY_PROP_IS_ENUMERABLE_DEFINED
+                      | JERRY_PROP_IS_WRITABLE_DEFINED
+                      | JERRY_PROP_IS_WRITABLE);
+        desc.value = jfunction;
+        desc.getter = jerry_create_undefined();
+        desc.setter = jerry_create_undefined();
 
         JerryValue constructor_string(jerry_create_string((const jerry_char_t*)"constructor"));
         jerry_release_value (jerry_define_own_property(m_prototype, constructor_string.value(), &desc));
-        jerry_free_property_descriptor_fields(&desc);
 
         if (m_proto_template != NULL)
         {
