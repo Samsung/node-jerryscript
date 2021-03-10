@@ -27,10 +27,14 @@ jerry_value_t JerryPolyfill::Call(const jerry_value_t this_arg, const jerry_valu
 }
 
 jerry_value_t JerryPolyfill::BuildMethod(const char* name, const char* fn_args, const char* fn_body) {
-    jerry_value_t method = jerry_parse_function(reinterpret_cast<const jerry_char_t*>(name), strlen(name),
-                                 reinterpret_cast<const jerry_char_t*>(fn_args), strlen(fn_args),
+    jerry_parse_options_t parse_options;
+    parse_options.options = JERRY_PARSE_HAS_RESOURCE;
+    parse_options.resource_name_p = reinterpret_cast<const jerry_char_t*>(name);
+    parse_options.resource_name_length = strlen(name);
+
+    jerry_value_t method = jerry_parse_function(reinterpret_cast<const jerry_char_t*>(fn_args), strlen(fn_args),
                                  reinterpret_cast<const jerry_char_t*>(fn_body), strlen(fn_body),
-                                 JERRY_PARSE_NO_OPTS);
+                                 &parse_options);
     if (jerry_value_is_error(method)) {
         fprintf(stderr, "Failed to build helper method initialize at: %s:%d\nfunction (%s) {\n%s\n}", __FILE__, __LINE__, fn_args, fn_body);
         abort();
@@ -419,17 +423,20 @@ void InjectGlobalFunctions(void) {
     }
 
     JerryValue error_string(jerry_create_string((const jerry_char_t*)"Error"));
-    JerryValue capture_stack_trace_string(jerry_create_string((const jerry_char_t*)"captureStackTrace"));
-    JerryValue stack_trace_function(jerry_create_external_function(JerryHandlerStackTrace));
 
     JerryValue* error_obj = global.GetProperty(&error_string);
-    if (error_obj == NULL) {
-        printf("Error object is not defined...\n");
-        abort();
-    }
+    if (error_obj != NULL) {
+        JerryValue capture_stack_trace_string(jerry_create_string((const jerry_char_t*)"captureStackTrace"));
+        JerryValue stack_trace_value(jerry_create_external_function(JerryHandlerStackTrace));
 
-    error_obj->SetProperty(&capture_stack_trace_string, &stack_trace_function);
-    delete error_obj;
+        error_obj->SetProperty(&capture_stack_trace_string, &stack_trace_value);
+
+        JerryValue stack_trace_limit_string(jerry_create_string((const jerry_char_t*)"stackTraceLimit"));
+        JerryValue stack_trace_limit_value(jerry_create_number(10));
+
+        error_obj->SetProperty(&stack_trace_limit_string, &stack_trace_limit_value);
+        delete error_obj;
+    }
 }
 
 // TODO: remove these layering violations (this is a Jerry internal method, should not be visible here)

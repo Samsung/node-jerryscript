@@ -125,25 +125,19 @@ void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
       }
       arg += 2;
 
-      bool result = true;
+      bool negate = false;
 
       if (strncmp("no-", arg, 3) == 0) {
-          result = false;
+          negate = true;
           arg += 3;
       }
 
-      Flag* flag = Flag::Get(arg);
-
-      if (flag == NULL) {
+      if (!Flag::Update(arg, negate)) {
           continue;
       }
 
       /* Flag found, update it's value */
       found = true;
-
-      if (flag->type == Flag::BOOL) {
-          flag->u.bool_value = result;
-      }
 
       if (remove_flags) {
           argv[idx] = NULL;
@@ -653,11 +647,14 @@ Local<Script> UnboundScript::BindToCurrentContext() {
   UnboundScriptData* unboundScriptData;
   jerry_get_object_native_pointer(unboundScript->value(), (void**)&unboundScriptData, &unboundScriptInfo);
 
-  jerry_value_t scriptFunction = jerry_parse(unboundScriptData->file_name,
-                                             unboundScriptData->file_name_length,
-                                             unboundScriptData->source,
+  jerry_parse_options_t parse_options;
+  parse_options.options = JERRY_PARSE_HAS_RESOURCE;
+  parse_options.resource_name_p = unboundScriptData->file_name;
+  parse_options.resource_name_length = unboundScriptData->file_name_length;
+
+  jerry_value_t scriptFunction = jerry_parse(unboundScriptData->source,
                                              unboundScriptData->source_length,
-                                             JERRY_PARSE_NO_OPTS);
+                                             &parse_options);
 
   /* Should never happen (except out of memory) */
   if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
@@ -780,11 +777,14 @@ Local<Module> Module::CreateSyntheticModule(
   V8_CALL_TRACE();
   String::Utf8Value fileName(isolate, module_name);
 
-  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
-                                             fileName.length(),
-                                             reinterpret_cast<const jerry_char_t*>(1),
+  jerry_parse_options_t parse_options;
+  parse_options.options = JERRY_PARSE_MODULE | JERRY_PARSE_HAS_RESOURCE;
+  parse_options.resource_name_p = (const jerry_char_t*)*fileName;
+  parse_options.resource_name_length = fileName.length();
+
+  jerry_value_t scriptFunction = jerry_parse(reinterpret_cast<const jerry_char_t*>(1),
                                              0,
-                                             JERRY_PARSE_NO_OPTS | 2); // [[TODO]] propagete ECMA_PARSE_MODULE to api
+                                             &parse_options);
 
   JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
   RETURN_HANDLE(Module, isolate, result);
@@ -828,12 +828,17 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
   size_t file_name_length = (size_t)file_name.length();
   size_t source_string_length = (size_t)source_string.length();
 
+  jerry_parse_options_t parse_options;
+  parse_options.options = JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START;
+  parse_options.resource_name_p = (const jerry_char_t*)*file_name;
+  parse_options.resource_name_length = file_name_length;
+  parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
+  parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
+
   /* Compiling for checking syntax errors. */
-  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*file_name,
-                                             file_name_length,
-                                             (const jerry_char_t*)*source_string,
+  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*source_string,
                                              source_string_length,
-                                             JERRY_PARSE_NO_OPTS);
+                                             &parse_options);
 
   if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
       JerryIsolate::fromV8(v8_isolate)->SetError(scriptFunction);
@@ -893,13 +898,18 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
   }
 
   String::Utf8Value text(isolate, source->source_string);
-  String::Utf8Value fileName(isolate, file);
+  String::Utf8Value file_name(isolate, file);
 
-  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*fileName,
-                                             fileName.length(),
-                                             (const jerry_char_t*)*text,
+  jerry_parse_options_t parse_options;
+  parse_options.options = JERRY_PARSE_MODULE | JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START;
+  parse_options.resource_name_p = (const jerry_char_t*)*file_name;
+  parse_options.resource_name_length = (size_t)file_name.length();
+  parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
+  parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
+
+  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*text,
                                              text.length(),
-                                             JERRY_PARSE_NO_OPTS | 2); // [[TODO]] propagete ECMA_PARSE_MODULE to api
+                                             &parse_options);
 
   JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
   RETURN_HANDLE(Module, isolate, result);
@@ -958,13 +968,18 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
     }
   }
 
-  jerry_value_t scriptFunction = jerry_parse_function((const jerry_char_t*)*fileName,
-                                                      fileName.length(),
-                                                      (const jerry_char_t*) args.c_str(),
+  jerry_parse_options_t parse_options;
+  parse_options.options = JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START;
+  parse_options.resource_name_p = (const jerry_char_t*)*fileName;
+  parse_options.resource_name_length = fileName.length();
+  parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
+  parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
+
+  jerry_value_t scriptFunction = jerry_parse_function((const jerry_char_t*) args.c_str(),
                                                       args.length(),
                                                       (const jerry_char_t*)source_raw_string,
                                                       source_raw_length,
-                                                      JERRY_PARSE_NO_OPTS);
+                                                      &parse_options);
 
   if (script_or_module_out != nullptr) {
     jerry_value_t object = jerry_create_object();

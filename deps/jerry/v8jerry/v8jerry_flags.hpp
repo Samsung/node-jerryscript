@@ -3,11 +3,15 @@
 
 #define FLAGS(F) \
     F(BOOL, expose_gc, false) \
-    F(BOOL, abort_on_uncaught_exception, false)
+    F(BOOL, use_strict, false) \
+    F(BOOL, abort_on_uncaught_exception, false) \
+    F(BOOL, harmony_weak_refs, false) \
+    F(INT, stack_size, 4096)
 
 struct Flag {
     enum Type {
         BOOL,
+        INT,
     };
 
     enum FlagID {
@@ -16,15 +20,15 @@ struct Flag {
     #undef FLAG_ENUM
     };
 
-
     Type type;
     const char* name;
 
     union {
         bool bool_value;
+        int int_value;
     } u;
 
-    static Flag* Get(const char* name);
+    static bool Update(const char* name, bool negate);
     static Flag* Get(FlagID);
 };
 

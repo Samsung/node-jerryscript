@@ -517,7 +517,7 @@ jerry_value_t JerryV8ProxyHandler(
                     return jerry_acquire_value((*returnValue)->value());
                 }
 
-                descriptor.flags |= JERRY_PROP_IS_THROW;
+                descriptor.flags |= JERRY_PROP_SHOULD_THROW;
 
                 jerry_value_t result = jerry_define_own_property(args_p[0], args_p[1], &descriptor);
                 jerry_property_descriptor_free(&descriptor);
