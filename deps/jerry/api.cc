@@ -608,11 +608,14 @@ ScriptCompiler::CachedData::CachedData(const uint8_t* data_, int length_,
       length(length_),
       rejected(false),
       buffer_policy(buffer_policy_) {
-  UNIMPLEMENTED(2037);
+  V8_CALL_TRACE();
 }
 
 ScriptCompiler::CachedData::~CachedData() {
   V8_CALL_TRACE();
+  if (buffer_policy == BufferOwned) {
+    delete[] data;
+  }
 }
 
 struct UnboundScriptData {
@@ -723,34 +726,108 @@ Local<Primitive> PrimitiveArray::Get(Isolate* v8_isolate, int index) {
   RETURN_HANDLE(Primitive, v8_isolate, result);
 }
 
+struct ModuleData {
+    jerry_value_t error;
+    size_t requestsLength;
+    jerry_value_t requests[];
+};
+
+void ModuleFree(void *native_p) {
+    ModuleData* data = reinterpret_cast<ModuleData*>(native_p);
+
+    jerry_release_value(data->error);
+
+    size_t requestsLength = data->requestsLength;
+
+    for (size_t i = 0; i < requestsLength; i++) {
+         jerry_release_value(data->requests[i]);
+    }
+
+    free(data);
+}
+
+static jerry_object_native_info_t ModuleTypeInfo = {
+    .free_cb = ModuleFree,
+};
+
 Module::Status Module::GetStatus() const {
-  UNIMPLEMENTED(2219);
-  return kUninstantiated;
+  V8_CALL_TRACE();
+  const JerryValue* module = reinterpret_cast<const JerryValue*>(this);
+
+  jerry_module_state_t state = jerry_module_get_state(module->value());
+
+  switch (state) {
+  case JERRY_MODULE_STATE_UNLINKED:
+      return v8::Module::Status::kUninstantiated;
+  case JERRY_MODULE_STATE_LINKING:
+      return v8::Module::Status::kInstantiating;
+  case JERRY_MODULE_STATE_LINKED:
+      return v8::Module::Status::kInstantiated;
+  case JERRY_MODULE_STATE_EVALUATING:
+      return v8::Module::Status::kEvaluating;
+  case JERRY_MODULE_STATE_EVALUATED:
+      return v8::Module::Status::kEvaluated;
+  default:
+      return v8::Module::Status::kErrored;
+  }
 }
 
 Local<Value> Module::GetException() const {
-  UNIMPLEMENTED(2239);
-  return Local<Value>();
+  V8_CALL_TRACE();
+  const JerryValue* module = reinterpret_cast<const JerryValue*>(this);
+  ModuleData* data;
+  jerry_value_t result;
+
+  if (jerry_get_object_native_pointer(module->value(), reinterpret_cast<void**>(&data), &ModuleTypeInfo)) {
+      result = jerry_acquire_value(data->error);
+  } else {
+      result = jerry_create_undefined();
+  }
+
+  RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(result));
 }
 
 int Module::GetModuleRequestsLength() const {
-  UNIMPLEMENTED(2247);
+  V8_CALL_TRACE();
+
+  const JerryValue* module = reinterpret_cast<const JerryValue*>(this);
+  ModuleData* data;
+
+  if (jerry_get_object_native_pointer(module->value(), reinterpret_cast<void**>(&data), &ModuleTypeInfo)) {
+      return static_cast<int>(data->requestsLength);
+  }
+
   return 0;
 }
 
 Local<String> Module::GetModuleRequest(int i) const {
-  UNIMPLEMENTED(2256);
+
+  V8_CALL_TRACE();
+
+  const JerryValue* module = reinterpret_cast<const JerryValue*>(this);
+  ModuleData* data;
+
+  if (jerry_get_object_native_pointer(module->value(), reinterpret_cast<void**>(&data), &ModuleTypeInfo)) {
+      if (i >= 0 && i < static_cast<int>(data->requestsLength)) {
+          RETURN_HANDLE(String, Isolate::GetCurrent(), new JerryValue(jerry_acquire_value(data->requests[i])));
+      }
+  }
+
   return Local<String>();
 }
 
 Local<Value> Module::GetModuleNamespace() {
-  UNIMPLEMENTED(2288);
-  return Local<Value>();
+  V8_CALL_TRACE();
+  const JerryValue* module = reinterpret_cast<const JerryValue*>(this);
+
+  jerry_value_t result = jerry_module_get_namespace(module->value());
+
+  RETURN_HANDLE(Value, Isolate::GetCurrent(), new JerryValue(result));
 }
 
 Local<UnboundModuleScript> Module::GetUnboundModuleScript() {
-  UNIMPLEMENTED(2298);
-  return Local<UnboundModuleScript>();
+  V8_CALL_TRACE();
+  RETURN_HANDLE(UnboundModuleScript, Isolate::GetCurrent(), new JerryValue(jerry_create_object()));
 }
 
 int Module::GetIdentityHash() const {
@@ -759,15 +836,107 @@ int Module::GetIdentityHash() const {
   return (int)module->value();
 }
 
+struct InstantiateModuleCallbackData {
+    v8::Module::ResolveCallback callback;
+    v8::Isolate *isolate;
+    JerryValue* context;
+};
+
+jerry_value_t InstantiateModuleCallback(const jerry_value_t jspecifier,
+                                        const jerry_value_t jreferrer,
+                                        void *user_p) {
+  InstantiateModuleCallbackData* callbackData = reinterpret_cast<InstantiateModuleCallbackData*>(user_p);
+
+  v8::HandleScope handle_scope(callbackData->isolate);
+
+  JerryValueNoRelease specifier(jspecifier);
+  JerryValueNoRelease referrer(jreferrer);
+
+  MaybeLocal<Module> result = callbackData->callback(callbackData->context->AsLocal<v8::Context>(),
+                                                     specifier.AsLocal<v8::String>(),
+                                                     referrer.AsLocal<v8::Module>());
+
+  Local<Module> module;
+  if (result.ToLocal(&module)) {
+      return jerry_acquire_value (reinterpret_cast<JerryValue*>(*module)->value());
+  }
+
+  JerryIsolate* isolate = JerryIsolate::fromV8(callbackData->isolate);
+
+  if (isolate->HasError()) {
+      return jerry_create_error_from_value(isolate->TakeError(), true);
+  }
+
+  return jerry_create_error(JERRY_ERROR_RANGE, reinterpret_cast<const jerry_char_t *>("No module instantiated"));
+}
+
 Maybe<bool> Module::InstantiateModule(Local<Context> context,
                                       Module::ResolveCallback callback) {
   V8_CALL_TRACE();
-  return Just(true);
+
+  const JerryValue* module = reinterpret_cast<const JerryValue*>(this);
+  ModuleData* data;
+
+  if (jerry_get_object_native_pointer(module->value(), reinterpret_cast<void**>(&data), &ModuleTypeInfo)) {
+      InstantiateModuleCallbackData callbackData;
+      callbackData.callback = callback;
+      callbackData.isolate = Isolate::GetCurrent();
+      callbackData.context = reinterpret_cast<JerryValue*>(*context);
+
+      jerry_value_t result = jerry_module_link(module->value(), InstantiateModuleCallback, reinterpret_cast<void*>(&callbackData));
+
+      if (!jerry_value_is_error(result))
+      {
+          jerry_release_value(result);
+          return Just(true);
+      }
+
+      jerry_release_value(data->error);
+      data->error = result;
+  }
+
+  return Just(false);
 }
 
 MaybeLocal<Value> Module::Evaluate(Local<Context> context) {
   V8_CALL_TRACE();
-  RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(jerry_create_undefined()));
+
+  const JerryValue* module = reinterpret_cast<const JerryValue*>(this);
+  ModuleData* data;
+  jerry_value_t result;
+
+  if (jerry_get_object_native_pointer(module->value(), reinterpret_cast<void**>(&data), &ModuleTypeInfo)) {
+      jerry_module_state_t state = jerry_module_get_state(module->value());
+
+      if (state == JERRY_MODULE_STATE_EVALUATING || state == JERRY_MODULE_STATE_EVALUATED)
+      {
+          RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(jerry_create_undefined()));
+      }
+
+      if (state == JERRY_MODULE_STATE_ERROR)
+      {
+          result = jerry_create_error_from_value(data->error, false);
+      }
+      else
+      {
+          result = jerry_module_evaluate(module->value());
+
+          if (!jerry_value_is_error(result))
+          {
+              RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(result));
+          }
+
+          jerry_release_value(data->error);
+          data->error = jerry_get_value_from_error(result, false);
+      }
+  } else {
+      //Workaround for synthetic modules
+      //result = jerry_create_error(JERRY_ERROR_RANGE, reinterpret_cast<const jerry_char_t *>("Not a module"));
+      RETURN_HANDLE(Value, context->GetIsolate(), new JerryValue(jerry_create_undefined()));
+  }
+
+  JerryIsolate::GetCurrent()->SetError(result);
+  return MaybeLocal<Value>();
 }
 
 Local<Module> Module::CreateSyntheticModule(
@@ -907,11 +1076,26 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
   parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
   parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
 
-  jerry_value_t scriptFunction = jerry_parse((const jerry_char_t*)*text,
-                                             text.length(),
-                                             &parse_options);
+  jerry_value_t module = jerry_parse((const jerry_char_t*)*text, text.length(), &parse_options);
 
-  JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
+  JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), module);
+
+  if (result != NULL)
+  {
+      size_t requestsLength = jerry_module_get_number_of_requests(module);
+      size_t size = sizeof(ModuleData) + requestsLength * sizeof(jerry_value_t);
+
+      ModuleData* data = reinterpret_cast<ModuleData*>(malloc(size));
+      data->error = jerry_create_undefined();
+      data->requestsLength = requestsLength;
+
+      for (size_t i = 0; i < requestsLength; i++) {
+          data->requests[i] = jerry_module_get_request(module, i);
+      }
+
+      jerry_set_object_native_pointer(module, data, &ModuleTypeInfo);
+  }
+
   RETURN_HANDLE(Module, isolate, result);
 }
 
