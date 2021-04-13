@@ -22,9 +22,42 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     this->InitializeJerryIsolate(params);
 }
 
-static void error_object_created_callback(const jerry_value_t error_object, void *user_p) {
+static void ErrorObjectCreatedCallback(const jerry_value_t error_object, void *user_p) {
     (void) user_p;
     CreateStackTrace(error_object, NULL);
+}
+
+struct ModuleErrorData {
+    jerry_value_t error;
+};
+
+void ModuleErrorDataFree(void* native_p, jerry_object_native_info_t* info_p) {
+    ModuleErrorData* data = reinterpret_cast<ModuleErrorData*>(native_p);
+
+    jerry_native_pointer_release_references (native_p, info_p);
+    delete data;
+}
+
+static jerry_object_native_info_t ModuleErrorInfo = {
+    .free_cb = ModuleErrorDataFree,
+    .number_of_references = 1,
+    .offset_of_references = 0,
+};
+
+void MduleStateChangedCallback(jerry_module_state_t new_state, const jerry_value_t module,
+                               const jerry_value_t value, void *user_p) {
+    (void) user_p;
+
+    if (new_state != JERRY_MODULE_STATE_ERROR)
+    {
+        return;
+    }
+
+    ModuleErrorData* data = new ModuleErrorData;
+
+    jerry_native_pointer_init_references (reinterpret_cast<void*>(data), &ModuleErrorInfo);
+    jerry_set_object_native_pointer(module, reinterpret_cast<void*>(data), &ModuleErrorInfo);
+    jerry_native_pointer_set_reference (&data->error, value);
 }
 
 void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& params) {
@@ -81,7 +114,8 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 
     InjectGlobalFunctions();
 
-    jerry_set_error_object_created_callback (error_object_created_callback, NULL);
+    jerry_set_error_object_created_callback (ErrorObjectCreatedCallback, NULL);
+    jerry_module_set_state_changed_callback (MduleStateChangedCallback, NULL);
 
 #if (defined JERRY_DEBUGGER && JERRY_DEBUGGER)
     bool protocol = jerryx_debugger_tcp_create (5001);
@@ -419,12 +453,25 @@ JerryObjectTemplate* JerryIsolate::HiddenObjectTemplate(void) {
     return m_hidden_object_template;
 }
 
+jerry_value_t JerryIsolate::GetModuleException(jerry_value_t module)
+{
+    ModuleErrorData* data;
+
+    if (jerry_get_object_native_pointer(module, reinterpret_cast<void**>(&data), &ModuleErrorInfo)) {
+        return jerry_acquire_value(data->error);
+    }
+
+    return jerry_create_undefined();
+}
+
 struct PromiseData {
     jerry_value_t await_promise;
     jerry_value_t job_promise;
 };
 
-void PromiseDataFree(void *native_p) {
+void PromiseDataFree(void* native_p, jerry_object_native_info_t* info_p) {
+    (void) info_p;
+
     PromiseData* data = reinterpret_cast<PromiseData*>(native_p);
     jerry_release_value(data->await_promise);
     jerry_release_value(data->job_promise);
@@ -433,6 +480,8 @@ void PromiseDataFree(void *native_p) {
 
 static jerry_object_native_info_t PromiseDataTypeInfo = {
     .free_cb = PromiseDataFree,
+    .number_of_references = 0,
+    .offset_of_references = 0,
 };
 
 #define PROMISE_HOOK_FILTERS (JERRY_PROMISE_EVENT_FILTER_MAIN \

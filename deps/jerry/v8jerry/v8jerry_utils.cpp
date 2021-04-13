@@ -152,10 +152,12 @@ struct StackFrame {
 };
 
 struct StackData {
-  std::vector<StackFrame> frames;
+    std::vector<StackFrame> frames;
 };
 
-void StackDataFree(void *native_p) {
+void StackDataFree(void* native_p, jerry_object_native_info_t* info_p) {
+    (void) info_p;
+
     StackData* data = reinterpret_cast<StackData*>(native_p);
 
     std::vector<StackFrame>::iterator end = data->frames.end();
@@ -168,6 +170,8 @@ void StackDataFree(void *native_p) {
 
 static jerry_object_native_info_t StackDataTypeInfo = {
     .free_cb = StackDataFree,
+    .number_of_references = 0,
+    .offset_of_references = 0,
 };
 
 static jerry_value_t JerryHandlerStackTraceGetter(const jerry_call_info_t *call_info_p,
@@ -218,7 +222,7 @@ static jerry_value_t JerryHandlerStackTraceGetter(const jerry_call_info_t *call_
     jerry_release_value(line_string);
     jerry_release_value(resource_string);
 
-    StackDataFree(native_p);
+    StackDataFree(native_p, NULL);
 
     JerryIsolate* isolate = JerryIsolate::GetCurrent();
     v8::PrepareStackTraceCallback callback = isolate->PrepareStackTraceCallback();
@@ -264,7 +268,7 @@ static jerry_value_t JerryHandlerStackTraceSetter(const jerry_call_info_t *call_
     void *native_p;
     if (jerry_get_object_native_pointer(getter_value, &native_p, &StackDataTypeInfo)) {
         jerry_delete_object_native_pointer(getter_value, &StackDataTypeInfo);
-        StackDataFree(native_p);
+        StackDataFree(native_p, NULL);
     }
 
     jerry_value_t value_string = jerry_create_string((const jerry_char_t*)"value");

@@ -54,8 +54,10 @@ void JerryTemplate::InstallProperties(const jerry_value_t target) {
 jerry_value_t JerryV8GetterSetterHandler(
     const jerry_value_t function_obj, const jerry_value_t this_val, const jerry_value_t args_p[], const jerry_length_t args_cnt);
 
-static void JerryV8GetterSetterHandlerDataFree(void *data_p) {
-    JerryV8GetterSetterHandlerData* data = reinterpret_cast<JerryV8GetterSetterHandlerData*>(data_p);
+static void JerryV8GetterSetterHandlerDataFree(void* native_p, jerry_object_native_info_t* info_p) {
+    (void) info_p;
+
+    JerryV8GetterSetterHandlerData* data = reinterpret_cast<JerryV8GetterSetterHandlerData*>(native_p);
 
     if (data->is_setter == false && data->external) {
         jerry_release_value(data->external);
@@ -67,6 +69,8 @@ static void JerryV8GetterSetterHandlerDataFree(void *data_p) {
 /* static */
 jerry_object_native_info_t JerryV8GetterSetterHandlerData::TypeInfo = {
     .free_cb = JerryV8GetterSetterHandlerDataFree,
+    .number_of_references = 0,
+    .offset_of_references = 0,
 };
 
 /* static */
@@ -153,8 +157,10 @@ void JerryObjectTemplate::SetProxyHandler(const v8::NamedPropertyHandlerConfigur
     }
 }
 
-static void JerryV8ProxyHandlerDataFree(void *data_p) {
-    JerryV8ProxyHandlerData* data = reinterpret_cast<JerryV8ProxyHandlerData*>(data_p);
+static void JerryV8ProxyHandlerDataFree(void* native_p, jerry_object_native_info_t* info_p) {
+    (void) info_p;
+
+    JerryV8ProxyHandlerData* data = reinterpret_cast<JerryV8ProxyHandlerData*>(native_p);
 
     if (--data->configuration->ref_count == 0) {
         delete data->configuration;
@@ -165,6 +171,8 @@ static void JerryV8ProxyHandlerDataFree(void *data_p) {
 
 jerry_object_native_info_t JerryV8ProxyHandlerData::TypeInfo = {
     .free_cb = JerryV8ProxyHandlerDataFree,
+    .number_of_references = 0,
+    .offset_of_references = 0,
 };
 
 static jerry_value_t BuildProxyHandlerMethod(JerryV8ProxyHandlerConfiguration* proxy_handler,
@@ -240,8 +248,10 @@ JerryObjectTemplate* JerryFunctionTemplate::InstanceTemplate(void) {
     return m_instance_template;
 }
 
-static void JerryV8FunctionHandlerDataFree(void* data) {
-    JerryV8FunctionHandlerData* function_handler = reinterpret_cast<JerryV8FunctionHandlerData*>(data);
+static void JerryV8FunctionHandlerDataFree(void* native_p, jerry_object_native_info_t* info_p) {
+    (void) info_p;
+
+    JerryV8FunctionHandlerData* function_handler = reinterpret_cast<JerryV8FunctionHandlerData*>(native_p);
 
     if (--function_handler->ref_count == 0) {
         delete function_handler;
@@ -250,6 +260,8 @@ static void JerryV8FunctionHandlerDataFree(void* data) {
 
 jerry_object_native_info_t JerryV8FunctionHandlerData::TypeInfo = {
     .free_cb = JerryV8FunctionHandlerDataFree,
+    .number_of_references = 0,
+    .offset_of_references = 0,
 };
 
 /* TODO: (elecro) remove after correct _callback include */

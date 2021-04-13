@@ -34,10 +34,10 @@ namespace v8 {
     };
 }
 
-static void JerryV8WeakCallback(void* data);
+static void JerryV8WeakCallback(void* native_p, jerry_object_native_info_t* info_p);
 
 class JerryHandle {
-    friend void JerryV8WeakCallback(void* data);
+    friend void JerryV8WeakCallback(void* native_p, jerry_object_native_info_t* info_p);
 public:
     enum Type {
         Context,

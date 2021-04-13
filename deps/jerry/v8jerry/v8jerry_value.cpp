@@ -3,26 +3,34 @@
 #include "v8jerry_isolate.hpp"
 #include "assert.h"
 
-static void JerryV8InternalFieldDataFree(void *data) {
-    delete reinterpret_cast<JerryV8InternalFieldData*>(data);
+static void JerryV8InternalFieldDataFree(void* native_p, jerry_object_native_info_t* info_p) {
+    (void) info_p;
+
+    delete reinterpret_cast<JerryV8InternalFieldData*>(native_p);
 }
 
 static jerry_object_native_info_t JerryV8InternalFieldTypeInfo = {
     .free_cb = JerryV8InternalFieldDataFree,
+    .number_of_references = 0,
+    .offset_of_references = 0,
 };
 
 static jerry_object_native_info_t JerryV8ExternalTypeInfo = {
     .free_cb = NULL,
 };
 
-static void JerryV8BackingStoreCallback(void* data) {
-    if (data != NULL) {
-        delete static_cast<JerryBackingStore*>(data);
+static void JerryV8BackingStoreCallback(void* native_p, jerry_object_native_info_t* info_p) {
+    (void) info_p;
+
+    if (native_p != NULL) {
+        delete static_cast<JerryBackingStore*>(native_p);
     }
 };
 
 static jerry_object_native_info_t JerryV8BackingStoreInfo = {
     .free_cb = JerryV8BackingStoreCallback,
+    .number_of_references = 0,
+    .offset_of_references = 0,
 };
 
 bool JerryValue::SetProperty(JerryValue* key, JerryValue* value) {
@@ -178,12 +186,16 @@ struct JerryV8ContextData {
     std::vector<void*> embedderData;
 };
 
-static void JerryV8ContextDataFree(void *data) {
-    delete reinterpret_cast<JerryV8ContextData*>(data);
+static void JerryV8ContextDataFree(void* native_p, jerry_object_native_info_t* info_p) {
+    (void) info_p;
+
+    delete reinterpret_cast<JerryV8ContextData*>(native_p);
 }
 
 static jerry_object_native_info_t JerryV8ContextTypeInfo = {
     .free_cb = JerryV8ContextDataFree,
+    .number_of_references = 0,
+    .offset_of_references = 0,
 };
 
 /* static */
@@ -346,8 +358,10 @@ JerryValue* JerryValue::TryCreateValue(JerryIsolate* iso, jerry_value_t value) {
     }
 }
 
-static void JerryV8WeakCallback(void* data) {
-    JerryV8WeakReference* weak_ref = reinterpret_cast<JerryV8WeakReference*>(data);
+static void JerryV8WeakCallback(void* native_p, jerry_object_native_info_t* info_p) {
+    (void) info_p;
+
+    JerryV8WeakReference* weak_ref = reinterpret_cast<JerryV8WeakReference*>(native_p);
 
     while (weak_ref != NULL) {
         void* parameter = parameter = weak_ref->data;
@@ -369,6 +383,8 @@ static void JerryV8WeakCallback(void* data) {
 
 static jerry_object_native_info_t JerryV8WeakReferenceInfo = {
     .free_cb = JerryV8WeakCallback,
+    .number_of_references = 0,
+    .offset_of_references = 0,
 };
 
 void JerryValue::MakeWeak(v8::WeakCallbackInfo<void>::Callback weak_callback, v8::WeakCallbackType type, void* data) {
