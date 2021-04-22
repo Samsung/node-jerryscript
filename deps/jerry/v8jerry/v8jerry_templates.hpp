@@ -255,15 +255,16 @@ struct JerryV8FunctionHandlerData {
 
 class JerryFunctionTemplate : public JerryTemplate {
 public:
-    JerryFunctionTemplate()
+    JerryFunctionTemplate(v8::ConstructorBehavior behavior)
         : JerryTemplate(FunctionTemplate)
         , m_prototype_template(NULL)
         , m_instance_template(NULL)
         , m_proto_template(NULL)
-        , m_prototype(jerry_create_null())
+        , m_prototype(jerry_create_undefined())
         , m_external(jerry_create_undefined())
         , m_function(NULL)
         , m_signature(NULL)
+        , m_constructor_behavior(behavior)
     {
     }
 
@@ -293,6 +294,7 @@ public:
     JerryObjectTemplate* InstanceTemplate(void);
     JerryValue* GetFunction(void);
     jerry_value_t GetPrototype(void);
+    bool IsConstructable(void) { return m_constructor_behavior == v8::ConstructorBehavior::kAllow; }
     void SetFunctionHandlerData(jerry_value_t object);
 
 private:
@@ -304,6 +306,7 @@ private:
     jerry_value_t m_external;
     JerryValue* m_function;
     JerryHandle* m_signature;
+    v8::ConstructorBehavior m_constructor_behavior;
 };
 
 #endif /* V8JERRY_TEMPLATES_HPP */

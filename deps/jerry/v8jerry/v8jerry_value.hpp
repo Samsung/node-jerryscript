@@ -162,7 +162,6 @@ public:
 
     bool SetProperty(JerryValue* key, JerryValue* value);
     bool SetPrivateProperty(JerryValue* key, JerryValue* value);
-    bool SetPropertyIdx(uint32_t idx, JerryValue* value);
 
     JerryValue* GetProperty(JerryValue* key);
     JerryValue* GetPrivateProperty(JerryValue* key);
@@ -199,7 +198,7 @@ public:
     bool IsRegExp() const { return false; }
     bool IsSharedArrayBuffer() const { return false; }
     bool IsAsyncFunction() const { return false; }
-    bool IsNativeError() const { return false; }
+    bool IsNativeError() const { return jerry_get_error_type(m_value) != JERRY_ERROR_NONE; }
     bool IsModuleNameSpaceObject() const { return false; }
     bool IsBigInt() const { return false; }
     bool IsArrayBufferView() const { return jerry_value_is_typedarray(m_value) || jerry_value_is_dataview(m_value); }

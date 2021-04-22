@@ -46,15 +46,6 @@ bool JerryValue::SetPrivateProperty(JerryValue* key, JerryValue* value) {
     return jerry_set_internal_property (m_value, key->value(), value->value());
 }
 
-bool JerryValue::SetPropertyIdx(uint32_t idx, JerryValue* value) {
-    // TODO: NULL check assert for value
-    jerry_value_t result = jerry_set_property_by_index(m_value, idx, value->value());
-    bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
-    jerry_release_value(result);
-
-    return isOk;
-}
-
 JerryValue* JerryValue::GetProperty(JerryValue* key) {
     jerry_value_t prop = jerry_get_property(m_value, key->value());
     return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);

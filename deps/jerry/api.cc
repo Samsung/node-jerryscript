@@ -498,7 +498,7 @@ Local<FunctionTemplate> FunctionTemplate::New(
     SideEffectType side_effect_type, const CFunction*) {
   V8_CALL_TRACE();
   // TODO: handle the other args
-  JerryFunctionTemplate* func = new JerryFunctionTemplate();
+  JerryFunctionTemplate* func = new JerryFunctionTemplate(behavior);
   reinterpret_cast<FunctionTemplate*>(func)->SetCallHandler(callback, data);
   if (!signature.IsEmpty()) {
       func->SetSignature(reinterpret_cast<JerryHandle*>(*signature));
@@ -2090,15 +2090,36 @@ Maybe<bool> Value::InstanceOf(v8::Local<v8::Context> context,
 Maybe<bool> v8::Object::Set(v8::Local<v8::Context> context,
                             v8::Local<Value> key, v8::Local<Value> value) {
   V8_CALL_TRACE();
-  return Just(reinterpret_cast<JerryValue*>(this)->SetProperty(
-                  reinterpret_cast<JerryValue*>(*key),
-                  reinterpret_cast<JerryValue*>(*value)));
+  jerry_value_t jobject = reinterpret_cast<JerryValue*>(this)->value();
+  jerry_value_t jkey = reinterpret_cast<JerryValue*>(*key)->value();
+  jerry_value_t jvalue = reinterpret_cast<JerryValue*>(*value)->value();
+
+  jerry_value_t result = jerry_set_property(jobject, jkey, jvalue);
+
+  if (!jerry_value_is_error(result)) {
+      jerry_release_value(result);
+      return Just(true);
+  }
+
+  JerryIsolate::fromV8(context->GetIsolate())->SetError(result);
+  return Nothing<bool>();
 }
 
 Maybe<bool> v8::Object::Set(v8::Local<v8::Context> context, uint32_t index,
                             v8::Local<Value> value) {
   V8_CALL_TRACE();
-  return Just(reinterpret_cast<JerryValue*>(this)->SetPropertyIdx(index, reinterpret_cast<JerryValue*>(*value)));
+  jerry_value_t jobject = reinterpret_cast<JerryValue*>(this)->value();
+  jerry_value_t jvalue = reinterpret_cast<JerryValue*>(*value)->value();
+
+  jerry_value_t result = jerry_set_property_by_index(jobject, index, jvalue);
+
+  if (!jerry_value_is_error(result)) {
+      jerry_release_value(result);
+      return Just(true);
+  }
+
+  JerryIsolate::fromV8(context->GetIsolate())->SetError(result);
+  return Nothing<bool>();
 }
 
 /* PropertyDescriptor */
@@ -2790,6 +2811,10 @@ int String::WriteOneByte(Isolate* isolate, uint8_t* buffer, int start,
 
   jerry_size_t str_length = jerry_get_string_length(jvalue->value());
 
+  if (length < 0) {
+      length = str_length;
+  }
+
   if (start >= str_length || length <= 0) {
       return 0;
   }
@@ -2832,6 +2857,10 @@ int String::Write(Isolate* isolate, uint16_t* buffer, int start, int length,
   const JerryValue* jvalue = reinterpret_cast<const JerryValue*>(this);
 
   jerry_size_t str_length = jerry_get_string_length(jvalue->value());
+
+  if (length < 0) {
+      length = str_length;
+  }
 
   if (start >= str_length || length <= 0) {
       return 0;

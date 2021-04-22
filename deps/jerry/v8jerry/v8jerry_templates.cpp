@@ -295,9 +295,6 @@ JerryValue* JerryFunctionTemplate::GetFunction(void) {
         m_prototype = jerry_create_object();
         m_prototype_template->InstallProperties(m_prototype);
 
-        JerryValue proto_string(jerry_create_string((const jerry_char_t*)"prototype"));
-        jerry_release_value (jerry_set_property(m_function->value(), proto_string.value(), m_prototype));
-
         jerry_property_descriptor_t desc;
         desc.flags = (JERRY_PROP_IS_VALUE_DEFINED
                       | JERRY_PROP_IS_CONFIGURABLE_DEFINED
@@ -317,6 +314,9 @@ JerryValue* JerryFunctionTemplate::GetFunction(void) {
             jerry_set_prototype (m_prototype, m_proto_template->GetPrototype());
         }
     }
+
+    JerryValue proto_string(jerry_create_string((const jerry_char_t*)"prototype"));
+    jerry_release_value (jerry_set_property(m_function->value(), proto_string.value(), m_prototype));
 
     return m_function;
 }

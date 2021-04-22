@@ -237,9 +237,7 @@ jerry_value_t JerryV8FunctionHandler(
     bool has_data = jerry_get_object_native_pointer(call_info_p->function, &native_p, &JerryV8FunctionHandlerData::TypeInfo);
 
     if (!has_data) {
-        fprintf(stderr, "ERRR.... should not be here!(%s:%d)\n", __FILE__, __LINE__);
-        abort();
-        return jerry_create_error(JERRY_ERROR_REFERENCE, (const jerry_char_t*)"BAD!!");
+        return jerry_create_error(JERRY_ERROR_REFERENCE, (const jerry_char_t*)"Invalid handler");
     }
     JerryV8FunctionHandlerData* data = reinterpret_cast<JerryV8FunctionHandlerData*>(native_p);
 
@@ -248,6 +246,10 @@ jerry_value_t JerryV8FunctionHandler(
 
     // If this is a constructor call do a few extra things
     if (!jerry_value_is_undefined(call_info_p->new_target)) {
+        if (!data->function_template->IsConstructable()) {
+            return jerry_create_error(JERRY_ERROR_TYPE, (const jerry_char_t*)"Function is not a constructor");
+        }
+
         if (!jerry_get_object_native_pointer(call_info_p->this_value, NULL, &JerryV8FunctionHandlerData::TypeInfo)) {
             // Add reference to the function template
             if (data->function_template->HasInstanceTemplate()) {
