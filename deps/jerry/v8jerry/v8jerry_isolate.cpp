@@ -13,7 +13,8 @@
 #include "v8jerry_templates.hpp"
 #include "v8jerry_utils.hpp"
 
-JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
+//static __thread JerryIsolate* s_currentIsolate = nullptr;
+static JerryIsolate* s_currentIsolate = nullptr;
 
 JerryIsolate::JerryIsolate() {
 }
@@ -87,11 +88,29 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_magic_string_stack = new JerryValue(jerry_create_string((const jerry_char_t*) "stack"));
 
     char *call_site_prototype = "({"
-                                "  getLineNumber() { return this.line__ },"
-                                "  getColumnNumber() { return 1 },"
-                                "  getFileName() { return this.resource__ },"
-                                "  getFunctionName() { return (this.function__ && this.function__.name) ? new String(this.function__.name) : null },"
-                                "  toString() { return this.resource__ + ':' + this.line__ + ':1' },"
+                                "  getLineNumber() { return this.line__ },\n"
+                                "  getColumnNumber() { return 1 },\n"
+                                "  getFileName() { return this.resource__ },\n"
+                                "  getFunctionName() {\n"
+                                "    return (this.function__ && this.function__.name) ? new String(this.function__.name) : null\n"
+                                "  },\n"
+                                "  toString() {\n"
+                                "    var pre = '', post = ''\n"
+                                "    try {\n"
+                                "      if (this.function__) {\n"
+                                "        pre = this.function__.name\n"
+                                "        if (pre) {\n"
+                                "          pre += ' ('\n"
+                                "          post = ')'\n"
+                                "        } else {\n"
+                                "          pre = ''\n"
+                                "        }\n"
+                                "      }\n"
+                                "    } catch {\n"
+                                "      pre = ''\n"
+                                "    }\n"
+                                "    return pre + this.resource__ + ':' + this.line__ + ':1' + post\n"
+                                "  },"
                                 "})";
     m_call_site_prototype = new JerryValue(jerry_eval((jerry_char_t*)call_site_prototype, strlen(call_site_prototype), 0));
 
@@ -124,12 +143,12 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 }
 
 void JerryIsolate::Enter(void) {
-    JerryIsolate::s_currentIsolate = this;
+    s_currentIsolate = this;
 }
 
 void JerryIsolate::Exit(void) {
     if (m_contexts.size() == 0) {
-        JerryIsolate::s_currentIsolate = NULL;
+        s_currentIsolate = NULL;
     }
 }
 
@@ -274,7 +293,6 @@ void JerryIsolate::PushContext(JerryValue* context) {
     // return the current context if needed.
     jerry_value_t old_realm = jerry_set_realm(context->value());
     m_contexts.push_back(std::pair<JerryValue*, jerry_value_t>(context, old_realm));
-    JerryIsolate::s_currentIsolate = this;
 }
 
 void JerryIsolate::PopContext() {
@@ -357,7 +375,7 @@ void JerryIsolate::ReportFatalError(const char* location, const char* message) {
 }
 
 JerryIsolate* JerryIsolate::GetCurrent(void) {
-    return JerryIsolate::s_currentIsolate;
+    return s_currentIsolate;
 }
 
 void JerryIsolate::InitalizeSlots(void) {

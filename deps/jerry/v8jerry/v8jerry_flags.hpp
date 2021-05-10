@@ -5,8 +5,10 @@
     F(BOOL, expose_gc, false) \
     F(BOOL, use_strict, false) \
     F(BOOL, abort_on_uncaught_exception, false) \
+    F(BOOL, stress_compaction, false) \
     F(BOOL, harmony_weak_refs, false) \
-    F(INT, stack_size, 4096)
+    F(INT, stack_size, 4096) \
+    F(INT, gc_interval, 0)
 
 struct Flag {
     enum Type {

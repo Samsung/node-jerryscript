@@ -201,8 +201,6 @@ private:
     bool m_autorun_tasks;
 
     std::vector<JerryValue*> m_micro_tasks;
-
-    static JerryIsolate* s_currentIsolate;
 };
 
 #endif /* V8JERRY_ISOLATE_HPP */
