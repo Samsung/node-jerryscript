@@ -58,7 +58,7 @@ public:
     void SetError(const jerry_value_t error_value);
     void RestoreError(JerryValue* error);
     void SetGlobalError(JerryValue* error) { m_global_error = error; }
-    void ProcessError(bool force);
+    void ProcessError(bool is_verbose);
     void SetErrorVerbose(bool value);
     void IncTryDepth() { m_try_depth++; }
     void DecTryDepth() { m_try_depth--; }

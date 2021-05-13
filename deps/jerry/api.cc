@@ -1020,14 +1020,6 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
     NoCacheReason no_cache_reason) {
   V8_CALL_TRACE();
 
-  if (options == CompileOptions::kConsumeCodeCache) {
-      String::Utf8Value text(v8_isolate, source->source_string);
-      CachedData* data = source->cached_data;
-      if (data->length != text.length() || memcmp(data->data, (const uint8_t*) *text, text.length())) {
-          data->rejected = true;
-      }
-  }
-
   Local<String> file;
 
   if (source->resource_name.IsEmpty()) {
@@ -1042,6 +1034,13 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
 
   String::Utf8Value file_name(v8_isolate, file);
   String::Utf8Value source_string(v8_isolate, source->source_string);
+
+  if (options == CompileOptions::kConsumeCodeCache) {
+      CachedData* data = source->cached_data;
+      if (data->length != source_string.length() || memcmp(data->data,  reinterpret_cast<void*>(*source_string), data->length) != 0) {
+          data->rejected = true;
+      }
+  }
 
   size_t file_name_length = (size_t)file_name.length();
   size_t source_string_length = (size_t)source_string.length();
@@ -1086,6 +1085,10 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
 
   jerry_value_t result = jerry_create_object();
   jerry_set_object_native_pointer(result, unboundScriptData, &unboundScriptInfo);
+
+  if (options != CompileOptions::kConsumeCodeCache) {
+      source->cached_data = new CachedData(unboundScriptData->source, unboundScriptData->source_length);
+  }
 
   RETURN_HANDLE(UnboundScript, v8_isolate, new JerryValue(result));
 }
@@ -1231,7 +1234,20 @@ uint32_t ScriptCompiler::CachedDataVersionTag() {
 ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCache(
     Local<UnboundScript> unbound_script) {
   V8_CALL_TRACE();
-  return new CachedData();
+
+  JerryValue* script = reinterpret_cast<JerryValue*>(*unbound_script);
+
+  UnboundScriptData* unboundScriptData;
+  jerry_get_object_native_pointer(script->value(), (void**)&unboundScriptData, &unboundScriptInfo);
+
+  size_t source_length = unboundScriptData->source_length;
+  uint8_t* data = NULL;
+  if (source_length > 0) {
+      data = new jerry_char_t[source_length];
+      memcpy(data, unboundScriptData->source, source_length);
+  }
+
+  return new CachedData(data, source_length, CachedData::BufferOwned);
 }
 
 ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCache(
@@ -1308,6 +1324,7 @@ v8::TryCatch::~TryCatch() {
 
       if (is_verbose_) {
           isolate->ProcessError(true);
+          return;
       }
   }
 
@@ -1383,7 +1400,7 @@ void v8::TryCatch::SetVerbose(bool value) {
 
 bool v8::TryCatch::IsVerbose() const {
   V8_CALL_TRACE();
-    return is_verbose_;
+  return is_verbose_;
 }
 
 Local<String> Message::Get() const {
@@ -2302,12 +2319,16 @@ Maybe<bool> v8::Object::DefineProperty(v8::Local<v8::Context> context,
   }
 
   jerry_value_t result = jerry_define_own_property(jobject->value(), jname->value(), &prop_desc);
-  bool property_set = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
-  jerry_release_value(result);
-
   jerry_property_descriptor_free(&prop_desc);
 
-  return Just(property_set);
+  if (!jerry_value_is_error(result))
+  {
+      jerry_release_value(result);
+      return Just(true);
+  }
+
+  JerryIsolate::fromV8(context->GetIsolate())->SetError(result);
+  return Nothing<bool>();
 }
 
 Maybe<bool> v8::Object::SetPrivate(Local<Context> context, Local<Private> key,

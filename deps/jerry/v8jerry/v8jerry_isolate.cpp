@@ -250,12 +250,13 @@ void JerryIsolate::SetError(const jerry_value_t error_value) {
 }
 
 void JerryIsolate::RestoreError(JerryValue* error) {
-    if (error == NULL) {
-        return;
-    }
-
     if (HasError()) {
         jerry_release_value(GetError());
+    }
+
+    if (error == NULL) {
+        m_has_current_error = false;
+        return;
     }
 
     m_has_current_error = true;
@@ -264,14 +265,18 @@ void JerryIsolate::RestoreError(JerryValue* error) {
     JerryValue::DeleteValueWithoutRelease(error);
 }
 
-void JerryIsolate::ProcessError(bool force) {
-    if (!force && (m_last_try_catch != NULL || m_try_depth > 0)) {
+void JerryIsolate::ProcessError(bool is_verbose) {
+    if (!is_verbose && m_last_try_catch == NULL && m_try_depth > 0) {
         return;
     }
 
     if (Flag::Get(Flag::abort_on_uncaught_exception)->u.bool_value
             && (m_abortOnUncaughtExceptionCallback == NULL || m_abortOnUncaughtExceptionCallback(toV8(this)))) {
         abort();
+    }
+
+    if (!is_verbose && m_last_try_catch != NULL) {
+        return;
     }
 
     // Move the error

@@ -238,12 +238,14 @@ static jerry_value_t JerryHandlerStackTraceGetter(const jerry_call_info_t *call_
     JerryValue jerry_sites(value_result);
     v8::Local<v8::Array> sites = jerry_sites.AsLocal<v8::Array>();
 
+    v8::TryCatch try_catch(JerryIsolate::toV8(isolate));
+
     v8::MaybeLocal<v8::Value> result = callback(context, error, sites);
 
     jerry_value_t final_result;
 
-    if (isolate->HasError()) {
-        final_result = jerry_create_error_from_value(isolate->TakeError(), true);
+    if (try_catch.HasCaught()) {
+        final_result = reinterpret_cast<JerryValue*>(*try_catch.Exception())->value();
     } else if (!result.IsEmpty()) {
         JerryValue* result_value = *reinterpret_cast<JerryValue**>(&result);
         final_result = jerry_acquire_value(result_value->value());
