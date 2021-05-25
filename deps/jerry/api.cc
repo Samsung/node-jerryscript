@@ -3571,13 +3571,13 @@ Promise::PromiseState Promise::State() {
 }
 
 Local<Value> Proxy::GetTarget() {
-  UNIMPLEMENTED(7157);
-  return Local<Value>();
+  jerry_value_t proxy = reinterpret_cast<JerryValue*>(this)->value();
+  RETURN_HANDLE(Value, GetIsolate(), new JerryValue(jerry_get_proxy_target(proxy)));
 }
 
 Local<Value> Proxy::GetHandler() {
-  UNIMPLEMENTED(7163);
-  return Local<Value>();
+  jerry_value_t proxy = reinterpret_cast<JerryValue*>(this)->value();
+  RETURN_HANDLE(Value, GetIsolate(), new JerryValue(jerry_get_proxy_handler(proxy)));
 }
 
 CompiledWasmModule::CompiledWasmModule(std::shared_ptr<internal::wasm::NativeModule>) {
