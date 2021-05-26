@@ -46,21 +46,6 @@ bool JerryValue::SetPrivateProperty(JerryValue* key, JerryValue* value) {
     return jerry_set_internal_property (m_value, key->value(), value->value());
 }
 
-JerryValue* JerryValue::GetProperty(JerryValue* key) {
-    jerry_value_t prop = jerry_get_property(m_value, key->value());
-    return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);
-}
-
-JerryValue* JerryValue::GetPrivateProperty(JerryValue* key) {
-    jerry_value_t prop = jerry_get_internal_property(m_value, key->value());
-    return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);
-}
-
-JerryValue* JerryValue::GetPropertyIdx(uint32_t idx) {
-    jerry_value_t prop = jerry_get_property_by_index(m_value, idx);
-    return JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), prop);
-}
-
 bool JerryValue::SetInternalProperty(JerryValue* key, JerryValue* value) {
     return jerry_set_internal_property(m_value, key->value(), value->value());
 }
@@ -339,14 +324,12 @@ int JerryValue::InternalFieldCount(void) {
 }
 
 /* static */
-JerryValue* JerryValue::TryCreateValue(JerryIsolate* iso, jerry_value_t value) {
+JerryValue* JerryValue::TryCreateValue(v8::Isolate* isolate, jerry_value_t value) {
     if (V8_UNLIKELY(jerry_value_is_error(value))) {
-        iso->SetError(value);
-
+        JerryIsolate::fromV8(isolate)->SetError(value);
         return NULL;
-    } else {
-        return new JerryValue(value);
     }
+    return new JerryValue(value);
 }
 
 static void JerryV8WeakCallback(void* native_p, jerry_object_native_info_t* info_p) {
@@ -423,37 +406,17 @@ void* JerryValue::ClearWeak() {
     return data;
 }
 
-JerryString* JerryValue::ToString(void) const {
-    jerry_value_t string = jerry_value_to_string(m_value);
-
-    if (jerry_value_is_error (string)) {
-        jerry_release_value (string);
-        return NULL;
-    }
-
-    return new JerryString(string, JerryStringType::ONE_BYTE);
-}
-
-JerryValue* JerryValue::ToNumber() const {
+JerryValue* JerryValue::ToInteger(v8::Isolate* isolate) const {
     jerry_value_t number = jerry_value_to_number(m_value);
 
-    if (jerry_value_is_error (number)) {
-        jerry_release_value (number);
+    if (V8_UNLIKELY(jerry_value_is_error(number))) {
+        JerryIsolate::fromV8(isolate)->SetError(number);
         return NULL;
     }
 
-    return new JerryValue(number);
-}
-
-JerryValue* JerryValue::ToObject(void) const {
-    jerry_value_t object = jerry_value_to_object(m_value);
-
-    if (jerry_value_is_error (object)) {
-        jerry_release_value (object);
-        return NULL;
-    }
-
-    return new JerryValue(object);
+    double integer = jerry_value_as_integer(number);
+    jerry_release_value(number);
+    return new JerryValue(jerry_create_number(integer));
 }
 
 namespace v8 {

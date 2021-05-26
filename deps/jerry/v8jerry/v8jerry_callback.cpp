@@ -568,25 +568,28 @@ jerry_value_t JerryV8ProxyHandler(
                 }
             }
 
-            jerry_value_t result;
             jerry_property_descriptor_t prop_desc = jerry_property_descriptor_create();
-            bool status = jerry_get_own_property_descriptor (args_p[0], args_p[1], &prop_desc);
+            jerry_value_t result = jerry_get_own_property_descriptor(args_p[0], args_p[1], &prop_desc);
 
-            if (status) {
-                result = jerry_create_object();
+            if (!jerry_value_is_error (result)) {
+                if (jerry_get_boolean_value(result)) {
+                    jerry_release_value(result);
+                    result = jerry_create_object();
 
-                if (prop_desc.flags & (JERRY_PROP_IS_VALUE_DEFINED | JERRY_PROP_IS_WRITABLE_DEFINED)) {
-                    setPropertyDescriptorHelperBoolean(result, "writable", (prop_desc.flags & JERRY_PROP_IS_WRITABLE) != 0);
-                    setPropertyDescriptorHelper(result, "value", jerry_acquire_value (prop_desc.value));
-                } else if (prop_desc.flags & (JERRY_PROP_IS_GET_DEFINED | JERRY_PROP_IS_SET_DEFINED)) {
-                    setPropertyDescriptorHelper(result, "get", jerry_acquire_value (prop_desc.getter));
-                    setPropertyDescriptorHelper(result, "set", jerry_acquire_value (prop_desc.setter));
+                    if (prop_desc.flags & (JERRY_PROP_IS_VALUE_DEFINED | JERRY_PROP_IS_WRITABLE_DEFINED)) {
+                        setPropertyDescriptorHelperBoolean(result, "writable", (prop_desc.flags & JERRY_PROP_IS_WRITABLE) != 0);
+                        setPropertyDescriptorHelper(result, "value", jerry_acquire_value (prop_desc.value));
+                    } else if (prop_desc.flags & (JERRY_PROP_IS_GET_DEFINED | JERRY_PROP_IS_SET_DEFINED)) {
+                        setPropertyDescriptorHelper(result, "get", jerry_acquire_value (prop_desc.getter));
+                        setPropertyDescriptorHelper(result, "set", jerry_acquire_value (prop_desc.setter));
+                    }
+
+                    setPropertyDescriptorHelperBoolean(result, "configurable", (prop_desc.flags & JERRY_PROP_IS_CONFIGURABLE_DEFINED) != 0);
+                    setPropertyDescriptorHelperBoolean(result, "enumerable", (prop_desc.flags & JERRY_PROP_IS_ENUMERABLE_DEFINED) != 0);
+                } else {
+                    jerry_release_value(result);
+                    result = jerry_create_undefined ();
                 }
-
-                setPropertyDescriptorHelperBoolean(result, "configurable", (prop_desc.flags & JERRY_PROP_IS_CONFIGURABLE_DEFINED) != 0);
-                setPropertyDescriptorHelperBoolean(result, "enumerable", (prop_desc.flags & JERRY_PROP_IS_ENUMERABLE_DEFINED) != 0);
-            } else {
-                result = jerry_create_undefined ();
             }
 
             jerry_property_descriptor_free(&prop_desc);

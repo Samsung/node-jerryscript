@@ -147,7 +147,7 @@ public:
     /* Create a JerryValue if there is no error.
      * If the "value" is an error report it to the Isolate (for try-catch)
      */
-    static JerryValue* TryCreateValue(JerryIsolate* iso, jerry_value_t value);
+    static JerryValue* TryCreateValue(v8::Isolate* isolate, jerry_value_t value);
 
     /* Deletes the value without releasing the internal Jerry value. */
     static void DeleteValueWithoutRelease(JerryValue *value) {
@@ -163,9 +163,6 @@ public:
     bool SetProperty(JerryValue* key, JerryValue* value);
     bool SetPrivateProperty(JerryValue* key, JerryValue* value);
 
-    JerryValue* GetProperty(JerryValue* key);
-    JerryValue* GetPrivateProperty(JerryValue* key);
-    JerryValue* GetPropertyIdx(uint32_t idx);
 
     bool SetInternalProperty(JerryValue* key, JerryValue* value);
     bool HasInternalProperty(JerryValue* key);
@@ -190,20 +187,12 @@ public:
     bool IsTypedArray() const { return jerry_value_is_typedarray(m_value); }
     bool IsArrayBuffer() const { return jerry_value_is_arraybuffer(m_value); }
     bool IsProxy() const { return jerry_value_is_proxy (m_value); }
-    bool IsMap() const { return false; }
-    bool IsMapIterator() const { return false; }
-    bool IsSet() const { return false; }
-    bool IsSetIterator() const { return false; }
-    bool IsDate() const { return false; }
     bool IsRegExp() const { return false; }
     bool IsSharedArrayBuffer() const { return false; }
-    bool IsAsyncFunction() const { return false; }
     bool IsNativeError() const { return jerry_get_error_type(m_value) != JERRY_ERROR_NONE; }
     bool IsModuleNameSpaceObject() const { return false; }
-    bool IsBigInt() const { return false; }
+    bool IsBigInt() const { return jerry_value_is_bigint(m_value); }
     bool IsArrayBufferView() const { return jerry_value_is_typedarray(m_value) || jerry_value_is_dataview(m_value); }
-    bool IsFloat64Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_FLOAT64; }
-    bool IsUint8Array() const { return jerry_value_is_typedarray(m_value) && jerry_get_typedarray_type (m_value) == JERRY_TYPEDARRAY_UINT8; }
     bool IsDataView() const { return jerry_value_is_dataview(m_value); }
     bool IsNull() const { return jerry_value_is_null(m_value); }
     bool IsUndefined() const { return jerry_value_is_undefined(m_value); }
@@ -217,13 +206,14 @@ public:
     int GetStringLength(void) const { return jerry_get_string_length(m_value); }
     int GetStringUtf8Length(void) const { return jerry_get_utf8_string_size(m_value); }
 
-    JerryString* ToString(void) const;
-    JerryValue* ToNumber() const;
-    JerryValue* ToObject(void) const;
+    JerryValue* GetProperty(v8::Isolate* isolate, JerryValue* key) const { return TryCreateValue(isolate, jerry_get_property(m_value, key->value())); }
+    JerryValue* GetPropertyIdx(v8::Isolate* isolate, uint32_t idx) const { return TryCreateValue(isolate, jerry_get_property_by_index(m_value, idx)); }
+    JerryValue* GetPrivateProperty(v8::Isolate* isolate, JerryValue* key) const { return TryCreateValue(isolate, jerry_get_internal_property(m_value, key->value())); }
 
-    JerryValue* ToInteger(void) const {
-        return ToNumber();
-    }
+    JerryValue* ToString(v8::Isolate* isolate) const { return TryCreateValue(isolate, jerry_value_to_string(m_value)); }
+    JerryValue* ToNumber(v8::Isolate* isolate) const { return TryCreateValue(isolate, jerry_value_to_number(m_value)); }
+    JerryValue* ToObject(v8::Isolate* isolate) const { return TryCreateValue(isolate, jerry_value_to_object(m_value)); }
+    JerryValue* ToInteger(v8::Isolate* isolate) const;
 
     bool BooleanValue() const {
         return jerry_get_boolean_value(m_value);

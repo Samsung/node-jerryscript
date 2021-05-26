@@ -429,20 +429,17 @@ void InjectGlobalFunctions(void) {
     }
 
     JerryValue error_string(jerry_create_string((const jerry_char_t*)"Error"));
+    JerryValue error_object(jerry_get_property(global.value(), error_string.value()));
 
-    JerryValue* error_obj = global.GetProperty(&error_string);
-    if (error_obj != NULL) {
-        JerryValue capture_stack_trace_string(jerry_create_string((const jerry_char_t*)"captureStackTrace"));
-        JerryValue stack_trace_value(jerry_create_external_function(JerryHandlerStackTrace));
+    JerryValue capture_stack_trace_string(jerry_create_string((const jerry_char_t*)"captureStackTrace"));
+    JerryValue stack_trace_value(jerry_create_external_function(JerryHandlerStackTrace));
 
-        error_obj->SetProperty(&capture_stack_trace_string, &stack_trace_value);
+    jerry_release_value(jerry_set_property(error_object.value(), capture_stack_trace_string.value(), stack_trace_value.value()));
 
-        JerryValue stack_trace_limit_string(jerry_create_string((const jerry_char_t*)"stackTraceLimit"));
-        JerryValue stack_trace_limit_value(jerry_create_number(10));
+    JerryValue stack_trace_limit_string(jerry_create_string((const jerry_char_t*)"stackTraceLimit"));
+    JerryValue stack_trace_limit_value(jerry_create_number(10));
 
-        error_obj->SetProperty(&stack_trace_limit_string, &stack_trace_limit_value);
-        delete error_obj;
-    }
+    jerry_release_value(jerry_set_property(error_object.value(), stack_trace_limit_string.value(), stack_trace_limit_value.value()));
 }
 
 // TODO: remove these layering violations (this is a Jerry internal method, should not be visible here)

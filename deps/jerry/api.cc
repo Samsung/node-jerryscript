@@ -1218,11 +1218,11 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
 
   if (script_or_module_out != nullptr) {
     jerry_value_t object = jerry_create_object();
-    JerryValue* script_or_module = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), object);
+    JerryValue* script_or_module = JerryValue::TryCreateValue(isolate, object);
     *script_or_module_out = script_or_module->NewLocal<ScriptOrModule>(isolate);
   }
 
-  JerryValue* result = JerryValue::TryCreateValue(JerryIsolate::fromV8(isolate), scriptFunction);
+  JerryValue* result = JerryValue::TryCreateValue(isolate, scriptFunction);
   RETURN_HANDLE(Function, isolate, result);
 }
 
@@ -1824,13 +1824,8 @@ bool Value::IsModuleNamespaceObject() const {
 
 MaybeLocal<String> Value::ToString(Local<Context> context) const {
   V8_CALL_TRACE();
-  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToString();
-
-  if (result == NULL) {
-      return MaybeLocal<String>();
-  }
-
-  RETURN_HANDLE(String, context->GetIsolate(), result);
+  Isolate* isolate = context->GetIsolate();
+  RETURN_HANDLE(String, isolate, reinterpret_cast<const JerryValue*>(this)->ToString(isolate));
 }
 
 MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
@@ -1840,13 +1835,8 @@ MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
 
 MaybeLocal<Object> Value::ToObject(Local<Context> context) const {
   V8_CALL_TRACE();
-  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToObject();
-
-  if (result == NULL) {
-      return MaybeLocal<Object>();
-  }
-
-  RETURN_HANDLE(Object, Isolate::GetCurrent(), result);
+  Isolate* isolate = context->GetIsolate();
+  RETURN_HANDLE(Object, isolate, reinterpret_cast<const JerryValue*>(this)->ToObject(isolate));
 }
 
 bool Value::BooleanValue(Isolate* v8_isolate) const {
@@ -1856,30 +1846,19 @@ bool Value::BooleanValue(Isolate* v8_isolate) const {
 
 Local<Boolean> Value::ToBoolean(Isolate* v8_isolate) const {
   V8_CALL_TRACE();
-  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToBoolean();
-  RETURN_HANDLE(Boolean, v8_isolate, result);
+  RETURN_HANDLE(Boolean, v8_isolate, reinterpret_cast<const JerryValue*>(this)->ToBoolean());
 }
 
 MaybeLocal<Number> Value::ToNumber(Local<Context> context) const {
   V8_CALL_TRACE();
-  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToNumber();
-
-  if (result == NULL) {
-      return MaybeLocal<Number>();
-  }
-
-  RETURN_HANDLE(Number, context->GetIsolate(), result);
+  Isolate* isolate = context->GetIsolate();
+  RETURN_HANDLE(Number, isolate, reinterpret_cast<const JerryValue*>(this)->ToNumber(isolate));
 }
 
 MaybeLocal<Integer> Value::ToInteger(Local<Context> context) const {
   V8_CALL_TRACE();
-  JerryValue* result = reinterpret_cast<const JerryValue*>(this)->ToInteger();
-
-  if (result == NULL) {
-      return MaybeLocal<Integer>();
-  }
-
-  RETURN_HANDLE(Integer, context->GetIsolate(), result);
+  Isolate* isolate = context->GetIsolate();
+  RETURN_HANDLE(Integer, isolate, reinterpret_cast<const JerryValue*>(this)->ToInteger(isolate));
 }
 
 i::Isolate* i::IsolateFromNeverReadOnlySpaceObject(i::Address obj) {
@@ -2043,42 +2022,47 @@ Maybe<double> Value::NumberValue(Local<Context> context) const {
 
 Maybe<int64_t> Value::IntegerValue(Local<Context> context) const {
   V8_CALL_TRACE();
-  int64_t result = 0;
-  JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+  jerry_value_t number = jerry_value_to_number(reinterpret_cast<const JerryValue*>(this)->value());
 
-  if (convertedValue != NULL) {
-    result = convertedValue->GetInt64Value();
-    delete convertedValue;
+  if (V8_UNLIKELY(jerry_value_is_error(number))) {
+      jerry_release_value(number);
+      return Nothing<int64_t>();
   }
 
-  return Just(result);
+  double value = jerry_value_as_integer(number);
+  jerry_release_value(number);
+
+  return Just(static_cast<int64_t>(value));
 }
 
 Maybe<int32_t> Value::Int32Value(Local<Context> context) const {
   V8_CALL_TRACE();
-  int32_t result = 0;
-  JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+  jerry_value_t number = jerry_value_to_number(reinterpret_cast<const JerryValue*>(this)->value());
 
-  if (convertedValue != NULL) {
-    result = convertedValue->GetInt32Value();
-    delete convertedValue;
+  if (V8_UNLIKELY(jerry_value_is_error(number))) {
+      jerry_release_value(number);
+      return Nothing<int32_t>();
   }
 
-  return Just(result);
+  double value = jerry_value_as_integer(number);
+  jerry_release_value(number);
+
+  return Just(static_cast<int32_t>(value));
 }
 
 Maybe<uint32_t> Value::Uint32Value(Local<Context> context) const {
   V8_CALL_TRACE();
-  uint32_t result = 0;
-  // TODO: Use ToUint32 conversion if available.
-  JerryValue* convertedValue = reinterpret_cast<const JerryValue*>(this)->ToInteger();
+  jerry_value_t number = jerry_value_to_number(reinterpret_cast<const JerryValue*>(this)->value());
 
-  if (convertedValue != NULL) {
-    result = (uint32_t)convertedValue->GetInt32Value();
-    delete convertedValue;
+  if (V8_UNLIKELY(jerry_value_is_error(number))) {
+      jerry_release_value(number);
+      return Nothing<uint32_t>();
   }
 
-  return Just(result);
+  double value = jerry_value_as_integer(number);
+  jerry_release_value(number);
+
+  return Just(static_cast<uint32_t>(value));
 }
 
 bool Value::StrictEquals(Local<Value> that) const {
@@ -2342,22 +2326,26 @@ Maybe<bool> v8::Object::SetPrivate(Local<Context> context, Local<Private> key,
 MaybeLocal<Value> v8::Object::Get(Local<v8::Context> context,
                                   Local<Value> key) {
   V8_CALL_TRACE();
+  Isolate* isolate = context->GetIsolate();
   JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
 
-  RETURN_HANDLE(Value, context->GetIsolate(), reinterpret_cast<JerryValue*> (this)->GetProperty(jkey));
+  RETURN_HANDLE(Value, isolate, reinterpret_cast<JerryValue*>(this)->GetProperty(isolate, jkey));
 }
 
 MaybeLocal<Value> v8::Object::Get(Local<Context> context, uint32_t index) {
   V8_CALL_TRACE();
-  RETURN_HANDLE(Value, context->GetIsolate(), reinterpret_cast<JerryValue*> (this)->GetPropertyIdx(index));
+  Isolate* isolate = context->GetIsolate();
+
+  RETURN_HANDLE(Value, isolate, reinterpret_cast<JerryValue*>(this)->GetPropertyIdx(isolate, index));
 }
 
 MaybeLocal<Value> v8::Object::GetPrivate(Local<Context> context,
                                          Local<Private> key) {
   V8_CALL_TRACE();
+  Isolate* isolate = context->GetIsolate();
   JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
 
-  RETURN_HANDLE(Value, Isolate::GetCurrent(), reinterpret_cast<JerryValue*> (this)->GetPrivateProperty(jkey));
+  RETURN_HANDLE(Value, isolate, reinterpret_cast<JerryValue*>(this)->GetPrivateProperty(isolate, jkey));
 }
 
 MaybeLocal<Value> v8::Object::GetOwnPropertyDescriptor(Local<Context> context,
@@ -2454,7 +2442,7 @@ Local<String> v8::Object::GetConstructorName() {
   JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
 
   JerryV8FunctionHandlerData* data = JerryGetFunctionHandlerData(jobject->value());
-
+  Isolate* isolate = JerryIsolate::toV8(JerryIsolate::GetCurrent());
   JerryValue* name;
 
   if (data == NULL) {
@@ -2465,10 +2453,10 @@ Local<String> v8::Object::GetConstructorName() {
     JerryFunctionTemplate* function_template = data->function_template;
     JerryValue prop_name(jerry_create_string((const jerry_char_t*)"name"));
 
-    name = function_template->GetFunction()->GetProperty(&prop_name);
+    name = function_template->GetFunction()->GetProperty(isolate, &prop_name);
   }
 
-  RETURN_HANDLE(String, JerryIsolate::toV8(JerryIsolate::GetCurrent()), name);
+  RETURN_HANDLE(String, isolate, name);
 }
 
 Maybe<bool> v8::Object::SetIntegrityLevel(Local<Context> context,
@@ -2627,13 +2615,11 @@ MaybeLocal<Value> v8::Object::GetRealNamedProperty(Local<Context> context,
   }
 }
 
-Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
-    Local<Context> context, Local<Name> key) {
+Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(Local<Context> context,
+                                                                    Local<Name> key) {
   V8_CALL_TRACE();
   JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
-  JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
-
-  int attributes = PropertyAttribute::None;
+  jerry_value_t jkey = reinterpret_cast<JerryValue*>(*key)->value();
 
   jerry_value_t target_object;
 
@@ -2643,14 +2629,18 @@ Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
       target_object = jerry_acquire_value(jobject->value());
   }
 
-  bool found = false;
+  int max_recursion = 4096;
 
   do {
       jerry_property_descriptor_t prop_desc;
 
-      found = jerry_get_own_property_descriptor(target_object, jkey->value(), &prop_desc);
+      jerry_value_t result = jerry_get_own_property_descriptor(target_object, jkey, &prop_desc);
+      bool found = jerry_get_boolean_value(result);
+      jerry_release_value(result);
 
       if (found) {
+          int attributes = PropertyAttribute::None;
+
           if (!(prop_desc.flags & JERRY_PROP_IS_CONFIGURABLE)) {
               attributes |= PropertyAttribute::DontDelete;
           }
@@ -2663,18 +2653,21 @@ Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
           if ((prop_desc.flags & mask) == JERRY_PROP_IS_WRITABLE_DEFINED) {
               attributes |= PropertyAttribute::ReadOnly;
           }
-          jerry_property_descriptor_free(&prop_desc);
-      } else {
-          jerry_value_t new_target_object = jerry_get_prototype(target_object);
-          jerry_release_value(target_object);
 
-          target_object = new_target_object;
+          jerry_property_descriptor_free(&prop_desc);
+          jerry_release_value(target_object);
+          return Just((PropertyAttribute)attributes);
       }
-  } while (!found && !jerry_value_is_null(target_object));
+
+      jerry_value_t new_target_object = jerry_get_prototype(target_object);
+      jerry_release_value(target_object);
+
+      target_object = new_target_object;
+  } while (!jerry_value_is_null(target_object) && --max_recursion != 0);
 
   jerry_release_value(target_object);
 
-  return found ? Just((PropertyAttribute)attributes) : Nothing<PropertyAttribute>();
+  return Nothing<PropertyAttribute>();
 }
 
 Local<v8::Object> v8::Object::Clone() {
@@ -3549,10 +3542,10 @@ Maybe<bool> Promise::Resolver::Reject(Local<Context> context,
 
 Local<Value> Promise::Result() {
   V8_CALL_TRACE();
-  JerryValue* jvalue = reinterpret_cast<JerryValue*>(this);
+  jerry_value_t jvalue = reinterpret_cast<JerryValue*>(this)->value();
 
-  JerryValue* jresult = JerryValue::TryCreateValue(JerryIsolate::GetCurrent(), jerry_get_promise_result(jvalue->value()));
-  RETURN_HANDLE(Value, reinterpret_cast<Isolate*>(JerryIsolate::GetCurrent()), jresult);
+  v8::Isolate* isolate = JerryIsolate::toV8(JerryIsolate::GetCurrent());
+  RETURN_HANDLE(Value, isolate, JerryValue::TryCreateValue(isolate, jerry_get_promise_result(jvalue)));
 }
 
 Promise::PromiseState Promise::State() {
