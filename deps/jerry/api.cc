@@ -103,11 +103,34 @@ bool StartupData::CanBeRehashed() const {
 }
 
 void V8::SetFlagsFromString(const char* str) {
-  UNIMPLEMENTED(919);
+  V8_CALL_TRACE();
+
+  while (*str != '\0') {
+      if (str[0] != '-' || str[1] != '-') {
+          return;
+      }
+
+      str += 2;
+
+      str = Flag::Update(str, true);
+
+      if (str == NULL) {
+          return;
+      }
+
+      while (*str == ' ' || *str == '\t') {
+          str++;
+      }
+  }
 }
 
 void V8::SetFlagsFromString(const char* str, size_t length) {
-  UNIMPLEMENTED(923);
+  V8_CALL_TRACE();
+
+  char* new_str = reinterpret_cast<char*>(malloc(length + 1));
+  new_str[length] = '\0';
+  SetFlagsFromString(new_str);
+  free(new_str);
 }
 
 void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
@@ -119,24 +142,17 @@ void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
   for (int idx = 0; idx < length; idx++) {
       const char* arg = argv[idx];
 
-      if (strncmp("--", arg, 2) != 0) {
+      if (arg[0] != '-' || arg[1] != '-') {
           /* Ignore arguments which does not start with '--' */
           continue;
       }
       arg += 2;
 
-      bool negate = false;
-
-      if (strncmp("no-", arg, 3) == 0) {
-          negate = true;
-          arg += 3;
-      }
-
-      if (!Flag::Update(arg, negate)) {
+      if (Flag::Update(arg, false) == NULL) {
           continue;
       }
 
-      /* Flag found, update it's value */
+      /* At least one flag is found. */
       found = true;
 
       if (remove_flags) {
@@ -1830,7 +1846,23 @@ MaybeLocal<String> Value::ToString(Local<Context> context) const {
 
 MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
   V8_CALL_TRACE();
-  return ToString(context);
+
+  jerry_value_t jvalue = reinterpret_cast<const JerryValue*>(this)->value();
+  jerry_value_t result;
+
+  if (jerry_value_is_symbol(jvalue)) {
+      result = jerry_get_symbol_descriptive_string(jvalue);
+  } else {
+      result = jerry_value_to_string(jvalue);
+  }
+
+  /* Never throws any exception. */
+  if (V8_UNLIKELY(jerry_value_is_error(result))) {
+      jerry_release_value(result);
+      return Local<String>();
+  }
+
+  RETURN_HANDLE(String, context->GetIsolate(), new JerryValue(result));
 }
 
 MaybeLocal<Object> Value::ToObject(Local<Context> context) const {
@@ -3072,7 +3104,7 @@ HeapCodeStatistics::HeapCodeStatistics()
 
 const char* V8::GetVersion() {
   V8_CALL_TRACE();
-  return "JerryScript v2.4";
+  return "2.4.0-node.0";
 }
 
 static std::string kContextSecurityTokenKey = "$$context_token";
@@ -3490,8 +3522,8 @@ MaybeLocal<Set> Set::Add(Local<Context> context, Local<Value> key) {
   JerryValue* jset = reinterpret_cast<JerryValue*>(this);
   JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
 
-  jerry_value_t args[] = { jset->value(), jkey->value(), };
-  jerry_value_t result = JerryIsolate::fromV8(context->GetIsolate())->HelperSetAdd().Call(jerry_create_undefined(), args, 3);
+  jerry_value_t args[] = { jset->value(), jkey->value() };
+  jerry_value_t result = JerryIsolate::fromV8(context->GetIsolate())->HelperSetAdd().Call(jerry_create_undefined(), args, 2);
   jerry_release_value(result);
 
   return jset->AsLocal<Set>();

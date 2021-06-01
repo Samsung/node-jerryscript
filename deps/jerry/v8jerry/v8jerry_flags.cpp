@@ -21,7 +21,9 @@ FLAGS(FLAG_EXPAND)
 #undef FLAG_EXPAND
 };
 
-static const char* CompareFlag(const char* expected, const char* name) {
+#define IS_SPACE(chr) ((chr) == ' ' || (chr) == '\t')
+
+static const char* CompareFlag(const char* expected, const char* name, bool allow_multiple) {
     while (*expected != '\0') {
         const char ch = *expected++;
         const char inCh = *name++;
@@ -33,37 +35,45 @@ static const char* CompareFlag(const char* expected, const char* name) {
         }
     }
 
-    if (*name == '\0' || *name == '=') {
+    if (*name == '\0' || *name == '=' || (allow_multiple && IS_SPACE(*name))) {
         return name;
     }
 
     return NULL;
 }
 
-bool Flag::Update(const char* name, bool negate) {
+const char* Flag::Update(const char* name, bool allow_multiple) {
+    bool negate = false;
+
+    if (strncmp("no-", name, 3) == 0) {
+        negate = true;
+        name += 3;
+    }
+
     const size_t size = sizeof(flagsStore) / sizeof(flagsStore[0]);
 
     for (size_t idx = 0; idx < size; idx++) {
-        const char* end = CompareFlag(flagsStore[idx].name, name);
+
+        const char* end = CompareFlag(flagsStore[idx].name, name, allow_multiple);
 
         if (end != NULL) {
             if (flagsStore[idx].type == Flag::Type::BOOL) {
-                if (*end != '\0') {
-                    return false;
+                if (*end == '=') {
+                    return NULL;
                 }
 
                 flagsStore[idx].u.bool_value = !negate;
-                return true;
+                return end;
             }
 
             if (*end != '=' || negate) {
-                return false;
+                return NULL;
             }
 
             end++;
 
             if (*end < '1' || *end > '9') {
-                return false;
+                return NULL;
             }
 
             int result = 0;
@@ -71,19 +81,18 @@ bool Flag::Update(const char* name, bool negate) {
             while (true) {
                 result = result * 10 + static_cast<int>(*end++ - '0');
 
-                if (*end == '\0') {
-                    flagsStore[idx].u.int_value = result;
-                    return true;
-                }
-
                 if (*end < '0' || *end > '9') {
-                    return false;
+                    if (*end == '\0' || (allow_multiple && IS_SPACE(*name))) {
+                        flagsStore[idx].u.int_value = result;
+                        return end;
+                    }
+                    return NULL;
                 }
             }
         }
     }
 
-    return false;
+    return NULL;
 }
 
 Flag* Flag::Get(FlagID id) {

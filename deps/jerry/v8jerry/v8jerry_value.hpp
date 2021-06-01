@@ -187,10 +187,10 @@ public:
     bool IsTypedArray() const { return jerry_value_is_typedarray(m_value); }
     bool IsArrayBuffer() const { return jerry_value_is_arraybuffer(m_value); }
     bool IsProxy() const { return jerry_value_is_proxy (m_value); }
-    bool IsRegExp() const { return false; }
+    bool IsRegExp() const { return jerry_object_get_type(m_value) == JERRY_OBJECT_TYPE_REGEXP; }
     bool IsSharedArrayBuffer() const { return false; }
     bool IsNativeError() const { return jerry_get_error_type(m_value) != JERRY_ERROR_NONE; }
-    bool IsModuleNameSpaceObject() const { return false; }
+    bool IsModuleNameSpaceObject() const { return jerry_object_get_type(m_value) == JERRY_OBJECT_TYPE_MODULE_NAMESPACE; }
     bool IsBigInt() const { return jerry_value_is_bigint(m_value); }
     bool IsArrayBufferView() const { return jerry_value_is_typedarray(m_value) || jerry_value_is_dataview(m_value); }
     bool IsDataView() const { return jerry_value_is_dataview(m_value); }

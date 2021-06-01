@@ -75,7 +75,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_prepare_stack_trace_callback = NULL;
 
     m_fn_map_set = new JerryPolyfill("map_set", "map, key, value", "return map.set(key, value);");
-    m_fn_set_add = new JerryPolyfill("set_add", "set, value", "return map.add(key);");
+    m_fn_set_add = new JerryPolyfill("set_add", "set, value", "return set.add(value);");
     m_fn_object_assign = new JerryPolyfill("object_assign", "value", "return Object.assign(Array.isArray(value) ? [] : {}, value);");
     m_fn_conversion_failer =
         new JerryPolyfill("conv_fail", "", "this.toString = this.valueOf = function() { throw new TypeError('Invalid usage'); }");

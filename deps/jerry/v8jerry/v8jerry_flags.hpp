@@ -7,6 +7,7 @@
     F(BOOL, abort_on_uncaught_exception, false) \
     F(BOOL, stress_compaction, false) \
     F(BOOL, harmony_weak_refs, false) \
+    F(BOOL, debug_code, false) \
     F(INT, stack_size, 4096) \
     F(INT, gc_interval, 0)
 
@@ -30,7 +31,7 @@ struct Flag {
         int int_value;
     } u;
 
-    static bool Update(const char* name, bool negate);
+    static const char* Update(const char* name, bool allow_multiple);
     static Flag* Get(FlagID);
 };
 
