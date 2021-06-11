@@ -3083,7 +3083,6 @@ HeapStatistics::HeapStatistics()
       number_of_detached_contexts_(0),
       total_global_handles_size_(0),
       used_global_handles_size_(0) {
-  UNIMPLEMENTED(5745);
 }
 
 HeapSpaceStatistics::HeapSpaceStatistics()
@@ -3302,6 +3301,28 @@ MaybeLocal<String> String::NewFromUtf8(Isolate* isolate, const char* data,
   RETURN_HANDLE(String, isolate, new JerryValue(str_value));
 }
 
+static jerry_value_t JerryNewFromOneByte(const uint8_t* data, int length)
+{
+  jerry_char_t* str_data = (jerry_char_t*)malloc(length * 2);
+  jerry_char_t* str_ptr = str_data;
+  const uint8_t* data_end = data + length;
+
+  while (data < data_end) {
+      if (*data < 0x80) {
+          *str_ptr++ = (jerry_char_t)*data;
+      } else {
+          str_ptr[0] = 0xc0 | (jerry_char_t)(*data >> 6);
+          str_ptr[1] = 0x80 | (jerry_char_t)(*data & 0x3f);
+          str_ptr+= 2;
+      }
+      data++;
+  }
+
+  jerry_value_t str = jerry_create_string_sz(str_data, (jerry_size_t)(str_ptr - str_data));
+  free(str_data);
+  return str;
+}
+
 MaybeLocal<String> String::NewFromOneByte(Isolate* isolate, const uint8_t* data,
                                           NewStringType type, int length) {
   V8_CALL_TRACE();
@@ -3330,22 +3351,7 @@ MaybeLocal<String> String::NewFromOneByte(Isolate* isolate, const uint8_t* data,
       /* ASCII characters */
       str = jerry_create_string_sz(data, (jerry_size_t)length);
   } else {
-      jerry_char_t* str_data = (jerry_char_t*)malloc(length * 2);
-      jerry_char_t* str_ptr = str_data;
-
-      while (data < data_end) {
-          if (*data < 0x80) {
-              *str_ptr++ = (jerry_char_t)*data;
-          } else {
-              str_ptr[0] = 0xc0 | (jerry_char_t)(*data >> 6);
-              str_ptr[1] = 0x80 | (jerry_char_t)(*data & 0x3f);
-              str_ptr+= 2;
-          }
-          data++;
-      }
-
-      str = jerry_create_string_sz(str_data, (jerry_size_t)(str_ptr - str_data));
-      free(str_data);
+      str = JerryNewFromOneByte(data, length);
   }
 
   RETURN_HANDLE(String, isolate, new JerryString(str));
@@ -3435,9 +3441,28 @@ MaybeLocal<String> v8::String::NewExternalOneByte(
       return Local<String>();
   }
 
-  jerry_value_t str = jerry_create_string_sz((const jerry_char_t*)resource->data(), (int)resource->length());
 
-  RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::TWO_BYTE));
+  const uint8_t* data = (const uint8_t*)resource->data();
+  const uint8_t* data_ptr = data;
+  const uint8_t* data_end = data + resource->length();
+
+  while (data_ptr < data_end) {
+      if (*data_ptr >= 0x80) {
+          break;
+      }
+      data_ptr++;
+  }
+
+  jerry_value_t str;
+
+  if (data_ptr == data_end) {
+      /* ASCII characters */
+      str = jerry_create_string_sz((const jerry_char_t*)resource->data(), (int)resource->length());
+  } else {
+      str = JerryNewFromOneByte((const jerry_char_t*)resource->data(), (int)resource->length());
+  }
+
+  RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::ONE_BYTE));
 }
 
 Isolate* v8::Object::GetIsolate() {
@@ -4040,7 +4065,6 @@ i::Address* Isolate::GetDataFromSnapshotOnce(size_t index) {
 }
 
 void Isolate::GetHeapStatistics(HeapStatistics* heap_statistics) {
-  UNIMPLEMENTED(8441);
 }
 
 size_t Isolate::NumberOfHeapSpaces() {

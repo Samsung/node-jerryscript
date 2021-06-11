@@ -269,7 +269,7 @@ jerry_value_t JerryV8FunctionHandler(
         if (!has_data
             || data->function_template->IsValidSignature(((JerryV8FunctionHandlerData*)native_p)->function_template->Signature())) {
             // Invalid signature found throw error.
-            return jerry_create_error (JERRY_ERROR_TYPE, (const jerry_char_t *) "Incorrect signature");
+            return jerry_create_error (JERRY_ERROR_TYPE, (const jerry_char_t *) "Illegal invocation");
         }
     }
 

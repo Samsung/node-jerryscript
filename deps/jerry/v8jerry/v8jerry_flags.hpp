@@ -8,6 +8,7 @@
     F(BOOL, stress_compaction, false) \
     F(BOOL, harmony_weak_refs, false) \
     F(BOOL, debug_code, false) \
+    F(BOOL, noconcurrent_recompilation, false) \
     F(INT, stack_size, 4096) \
     F(INT, gc_interval, 0)
 

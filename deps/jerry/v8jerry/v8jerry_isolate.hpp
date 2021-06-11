@@ -167,6 +167,7 @@ private:
     std::vector<JerryTemplate*> m_templates;
     std::vector<JerryValue*> m_eternals;
     std::vector<std::pair<jerry_value_t, jerry_value_t>> m_global_symbols;
+    std::vector<JerryValue*> m_micro_tasks;
     std::unordered_map<uint16_t*, std::u16string*> m_utf16strs;
 
     JerryObjectTemplate* m_hidden_object_template;
@@ -199,8 +200,6 @@ private:
 
     bool m_terminated;
     bool m_autorun_tasks;
-
-    std::vector<JerryValue*> m_micro_tasks;
 };
 
 #endif /* V8JERRY_ISOLATE_HPP */
