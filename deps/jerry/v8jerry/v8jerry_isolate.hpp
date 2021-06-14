@@ -57,6 +57,7 @@ public:
     JerryValue* GetGlobalError(void) { return m_global_error; }
     void SetError(const jerry_value_t error_value);
     void RestoreError(JerryValue* error);
+    void RestoreError(jerry_value_t error);
     void SetGlobalError(JerryValue* error) { m_global_error = error; }
     void ProcessError(bool is_verbose);
     void SetErrorVerbose(bool value);

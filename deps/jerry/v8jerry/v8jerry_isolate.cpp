@@ -265,6 +265,16 @@ void JerryIsolate::RestoreError(JerryValue* error) {
     JerryValue::DeleteValueWithoutRelease(error);
 }
 
+void JerryIsolate::RestoreError(jerry_value_t error)
+{
+    if (HasError()) {
+        jerry_release_value(GetError());
+    }
+
+    m_has_current_error = true;
+    m_current_error = error;
+}
+
 void JerryIsolate::ProcessError(bool is_verbose) {
     if (!is_verbose && m_last_try_catch == NULL && m_try_depth > 0) {
         return;

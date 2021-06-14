@@ -50,7 +50,7 @@
       'defines': [
         # Mandatory flags
         'JERRY_CPOINTER_32_BIT=1',
-        'JERRY_GLOBAL_HEAP_SIZE=16384',
+        'JERRY_GLOBAL_HEAP_SIZE=32768',
         'JERRY_STACK_LIMIT=4096',
         'JERRY_VM_EXEC_STOP=1',
         'JERRY_PROMISE_CALLBACK=1',

@@ -2774,14 +2774,31 @@ MaybeLocal<v8::Value> Function::Call(Local<Context> context,
 
   JerryIsolate* isolate = JerryIsolate::GetCurrent();
 
+  bool has_error = isolate->HasError();
+  jerry_value_t error;
+
+  if (has_error) {
+      error = isolate->TakeError();
+  }
+
   isolate->IncTryDepth();
   jerry_value_t result = jerry_call_function(jfunc->value(), jthis->value(), &arguments[0], argc);
   isolate->DecTryDepth();
 
   if (V8_UNLIKELY(jerry_value_is_error(result))) {
+      if (has_error) {
+          jerry_release_value(error);
+      }
+
       isolate->SetError(result);
       isolate->ProcessError(false);
       return MaybeLocal<v8::Value>();
+  } else if (has_error) {
+      if (isolate->HasError()) {
+          jerry_release_value(error);
+      } else {
+          isolate->RestoreError(error);
+      }
   }
 
   RETURN_HANDLE(Value, JerryIsolate::toV8(isolate), new JerryValue(result));
@@ -3098,7 +3115,7 @@ HeapCodeStatistics::HeapCodeStatistics()
     : code_and_metadata_size_(0),
       bytecode_and_metadata_size_(0),
       external_script_source_size_(0) {
-  UNIMPLEMENTED(5774);
+  V8_CALL_TRACE();
 }
 
 const char* V8::GetVersion() {
