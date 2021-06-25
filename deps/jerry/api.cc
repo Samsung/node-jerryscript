@@ -2103,7 +2103,7 @@ bool Value::StrictEquals(Local<Value> that) const {
   JerryValue* rhs = reinterpret_cast<JerryValue*> (*that);
 
   jerry_value_t result = jerry_binary_operation (JERRY_BIN_OP_STRICT_EQUAL, lhs->value(), rhs->value());
-  bool isEqual = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+  bool isEqual = !jerry_value_is_error(result) && jerry_value_is_true(result);
   jerry_release_value(result);
 
   return isEqual;
@@ -2288,7 +2288,7 @@ Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
   prop_desc.setter = jerry_create_undefined();
 
   jerry_value_t result = jerry_define_own_property (obj->value(), prop_name->value(), &prop_desc);
-  bool isOk = jerry_get_boolean_value(result);
+  bool isOk = jerry_value_is_true(result);
   jerry_release_value(result);
 
   return Just(isOk);
@@ -2405,7 +2405,7 @@ Maybe<bool> v8::Object::SetPrototype(Local<Context> context,
   JerryValue* proto = reinterpret_cast<JerryValue*> (*value);
 
   jerry_value_t result = jerry_set_prototype (obj->value(), proto->value());
-  bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+  bool isOk = !jerry_value_is_error(result) && jerry_value_is_true(result);
   jerry_release_value(result);
 
   return Just(isOk);
@@ -2503,7 +2503,7 @@ Maybe<bool> v8::Object::SetIntegrityLevel(Local<Context> context,
   jerry_release_value (prop_name_value);
 
   // [[TODO]] error handling?
-  return Just(jerry_get_boolean_value(result));
+  return Just(jerry_value_is_true(result));
 }
 
 Maybe<bool> v8::Object::Delete(Local<Context> context, Local<Value> key) {
@@ -2528,7 +2528,7 @@ Maybe<bool> v8::Object::Has(Local<Context> context, Local<Value> key) {
   JerryValue* jkey = reinterpret_cast<JerryValue*> (*key);
 
   jerry_value_t has_prop_js = jerry_has_property (jobj->value(), jkey->value());
-  bool has_prop = jerry_get_boolean_value (has_prop_js);
+  bool has_prop = jerry_value_is_true (has_prop_js);
   jerry_release_value (has_prop_js);
 
   return Just(has_prop);
@@ -2553,7 +2553,7 @@ Maybe<bool> v8::Object::Has(Local<Context> context, uint32_t index) {
   jerry_value_t key_js = jerry_create_number((int32_t)index);
 
   jerry_value_t has_prop_js = jerry_has_property (jobj->value(), key_js);
-  bool has_prop = jerry_get_boolean_value (has_prop_js);
+  bool has_prop = jerry_value_is_true (has_prop_js);
   jerry_release_value (has_prop_js);
   jerry_release_value (key_js);
 
@@ -2599,7 +2599,7 @@ Maybe<bool> v8::Object::HasOwnProperty(Local<Context> context,
   JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
 
   jerry_value_t has_prop = jerry_has_own_property(jobject->value(), jkey->value());
-  bool property_exists = jerry_get_boolean_value(has_prop);
+  bool property_exists = jerry_value_is_true(has_prop);
   jerry_release_value(has_prop);
 
   return Just(property_exists);
@@ -2667,7 +2667,7 @@ Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(Local<Contex
       jerry_property_descriptor_t prop_desc;
 
       jerry_value_t result = jerry_get_own_property_descriptor(target_object, jkey, &prop_desc);
-      bool found = jerry_get_boolean_value(result);
+      bool found = jerry_value_is_true(result);
       jerry_release_value(result);
 
       if (found) {
@@ -3676,7 +3676,7 @@ v8::ArrayBuffer::Allocator* v8::ArrayBuffer::Allocator::NewDefaultAllocator() {
 bool v8::ArrayBuffer::IsDetachable() const {
   V8_CALL_TRACE();
   const JerryValue* arrayBuffer = reinterpret_cast<const JerryValue*>(this);
-  return jerry_get_boolean_value(jerry_is_arraybuffer_detachable(arrayBuffer->value()));
+  return jerry_value_is_true(jerry_is_arraybuffer_detachable(arrayBuffer->value()));
 }
 
 /* ArrayBuffer & Allocator */
@@ -4293,8 +4293,21 @@ Local<Message> Exception::CreateMessage(Isolate* isolate,
 }
 
 v8::MaybeLocal<v8::Array> v8::Object::PreviewEntries(bool* is_key_value) {
-  UNIMPLEMENTED(9826);
-  return v8::MaybeLocal<v8::Array>();
+  V8_CALL_TRACE();
+  JerryValue* jmap = reinterpret_cast<JerryValue*>(this);
+  jerry_value_t map_value = jmap->value();
+
+  jerry_value_t array_value;
+
+  if (jerry_value_is_undefined (map_value) || jerry_value_is_null (map_value))
+  {
+    array_value = jerry_create_undefined();
+  }
+  else
+  {
+    array_value = jerry_get_array_from_container(map_value, is_key_value);
+  }
+  RETURN_HANDLE(Array, Isolate::GetCurrent(), new JerryValue(array_value));
 }
 
 void CpuProfiler::UseDetailedSourcePositionsForProfiling(Isolate* isolate) {

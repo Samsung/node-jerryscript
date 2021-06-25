@@ -209,7 +209,7 @@ bool ValueSerializer::WriteValueInternal(jerry_value_t value) {
     } else if (jerry_value_is_null(value)) {
         WriteTag(SerializationTag::kNull);
     } else if (jerry_value_is_boolean(value)) {
-        if (jerry_get_boolean_value(value)) {
+        if (jerry_value_is_true(value)) {
             WriteTag(SerializationTag::kTrue);
         } else {
             WriteTag(SerializationTag::kFalse);

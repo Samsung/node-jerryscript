@@ -174,8 +174,8 @@ public:
     bool IsString() const { return jerry_value_is_string(m_value); }
     bool IsName() const { return jerry_value_is_string(m_value) || jerry_value_is_symbol(m_value); }
     bool IsBoolean() const { return jerry_value_is_boolean(m_value); }
-    bool IsFalse() const { return jerry_value_is_boolean(m_value) && !jerry_get_boolean_value(m_value); }
-    bool IsTrue() const { return jerry_value_is_boolean(m_value) && jerry_get_boolean_value(m_value); }
+    bool IsFalse() const { return jerry_value_is_boolean(m_value) && !jerry_value_is_true(m_value); }
+    bool IsTrue() const { return jerry_value_is_boolean(m_value) && jerry_value_is_true(m_value); }
     bool IsPromise() const { return jerry_value_is_promise(m_value); }
     bool IsArray() const { return jerry_value_is_array(m_value); }
     bool IsNumber() const { return jerry_value_is_number(m_value); }
@@ -201,7 +201,7 @@ public:
     uint32_t GetUInt32Value(void) const { return jerry_value_as_uint32(m_value); }
     int32_t GetInt32Value(void) const { return jerry_value_as_int32(m_value); }
     int64_t GetInt64Value(void) const { return jerry_value_as_integer(m_value); }
-    bool GetBooleanValue(void) const { return jerry_get_boolean_value(m_value); }
+    bool GetBooleanValue(void) const { return jerry_value_is_true(m_value); }
 
     int GetStringLength(void) const { return jerry_get_string_length(m_value); }
     int GetStringUtf8Length(void) const { return jerry_get_utf8_string_size(m_value); }
@@ -216,7 +216,7 @@ public:
     JerryValue* ToInteger(v8::Isolate* isolate) const;
 
     bool BooleanValue() const {
-        return jerry_get_boolean_value(m_value);
+        return jerry_value_is_true(m_value);
     }
 
     JerryValue* ToBoolean(void) const {

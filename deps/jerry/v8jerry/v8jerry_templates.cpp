@@ -45,7 +45,7 @@ void JerryTemplate::InstallProperties(const jerry_value_t target) {
         jerry_property_descriptor_free(&prop_desc);
 
         /* TODO: check isOK? */
-        // bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+        // bool isOk = !jerry_value_is_error(result) && jerry_value_is_true(result);
         jerry_release_value(result);
     }
 }
@@ -116,7 +116,7 @@ bool JerryObjectTemplate::SetAccessor(const jerry_value_t target, AccessorEntry*
     // TODO: handle settings
 
     jerry_value_t define_result = jerry_define_own_property(target, entry->name->value(), &prop_desc);
-    bool isOk = !jerry_value_is_error(define_result) && jerry_get_boolean_value(define_result);
+    bool isOk = !jerry_value_is_error(define_result) && jerry_value_is_true(define_result);
     jerry_release_value(define_result);
 
     jerry_property_descriptor_free(&prop_desc);
