@@ -322,7 +322,7 @@ JerryValue* JerryIsolate::CurrentContext(void) {
 JerryValue* JerryIsolate::GetGlobalSymbol(JerryValue* name) {
     jerry_value_t nameValue = name->value();
     for (auto &it : m_global_symbols) {
-        if (jerry_get_boolean_value (jerry_binary_operation(JERRY_BIN_OP_STRICT_EQUAL, it.first, nameValue))) {
+        if (jerry_value_is_true (jerry_binary_operation(JERRY_BIN_OP_STRICT_EQUAL, it.first, nameValue))) {
             return new JerryValue(jerry_acquire_value (it.second));
         }
     }

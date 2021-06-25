@@ -572,7 +572,7 @@ jerry_value_t JerryV8ProxyHandler(
             jerry_value_t result = jerry_get_own_property_descriptor(args_p[0], args_p[1], &prop_desc);
 
             if (!jerry_value_is_error (result)) {
-                if (jerry_get_boolean_value(result)) {
+                if (jerry_value_is_true(result)) {
                     jerry_release_value(result);
                     result = jerry_create_object();
 

@@ -36,7 +36,7 @@ static jerry_object_native_info_t JerryV8BackingStoreInfo = {
 bool JerryValue::SetProperty(JerryValue* key, JerryValue* value) {
     // TODO: NULL check assert for key, value
     jerry_value_t result = jerry_set_property(m_value, key->value(), value->value());
-    bool isOk = !jerry_value_is_error(result) && jerry_get_boolean_value(result);
+    bool isOk = !jerry_value_is_error(result) && jerry_value_is_true(result);
     jerry_release_value(result);
 
     return isOk;
