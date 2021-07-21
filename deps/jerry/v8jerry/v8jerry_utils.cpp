@@ -194,6 +194,7 @@ static jerry_value_t JerryHandlerStackTraceGetter(const jerry_call_info_t *call_
 
     jerry_value_t resource_string = jerry_create_string((const jerry_char_t*)"resource__");
     jerry_value_t line_string = jerry_create_string((const jerry_char_t*)"line__");
+    jerry_value_t column_string = jerry_create_string((const jerry_char_t*)"column__");
     jerry_value_t function_string = jerry_create_string((const jerry_char_t*)"function__");
     JerryValue *prototype = JerryIsolate::GetCurrent()->CallSitePrototype();
     uint32_t index = 0;
@@ -212,6 +213,9 @@ static jerry_value_t JerryHandlerStackTraceGetter(const jerry_call_info_t *call_
         jerry_value_t line = jerry_create_number(it->line);
         jerry_release_value(jerry_set_property(call_site, line_string, line));
         jerry_release_value(line);
+        jerry_value_t column = jerry_create_number(it->column);
+        jerry_release_value(jerry_set_property(call_site, column_string, column));
+        jerry_release_value(column);
 
         jerry_release_value(jerry_set_property_by_index(value_result, index, call_site));
         jerry_release_value(call_site);
@@ -220,6 +224,7 @@ static jerry_value_t JerryHandlerStackTraceGetter(const jerry_call_info_t *call_
 
     jerry_release_value(function_string);
     jerry_release_value(line_string);
+    jerry_release_value(column_string);
     jerry_release_value(resource_string);
 
     StackDataFree(native_p, NULL);

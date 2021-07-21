@@ -61,6 +61,31 @@ void MduleStateChangedCallback(jerry_module_state_t new_state, const jerry_value
     jerry_native_pointer_set_reference (&data->error, value);
 }
 
+jerry_value_t ModuleImportCallback(const jerry_value_t jspecifier,
+                                   const jerry_value_t user_value, void *user_p) {
+    JerryIsolate* isolate = reinterpret_cast<JerryIsolate*>(user_p);
+
+    v8::HandleScope handle_scope(JerryIsolate::toV8(isolate));
+
+    v8::HostImportModuleDynamicallyCallback callback = isolate->HostImportModuleDynamicallyCallback();
+
+    if (!callback) {
+        return jerry_create_undefined();
+    }
+
+    JerryValueNoRelease specifier(jspecifier);
+    JerryValueNoRelease referrer(user_value);
+
+    v8::MaybeLocal<v8::Promise> result = callback(isolate->CurrentContext()->AsLocal<v8::Context>(), referrer.AsLocal<v8::ScriptOrModule>(), specifier.AsLocal<v8::String>());
+    v8::Local<v8::Promise> promise;
+
+    if (!result.ToLocal(&promise)) {
+        return jerry_create_undefined();
+    }
+
+    return jerry_acquire_value(reinterpret_cast<JerryValue*>(*promise)->value());
+}
+
 void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& params) {
     m_terminated = false;
     jerry_init_flag_t flag = (jerry_init_flag_t) JERRY_INIT_EMPTY;
@@ -72,7 +97,8 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 
     m_fatalErrorCallback = NULL;
     m_messageCallback = NULL;
-    m_prepare_stack_trace_callback = NULL;
+    m_prepareStackTraceCallback = NULL;
+    m_importModuleDynamicallyCallback = NULL;
 
     m_fn_map_set = new JerryPolyfill("map_set", "map, key, value", "return map.set(key, value);");
     m_fn_set_add = new JerryPolyfill("set_add", "set, value", "return set.add(value);");
@@ -89,7 +115,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 
     char *call_site_prototype = "({"
                                 "  getLineNumber() { return this.line__ },\n"
-                                "  getColumnNumber() { return 1 },\n"
+                                "  getColumnNumber() { return this.column__ },\n"
                                 "  getFileName() { return this.resource__ },\n"
                                 "  getFunctionName() {\n"
                                 "    return (this.function__ && this.function__.name) ? new String(this.function__.name) : null\n"
@@ -109,7 +135,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
                                 "    } catch {\n"
                                 "      pre = ''\n"
                                 "    }\n"
-                                "    return pre + this.resource__ + ':' + this.line__ + ':1' + post\n"
+                                "    return pre + this.resource__ + ':' + this.line__ + ':' + this.column__ + post\n"
                                 "  },"
                                 "})";
     m_call_site_prototype = new JerryValue(jerry_eval((jerry_char_t*)call_site_prototype, strlen(call_site_prototype), 0));
@@ -135,6 +161,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 
     jerry_set_error_object_created_callback (ErrorObjectCreatedCallback, NULL);
     jerry_module_set_state_changed_callback (MduleStateChangedCallback, NULL);
+    jerry_module_set_import_callback (ModuleImportCallback, reinterpret_cast<void*>(this));
 
 #if (defined JERRY_DEBUGGER && JERRY_DEBUGGER)
     bool protocol = jerryx_debugger_tcp_create (5001);

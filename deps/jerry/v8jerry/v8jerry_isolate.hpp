@@ -115,8 +115,18 @@ public:
         UpdatePromiseFilters();
     }
 
-    void SetPrepareStackTraceCallback(v8::PrepareStackTraceCallback callback) { m_prepare_stack_trace_callback = callback; }
-    v8::PrepareStackTraceCallback PrepareStackTraceCallback() { return m_prepare_stack_trace_callback; }
+    v8::PrepareStackTraceCallback PrepareStackTraceCallback() {
+        return m_prepareStackTraceCallback;
+    }
+    void SetPrepareStackTraceCallback(v8::PrepareStackTraceCallback callback) {
+        m_prepareStackTraceCallback = callback;
+    }
+    v8::HostImportModuleDynamicallyCallback HostImportModuleDynamicallyCallback() {
+        return m_importModuleDynamicallyCallback;
+    }
+    void SetHostImportModuleDynamicallyCallback(v8::HostImportModuleDynamicallyCallback callback) {
+        m_importModuleDynamicallyCallback = callback;
+    }
 
     void SetEternal(JerryValue* value, int* index);
     void ClearEternal(JerryValue* value);
@@ -197,7 +207,8 @@ private:
     v8::FatalErrorCallback m_fatalErrorCallback;
     v8::Isolate::AbortOnUncaughtExceptionCallback m_abortOnUncaughtExceptionCallback;
     v8::MessageCallback m_messageCallback;
-    v8::PrepareStackTraceCallback m_prepare_stack_trace_callback;
+    v8::PrepareStackTraceCallback m_prepareStackTraceCallback;
+    v8::HostImportModuleDynamicallyCallback m_importModuleDynamicallyCallback;
 
     bool m_terminated;
     bool m_autorun_tasks;

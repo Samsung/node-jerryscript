@@ -2,71 +2,48 @@
 
 void* JerryAllocator::Allocate(size_t length)
 {
-  if (length == 0) {
-    return (void*)0x1;
-  }
+    if (length == 0) {
+        return (void*)0x1;
+    }
 
-  void *data = jerry_heap_alloc(length);
-
-  if (data) {
-    memset(data, 0, length);
-  }
-
-  return data;
+    return calloc(length, 1);
 }
 
 void* JerryAllocator::AllocateUninitialized(size_t length)
 {
-  if (length == 0) {
-    return (void*)0x1;
-  }
+    if (length == 0) {
+        return (void*)0x1;
+    }
 
-  return jerry_heap_alloc(length);
+    return malloc(length);
 }
 
 
 void JerryAllocator::Free(void* data, size_t length)
 {
-  if (length > 0) {
-    jerry_heap_free(data, length);
-  } else if (data != NULL && data != (void*)0x1) {
-    jerry_heap_free(data, 1);
-  }
+    if (length > 0 || (data != NULL && data != (void*)0x1)) {
+        free(data);
+    }
 }
-
 
 void* JerryAllocator::Reallocate(void* data, size_t old_length, size_t new_length)
 {
-  // TODO add jerry realloc API
-
-  if (new_length == 0) {
-    if (old_length > 0) {
-      jerry_heap_free(data, old_length);
-    }
-    return (void*)0x1;
-  }
-
-  void *newData = jerry_heap_alloc(new_length);
-
-  if (newData) {
-    if (new_length > old_length)
-    {
-      memcpy(newData, data, old_length);
-      memset((uint8_t*)newData + old_length, 0, new_length - old_length);
-    }
-    else
-    {
-      memcpy(newData, data, new_length);
+    // TODO add jerry realloc API
+    if (new_length == 0) {
+        if (old_length > 0) {
+           free(data);
+        }
+        return (void*)0x1;
     }
 
-    if (old_length > 0) {
-      jerry_heap_free(data, old_length);
+    if (data == (void*)0x1) {
+        return malloc(new_length);
     }
-  }
-  return newData;
+
+    return realloc(data, new_length);
 }
 
 JerryAllocator* JerryAllocator::NewDefaultAllocator()
 {
-  return new JerryAllocator();
+    return new JerryAllocator();
 }

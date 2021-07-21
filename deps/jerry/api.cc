@@ -319,7 +319,7 @@ void V8::ToLocalEmpty() {
 HandleScope::HandleScope(Isolate* isolate)
   : isolate_(reinterpret_cast<internal::Isolate*>(isolate)) {
   V8_CALL_TRACE();
-  JerryIsolate::fromV8(isolate_)->PushHandleScope(JerryHandleScopeType::Normal);
+  JerryIsolate::fromV8(isolate)->PushHandleScope(JerryHandleScopeType::Normal);
 }
 
 HandleScope::~HandleScope() {
@@ -357,8 +357,8 @@ i::Address* HandleScope::CreateHandle(i::Isolate* isolate, i::Address value) {
     return reinterpret_cast<internal::Address*>(jhandle);
 }
 
-EscapableHandleScope::EscapableHandleScope(Isolate* v8_isolate)
-  : HandleScope(v8_isolate) {
+EscapableHandleScope::EscapableHandleScope(Isolate* isolate)
+  : HandleScope(isolate) {
   V8_CALL_TRACE();
 }
 
@@ -635,6 +635,7 @@ ScriptCompiler::CachedData::~CachedData() {
 }
 
 struct UnboundScriptData {
+  jerry_value_t host_defined_options;
   Isolate* isolate;
   jerry_char_t *file_name;
   size_t file_name_length;
@@ -643,8 +644,6 @@ struct UnboundScriptData {
 };
 
 void unboundScriptFreeCallback(void* native_p, jerry_object_native_info_t* info_p) {
-  (void) info_p;
-
   UnboundScriptData* unboundScriptData = (UnboundScriptData*)native_p;
 
   if (unboundScriptData->file_name_length > 0) {
@@ -655,12 +654,13 @@ void unboundScriptFreeCallback(void* native_p, jerry_object_native_info_t* info_
       delete[] unboundScriptData->source;
   }
 
+  jerry_native_pointer_release_references(unboundScriptData, info_p);
   delete unboundScriptData;
 }
 
 static jerry_object_native_info_t unboundScriptInfo {
   .free_cb = unboundScriptFreeCallback,
-  .number_of_references = 0,
+  .number_of_references = 1,
   .offset_of_references = 0,
 };
 
@@ -674,6 +674,11 @@ Local<Script> UnboundScript::BindToCurrentContext() {
   parse_options.options = JERRY_PARSE_HAS_RESOURCE;
   parse_options.resource_name_p = unboundScriptData->file_name;
   parse_options.resource_name_length = unboundScriptData->file_name_length;
+
+  if (!jerry_value_is_undefined(unboundScriptData->host_defined_options)) {
+      parse_options.options |= JERRY_PARSE_HAS_USER_VALUE;
+      parse_options.user_value = unboundScriptData->host_defined_options;
+  }
 
   jerry_value_t scriptFunction = jerry_parse(unboundScriptData->source,
                                              unboundScriptData->source_length,
@@ -701,8 +706,10 @@ MaybeLocal<Value> Script::Run(Local<Context> context) {
 }
 
 Local<PrimitiveArray> ScriptOrModule::GetHostDefinedOptions() {
-  UNIMPLEMENTED(2164);
-  return Local<PrimitiveArray>();
+  V8_CALL_TRACE();
+  const JerryValue* scriptOrModule = reinterpret_cast<const JerryValue*>(this);
+
+  RETURN_HANDLE(PrimitiveArray, Isolate::GetCurrent(), new JerryValue(jerry_acquire_value(scriptOrModule->value())));
 }
 
 Local<PrimitiveArray> PrimitiveArray::New(Isolate* v8_isolate, int length) {
@@ -956,7 +963,7 @@ jerry_value_t native_module_evaluate (const jerry_value_t native_module) {
   SyntheticModuleData* data;
 
   jerry_get_object_native_pointer(native_module, (void**)&data, &SyntheticModuleInfo);
-  jerry_delete_object_native_pointer (native_module, &SyntheticModuleInfo);
+  jerry_delete_object_native_pointer(native_module, &SyntheticModuleInfo);
 
   v8::HandleScope handle_scope(data->v8isolate);
   v8::TryCatch try_catch(data->v8isolate);
@@ -1081,6 +1088,8 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
   jerry_release_value(scriptFunction);
 
   UnboundScriptData *unboundScriptData = new UnboundScriptData;
+
+  jerry_native_pointer_init_references(unboundScriptData, &unboundScriptInfo);
   unboundScriptData->isolate = v8_isolate;
 
   unboundScriptData->file_name_length = file_name_length;
@@ -1101,6 +1110,11 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
 
   jerry_value_t result = jerry_create_object();
   jerry_set_object_native_pointer(result, unboundScriptData, &unboundScriptInfo);
+
+  if (!source->host_defined_options.IsEmpty()) {
+      jerry_value_t host_defined_options = reinterpret_cast<JerryValue*>(*(source->host_defined_options))->value();
+      jerry_native_pointer_set_reference(&unboundScriptData->host_defined_options, host_defined_options);
+  }
 
   if (options != CompileOptions::kConsumeCodeCache) {
       source->cached_data = new CachedData(unboundScriptData->source, unboundScriptData->source_length);
@@ -1143,6 +1157,11 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
   parse_options.resource_name_length = (size_t)file_name.length();
   parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
   parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
+
+  if (!source->host_defined_options.IsEmpty()) {
+      parse_options.options |= JERRY_PARSE_HAS_USER_VALUE;
+      parse_options.user_value = reinterpret_cast<JerryValue*>(*(source->host_defined_options))->value();
+  }
 
   jerry_value_t module = jerry_parse((const jerry_char_t*)*text, text.length(), &parse_options);
 
@@ -1226,6 +1245,11 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
   parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
   parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
 
+  if (!source->host_defined_options.IsEmpty()) {
+      parse_options.options |= JERRY_PARSE_HAS_USER_VALUE;
+      parse_options.user_value = reinterpret_cast<JerryValue*>(*(source->host_defined_options))->value();
+  }
+
   jerry_value_t scriptFunction = jerry_parse_function((const jerry_char_t*) args.c_str(),
                                                       args.length(),
                                                       (const jerry_char_t*)source_raw_string,
@@ -1233,7 +1257,15 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
                                                       &parse_options);
 
   if (script_or_module_out != nullptr) {
-    jerry_value_t object = jerry_create_object();
+    jerry_value_t object;
+
+    if (!source->host_defined_options.IsEmpty()) {
+        /* We expect the node will not modify the object. */
+        object = jerry_acquire_value(parse_options.user_value);
+    } else {
+        object = jerry_create_object();
+    }
+
     JerryValue* script_or_module = JerryValue::TryCreateValue(isolate, object);
     *script_or_module_out = script_or_module->NewLocal<ScriptOrModule>(isolate);
   }
@@ -3307,13 +3339,76 @@ MaybeLocal<String> String::NewFromUtf8(Isolate* isolate, const char* data,
       length = strlen(data);
   }
 
-  jerry_value_t str_value;
+  jerry_char_t* src = (jerry_char_t*)data;
+  const jerry_char_t* src_end = src + length;
+  jerry_char_t* str_data = (jerry_char_t*)malloc(length * 3);
+  jerry_char_t* dst = str_data;
 
-  if (!jerry_is_valid_utf8_string ((const jerry_char_t*)data, length)) {
-    str_value = jerry_create_string_sz(NULL, 0);
-  } else {
-    str_value = jerry_create_string_sz_from_utf8((const jerry_char_t*)data, length);
+  while (src < src_end) {
+      if (src[0] < 0x80) {
+          *dst++ = (jerry_char_t)*src++;
+          continue;
+      }
+
+      if (src + 1 < src_end && (src[1] & 0xc0) == 0x80) {
+          if (src[0] >= 0xc2 && src[0] <= 0xdf) {
+              /* Encodes values between: 0x80-0x7ff */
+              memcpy(dst, src, 2);
+              dst += 2;
+              src += 2;
+              continue;
+          }
+
+          if ((src[0] & 0xf0) == 0xe0
+                  && (src[0] > 0xe0 || src[1] > 0x9f)
+                  && (src[0] != 0xed || (src[1] & 0xe0) != 0xa0)) {
+              /* Encodes values between: 0x800-0xffff excluding 0xd800-0xdfff */
+              if (src + 2 < src_end && (src[2] & 0xc0) == 0x80) {
+                  memcpy(dst, src, 3);
+                  dst += 3;
+                  src += 3;
+                  continue;
+              }
+              src++;
+          }
+          else if ((src[0] >= 0xf1 && src[0] <= 0xf3)
+                  || (src[0] == 0xf0 && src[1] > 0x8f)
+                  || (src[0] == 0xf4 && src[1] < 0x90)) {
+              /* Encodes values between: 0x10000-0x10ffff */
+              if (src + 3 < src_end && (src[2] & 0xc0) == 0x80 && (src[3] & 0xc0) == 0x80) {
+                  uint32_t decoded = (((uint32_t)src[0] - 0xf0) << 12);
+                  decoded |= (((uint32_t)src[1] - 0x80) << 6);
+                  decoded |= ((uint32_t)src[2] - 0x80);
+                  decoded -= (0x10000 >> 6);
+
+                  dst[0] = 0xed;
+                  dst[1] = (jerry_char_t)(0xa0 | (decoded >> 10));
+                  dst[2] = (jerry_char_t)(0x80 | (decoded >> 4) & 0x3f);
+
+                  dst[3] = 0xed;
+                  dst[4] = (jerry_char_t)(0xb0 | (decoded & 0xf));
+                  dst[5] = src[3];
+                  dst += 6;
+                  src += 4;
+                  continue;
+              }
+
+              if (src + 2 < src_end && (src[2] & 0xc0) == 0x80) {
+                  src++;
+              }
+              src++;
+          }
+      }
+
+      src++;
+      dst[0] = 0xef;
+      dst[1] = 0xbf;
+      dst[2] = 0xbd;
+      dst += 3;
   }
+
+  jerry_value_t str_value = jerry_create_string_sz(str_data, (jerry_size_t)(dst - str_data));
+  free(str_data);
 
   RETURN_HANDLE(String, isolate, new JerryValue(str_value));
 }
@@ -4044,6 +4139,7 @@ void Isolate::SetFatalErrorHandler(FatalErrorCallback that) {
 void Isolate::SetHostImportModuleDynamicallyCallback(
     HostImportModuleDynamicallyCallback callback) {
   V8_CALL_TRACE();
+  JerryIsolate::fromV8(this)->SetHostImportModuleDynamicallyCallback(callback);
 }
 
 void Isolate::SetHostInitializeImportMetaObjectCallback(
