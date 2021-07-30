@@ -680,8 +680,6 @@ Local<Script> UnboundScript::BindToCurrentContext() {
                                              unboundScriptData->source_length,
                                              &parse_options);
 
-  jerry_release_value(parse_options.resource_name);
-
   /* Should never happen (except out of memory) */
   if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
       jerry_release_value(scriptFunction);
@@ -1066,7 +1064,7 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
 
   jerry_parse_options_t parse_options;
   parse_options.options = JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START;
-  parse_options.resource_name = jerry_acquire_value(reinterpret_cast<JerryValue*>(*source->resource_name)->value());
+  parse_options.resource_name = reinterpret_cast<JerryValue*>(*source->resource_name)->value();
   parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
   parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
 
@@ -1228,6 +1226,25 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
 
   jerry_value_t scriptFunction = jerry_parse_value(reinterpret_cast<JerryValue*>(*source->source_string)->value(),
                                                    &parse_options);
+
+  if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
+      /* Support she-bang prefix. */
+      String::Utf8Value source_string(isolate, source->source_string);
+
+      const char* source_raw_string = *source_string;
+      int source_raw_length = source_string.length();
+
+      if (source_raw_length >= 1 && *source_raw_string == '#') {
+          jerry_release_value(scriptFunction);
+
+          while (source_raw_length > 0 && *source_raw_string != '\r' && *source_raw_string != '\n') {
+              source_raw_length--;
+              source_raw_string++;
+          }
+
+          scriptFunction = jerry_parse((const jerry_char_t*)source_raw_string, source_raw_length, &parse_options);
+      }
+  }
 
   jerry_release_value(parse_options.argument_list);
   jerry_release_value(parse_options.resource_name);
@@ -3635,7 +3652,7 @@ MaybeLocal<Set> Set::Add(Local<Context> context, Local<Value> key) {
   JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
 
   jerry_value_t args[] = { jkey->value() };
-  jerry_value_t result = jerry_container_operation(JERRY_CONTAINER_OP_ADD, jset->value(), args, 2);
+  jerry_value_t result = jerry_container_operation(JERRY_CONTAINER_OP_ADD, jset->value(), args, 1);
   jerry_release_value(result);
 
   return jset->AsLocal<Set>();
