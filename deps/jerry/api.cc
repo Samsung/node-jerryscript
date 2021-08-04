@@ -3642,8 +3642,8 @@ MaybeLocal<Map> Map::Set(Local<Context> context, Local<Value> key,
   JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
   JerryValue* jvalue = reinterpret_cast<JerryValue*>(*value);
 
-  jerry_value_t args[] = { jmap->value(), jkey->value(), jvalue->value() };
-  jerry_value_t result = JerryIsolate::fromV8(context->GetIsolate())->HelperMapSet().Call(jerry_create_undefined(), args, 3);
+  jerry_value_t args[] = { jkey->value(), jvalue->value() };
+  jerry_value_t result = jerry_container_operation(JERRY_CONTAINER_OP_SET, jmap->value(), args, 2);
   jerry_release_value(result);
 
   return jmap->AsLocal<Map>();
@@ -3659,8 +3659,8 @@ MaybeLocal<Set> Set::Add(Local<Context> context, Local<Value> key) {
   JerryValue* jset = reinterpret_cast<JerryValue*>(this);
   JerryValue* jkey = reinterpret_cast<JerryValue*>(*key);
 
-  jerry_value_t args[] = { jset->value(), jkey->value() };
-  jerry_value_t result = JerryIsolate::fromV8(context->GetIsolate())->HelperSetAdd().Call(jerry_create_undefined(), args, 2);
+  jerry_value_t args[] = { jkey->value() };
+  jerry_value_t result = jerry_container_operation(JERRY_CONTAINER_OP_ADD, jset->value(), args, 2);
   jerry_release_value(result);
 
   return jset->AsLocal<Set>();

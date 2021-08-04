@@ -31,8 +31,6 @@ public:
 
     void InitializeJerryIsolate(const v8::Isolate::CreateParams& params);
 
-    const JerryPolyfill& HelperMapSet(void) const { return *m_fn_map_set; }
-    const JerryPolyfill& HelperSetAdd(void) const { return *m_fn_set_add; }
     const JerryPolyfill& HelperObjectAssign(void) const { return *m_fn_object_assign; }
     const JerryPolyfill& HelperConversionFailer(void) const { return *m_fn_conversion_failer; }
     const JerryPolyfill& HelperGetOwnPropDesc(void) const { return *m_fn_get_own_prop; }
@@ -183,8 +181,6 @@ private:
 
     JerryObjectTemplate* m_hidden_object_template;
 
-    JerryPolyfill* m_fn_map_set;
-    JerryPolyfill* m_fn_set_add;
     JerryPolyfill* m_fn_object_assign;
     JerryPolyfill* m_fn_conversion_failer;
     JerryPolyfill* m_fn_get_own_prop;
