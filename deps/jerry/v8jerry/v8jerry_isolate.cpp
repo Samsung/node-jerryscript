@@ -100,8 +100,6 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_prepareStackTraceCallback = NULL;
     m_importModuleDynamicallyCallback = NULL;
 
-    m_fn_map_set = new JerryPolyfill("map_set", "map, key, value", "return map.set(key, value);");
-    m_fn_set_add = new JerryPolyfill("set_add", "set, value", "return set.add(value);");
     m_fn_object_assign = new JerryPolyfill("object_assign", "value", "return Object.assign(Array.isArray(value) ? [] : {}, value);");
     m_fn_conversion_failer =
         new JerryPolyfill("conv_fail", "", "this.toString = this.valueOf = function() { throw new TypeError('Invalid usage'); }");
@@ -230,8 +228,6 @@ void JerryIsolate::Dispose(void) {
     pthread_mutex_destroy(&m_lock);
 #endif
 
-    delete m_fn_set_add;
-    delete m_fn_map_set;
     delete m_fn_object_assign;
     delete m_fn_conversion_failer;
     delete m_fn_get_own_prop;
