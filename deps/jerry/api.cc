@@ -637,8 +637,7 @@ ScriptCompiler::CachedData::~CachedData() {
 struct UnboundScriptData {
   jerry_value_t host_defined_options;
   Isolate* isolate;
-  jerry_char_t *file_name;
-  size_t file_name_length;
+  jerry_value_t file_name;
   jerry_char_t *source;
   size_t source_length;
 };
@@ -646,9 +645,7 @@ struct UnboundScriptData {
 void unboundScriptFreeCallback(void* native_p, jerry_object_native_info_t* info_p) {
   UnboundScriptData* unboundScriptData = (UnboundScriptData*)native_p;
 
-  if (unboundScriptData->file_name_length > 0) {
-      delete[] unboundScriptData->file_name;
-  }
+  jerry_release_value(unboundScriptData->file_name);
 
   if (unboundScriptData->source_length > 0) {
       delete[] unboundScriptData->source;
@@ -672,8 +669,7 @@ Local<Script> UnboundScript::BindToCurrentContext() {
 
   jerry_parse_options_t parse_options;
   parse_options.options = JERRY_PARSE_HAS_RESOURCE;
-  parse_options.resource_name_p = unboundScriptData->file_name;
-  parse_options.resource_name_length = unboundScriptData->file_name_length;
+  parse_options.resource_name = unboundScriptData->file_name;
 
   if (!jerry_value_is_undefined(unboundScriptData->host_defined_options)) {
       parse_options.options |= JERRY_PARSE_HAS_USER_VALUE;
@@ -683,6 +679,8 @@ Local<Script> UnboundScript::BindToCurrentContext() {
   jerry_value_t scriptFunction = jerry_parse(unboundScriptData->source,
                                              unboundScriptData->source_length,
                                              &parse_options);
+
+  jerry_release_value(parse_options.resource_name);
 
   /* Should never happen (except out of memory) */
   if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
@@ -1048,14 +1046,13 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
   if (source->resource_name.IsEmpty()) {
       file = source->resource_name.As<String>();
   } else {
-      bool isOk =source->resource_name->ToString(v8_isolate->GetCurrentContext()).ToLocal(&file);
+      bool isOk = source->resource_name->ToString(v8_isolate->GetCurrentContext()).ToLocal(&file);
 
       if (!isOk) {
         return MaybeLocal<UnboundScript>();
       }
   }
 
-  String::Utf8Value file_name(v8_isolate, file);
   String::Utf8Value source_string(v8_isolate, source->source_string);
 
   if (options == CompileOptions::kConsumeCodeCache) {
@@ -1065,13 +1062,11 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
       }
   }
 
-  size_t file_name_length = (size_t)file_name.length();
   size_t source_string_length = (size_t)source_string.length();
 
   jerry_parse_options_t parse_options;
   parse_options.options = JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START;
-  parse_options.resource_name_p = (const jerry_char_t*)*file_name;
-  parse_options.resource_name_length = file_name_length;
+  parse_options.resource_name = jerry_acquire_value(reinterpret_cast<JerryValue*>(*source->resource_name)->value());
   parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
   parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
 
@@ -1092,13 +1087,7 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
   jerry_native_pointer_init_references(unboundScriptData, &unboundScriptInfo);
   unboundScriptData->isolate = v8_isolate;
 
-  unboundScriptData->file_name_length = file_name_length;
-  if (file_name_length > 0) {
-      unboundScriptData->file_name = new jerry_char_t[file_name_length];
-      memcpy(unboundScriptData->file_name, *file_name, file_name_length);
-  } else {
-      unboundScriptData->file_name = NULL;
-  }
+  unboundScriptData->file_name = jerry_acquire_value(reinterpret_cast<JerryValue*>(*source->resource_name)->value());
 
   unboundScriptData->source_length = source_string_length;
   if (source_string_length > 0) {
@@ -1149,12 +1138,10 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
   }
 
   String::Utf8Value text(isolate, source->source_string);
-  String::Utf8Value file_name(isolate, file);
 
   jerry_parse_options_t parse_options;
   parse_options.options = JERRY_PARSE_MODULE | JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START;
-  parse_options.resource_name_p = (const jerry_char_t*)*file_name;
-  parse_options.resource_name_length = (size_t)file_name.length();
+  parse_options.resource_name = jerry_acquire_value(reinterpret_cast<JerryValue*>(*source->resource_name)->value());
   parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
   parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
 
@@ -1164,6 +1151,8 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
   }
 
   jerry_value_t module = jerry_parse((const jerry_char_t*)*text, text.length(), &parse_options);
+
+  jerry_release_value(parse_options.resource_name);
 
   if (jerry_value_is_error(module)) {
       JerryIsolate::fromV8(isolate)->SetError(module);
@@ -1225,7 +1214,6 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
   }
 
   String::Utf8Value source_string(isolate, source->source_string);
-  String::Utf8Value fileName(isolate, file);
 
   const char* source_raw_string = *source_string;
   int source_raw_length = source_string.length();
@@ -1240,8 +1228,7 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
 
   jerry_parse_options_t parse_options;
   parse_options.options = JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START;
-  parse_options.resource_name_p = (const jerry_char_t*)*fileName;
-  parse_options.resource_name_length = fileName.length();
+  parse_options.resource_name = jerry_acquire_value(reinterpret_cast<JerryValue*>(*source->resource_name)->value());
   parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
   parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
 
@@ -1255,7 +1242,7 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
                                                       (const jerry_char_t*)source_raw_string,
                                                       source_raw_length,
                                                       &parse_options);
-
+  jerry_release_value(parse_options.resource_name);
   if (script_or_module_out != nullptr) {
     jerry_value_t object;
 
