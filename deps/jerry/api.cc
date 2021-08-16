@@ -1196,7 +1196,7 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
   if (source->resource_name.IsEmpty()) {
     file = source->resource_name.As<String>();
   } else {
-    bool isOk =source->resource_name->ToString(isolate->GetCurrentContext()).ToLocal(&file);
+    bool isOk = source->resource_name->ToString(isolate->GetCurrentContext()).ToLocal(&file);
 
     if (!isOk) {
       return MaybeLocal<Function>();
@@ -1213,21 +1213,8 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
     }
   }
 
-  String::Utf8Value source_string(isolate, source->source_string);
-
-  const char* source_raw_string = *source_string;
-  int source_raw_length = source_string.length();
-
-  if (source_raw_length >= 1 && *source_raw_string == '#') {
-    // Cut she-bang
-    while (source_raw_length > 0 && *source_raw_string != '\r' && *source_raw_string != '\n') {
-      source_raw_length--;
-      source_raw_string++;
-    }
-  }
-
   jerry_parse_options_t parse_options;
-  parse_options.options = JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START;
+  parse_options.options = JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START | JERRY_PARSE_HAS_ARGUMENT_LIST;
   parse_options.resource_name = jerry_acquire_value(reinterpret_cast<JerryValue*>(*source->resource_name)->value());
   parse_options.start_line = static_cast<uint32_t>(source->resource_line_offset->Value() + 1);
   parse_options.start_column = static_cast<uint32_t>(source->resource_column_offset->Value() + 1);
@@ -1237,11 +1224,12 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
       parse_options.user_value = reinterpret_cast<JerryValue*>(*(source->host_defined_options))->value();
   }
 
-  jerry_value_t scriptFunction = jerry_parse_function((const jerry_char_t*) args.c_str(),
-                                                      args.length(),
-                                                      (const jerry_char_t*)source_raw_string,
-                                                      source_raw_length,
-                                                      &parse_options);
+  parse_options.argument_list = jerry_create_string ((const jerry_char_t*) args.c_str());
+
+  jerry_value_t scriptFunction = jerry_parse_value(reinterpret_cast<JerryValue*>(*source->source_string)->value(),
+                                                   &parse_options);
+
+  jerry_release_value(parse_options.argument_list);
   jerry_release_value(parse_options.resource_name);
   if (script_or_module_out != nullptr) {
     jerry_value_t object;

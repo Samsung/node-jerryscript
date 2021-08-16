@@ -28,13 +28,15 @@ jerry_value_t JerryPolyfill::Call(const jerry_value_t this_arg, const jerry_valu
 
 jerry_value_t JerryPolyfill::BuildMethod(const char* name, const char* fn_args, const char* fn_body) {
     jerry_parse_options_t parse_options;
-    parse_options.options = JERRY_PARSE_HAS_RESOURCE;
+    parse_options.options = JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_ARGUMENT_LIST;
+    parse_options.argument_list = jerry_create_string ((const jerry_char_t *) fn_args);
     parse_options.resource_name = jerry_create_string(reinterpret_cast<const jerry_char_t*>(name));
 
-    jerry_value_t method = jerry_parse_function(reinterpret_cast<const jerry_char_t*>(fn_args), strlen(fn_args),
-                                 reinterpret_cast<const jerry_char_t*>(fn_body), strlen(fn_body),
-                                 &parse_options);
+    jerry_value_t method = jerry_parse(reinterpret_cast<const jerry_char_t*>(fn_body),
+                                       strlen(fn_body),
+                                       &parse_options);
 
+    jerry_release_value(parse_options.argument_list);
     jerry_release_value(parse_options.resource_name);
 
     if (jerry_value_is_error(method)) {
