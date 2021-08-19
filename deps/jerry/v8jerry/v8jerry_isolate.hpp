@@ -51,12 +51,19 @@ public:
     v8::TryCatch* GetLastTryCatch() { return m_last_try_catch; }
     void SetLastTryCatch(v8::TryCatch* try_catch) { m_last_try_catch = try_catch; }
     bool HasError(void) { return m_has_current_error; }
+    bool HasMessage(void) { return m_has_current_message; }
     jerry_value_t GetError(void) { return m_current_error; }
+    jerry_value_t GetMessage(void) { return m_current_message; }
     JerryValue* GetGlobalError(void) { return m_global_error; }
+    JerryValue* GetGlobalMessage(void) { return m_global_message; }
     void SetError(const jerry_value_t error_value);
+    void SetMessage(const jerry_value_t message_value);
     void RestoreError(JerryValue* error);
     void RestoreError(jerry_value_t error);
+    void RestoreMessage(JerryValue* message);
+    void RestoreMessage(jerry_value_t message);
     void SetGlobalError(JerryValue* error) { m_global_error = error; }
+    void SetGlobalMessage(JerryValue* message) { m_global_message = message; }
     void ProcessError(bool is_verbose);
     void SetErrorVerbose(bool value);
     void IncTryDepth() { m_try_depth++; }
@@ -67,10 +74,21 @@ public:
         return m_current_error;
     }
 
+    jerry_value_t TakeMessage(void) {
+        m_has_current_message = false;
+        return m_current_message;
+    }
+
     JerryValue *TakeGlobalError(void) {
         JerryValue *global_error = m_global_error;
         m_global_error = NULL;
         return global_error;
+    }
+
+    JerryValue *TakeGlobalMessage(void) {
+        JerryValue *global_message = m_global_message;
+        m_global_message = NULL;
+        return global_message;
     }
 
     void PushContext(JerryValue* context);
@@ -194,8 +212,11 @@ private:
     JerryValue** m_last_return_value;
     v8::TryCatch* m_last_try_catch;
     bool m_has_current_error;
+    bool m_has_current_message;
     jerry_value_t m_current_error;
+    jerry_value_t m_current_message;
     JerryValue* m_global_error;
+    JerryValue* m_global_message;
     size_t m_try_depth;
     v8::PromiseHook m_promise_hook;
     v8::PromiseRejectCallback m_promise_reject_callback;

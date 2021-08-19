@@ -8,8 +8,9 @@
 
 #include "jerryscript-ext/debugger.h"
 
-#include "v8jerry_handlescope.hpp"
+#include "v8jerry_exception.hpp"
 #include "v8jerry_flags.hpp"
+#include "v8jerry_handlescope.hpp"
 #include "v8jerry_templates.hpp"
 #include "v8jerry_utils.hpp"
 
@@ -45,8 +46,8 @@ static jerry_object_native_info_t ModuleErrorInfo = {
     .offset_of_references = 0,
 };
 
-void MduleStateChangedCallback(jerry_module_state_t new_state, const jerry_value_t module,
-                               const jerry_value_t value, void *user_p) {
+void ModuleStateChangedCallback(jerry_module_state_t new_state, const jerry_value_t module,
+                                const jerry_value_t value, void *user_p) {
     (void) user_p;
 
     if (new_state != JERRY_MODULE_STATE_ERROR)
@@ -141,8 +142,11 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_last_handle_scope = NULL;
     m_last_try_catch = NULL;
     m_has_current_error = false;
+    m_has_current_message = false;
     m_current_error = jerry_create_undefined();
+    m_current_message = jerry_create_undefined();
     m_global_error = NULL;
+    m_global_message = NULL;
     m_try_depth = 0;
     m_promise_hook = NULL;
     m_promise_reject_callback = NULL;
@@ -157,8 +161,9 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 
     InjectGlobalFunctions();
 
+    jerry_set_vm_throw_callback (JerryThrowCallback, reinterpret_cast<void*>(this));
     jerry_set_error_object_created_callback (ErrorObjectCreatedCallback, NULL);
-    jerry_module_set_state_changed_callback (MduleStateChangedCallback, NULL);
+    jerry_module_set_state_changed_callback (ModuleStateChangedCallback, NULL);
     jerry_module_set_import_callback (ModuleImportCallback, reinterpret_cast<void*>(this));
 
 #if (defined JERRY_DEBUGGER && JERRY_DEBUGGER)
@@ -221,6 +226,10 @@ void JerryIsolate::Dispose(void) {
         jerry_release_value(GetError());
     }
 
+    if (HasMessage()) {
+        jerry_release_value(GetMessage());
+    }
+
     delete m_magic_string_stack;
     delete m_call_site_prototype;
 
@@ -272,6 +281,15 @@ void JerryIsolate::SetError(const jerry_value_t error_value) {
     m_current_error = jerry_get_value_from_error(error_value, true);
 }
 
+void JerryIsolate::SetMessage(const jerry_value_t message_value) {
+    if (HasMessage()) {
+        jerry_release_value(GetMessage());
+    }
+
+    m_has_current_message = true;
+    m_current_message = jerry_acquire_value(message_value);
+}
+
 void JerryIsolate::RestoreError(JerryValue* error) {
     if (HasError()) {
         jerry_release_value(GetError());
@@ -298,6 +316,32 @@ void JerryIsolate::RestoreError(jerry_value_t error)
     m_current_error = error;
 }
 
+void JerryIsolate::RestoreMessage(JerryValue* message) {
+    if (HasMessage()) {
+        jerry_release_value(GetMessage());
+    }
+
+    if (message == NULL) {
+        m_has_current_message = false;
+        return;
+    }
+
+    m_has_current_message = true;
+    m_current_message = message->value();
+
+    JerryValue::DeleteValueWithoutRelease(message);
+}
+
+void JerryIsolate::RestoreMessage(jerry_value_t message)
+{
+    if (HasMessage()) {
+        jerry_release_value(GetMessage());
+    }
+
+    m_has_current_message = true;
+    m_current_message = message;
+}
+
 void JerryIsolate::ProcessError(bool is_verbose) {
     if (!is_verbose && m_last_try_catch == NULL && m_try_depth > 0) {
         return;
@@ -314,15 +358,29 @@ void JerryIsolate::ProcessError(bool is_verbose) {
 
     // Move the error
     JerryValue* current_error = new JerryValue(TakeError());
+    JerryValue* current_message = NULL;
+
+    if (HasMessage()) {
+        current_message = new JerryValue(TakeMessage());
+    }
+
     v8::Local<v8::Value> exception(current_error->AsLocal<v8::Value>());
-    v8::Local<v8::Message> message;
+    v8::Local<v8::Message> message(current_message->AsLocal<v8::Message>());
 
     ReportMessage(message, exception);
 
     delete current_error;
 
+    if (current_message != NULL) {
+        delete current_message;
+    }
+
     if (HasError()) {
         jerry_release_value(TakeError());
+    }
+
+    if (HasMessage()) {
+        jerry_release_value(TakeMessage());
     }
 }
 

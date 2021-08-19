@@ -17,6 +17,7 @@
 #include "v8jerry_allocator.hpp"
 #include "v8jerry_backing_store.hpp"
 #include "v8jerry_callback.hpp"
+#include "v8jerry_exception.hpp"
 #include "v8jerry_flags.hpp"
 #include "v8jerry_handlescope.hpp"
 #include "v8jerry_isolate.hpp"
@@ -1324,16 +1325,29 @@ v8::TryCatch::TryCatch(v8::Isolate* isolate)
   next_ = jisolate->GetLastTryCatch();
   jisolate->SetLastTryCatch(this);
 
-  if (jisolate->HasError()) {
-      if (next_ == NULL) {
+  if (next_ == NULL) {
+      if (jisolate->HasError()) {
           jisolate->SetGlobalError(new JerryValue(jisolate->TakeError()));
-          return;
       }
 
+      if (jisolate->HasMessage()) {
+          jisolate->SetGlobalMessage(new JerryValue(jisolate->TakeMessage()));
+      }
+      return;
+  }
+
+  if (jisolate->HasError()) {
       if (next_->exception_ != NULL) {
           delete reinterpret_cast<JerryValue*>(next_->exception_);
       }
       next_->exception_ = new JerryValue(jisolate->TakeError());
+  }
+
+  if (jisolate->HasMessage()) {
+      if (next_->message_obj_ != NULL) {
+          delete reinterpret_cast<JerryValue*>(next_->message_obj_);
+      }
+      next_->message_obj_ = new JerryValue(jisolate->TakeMessage());
   }
 }
 
@@ -1351,6 +1365,11 @@ v8::TryCatch::~TryCatch() {
                   isolate->SetGlobalError(NULL);
               }
 
+              if (isolate->GetGlobalMessage()) {
+                  delete isolate->GetGlobalMessage();
+                  isolate->SetGlobalMessage(NULL);
+              }
+
               isolate->ProcessError(false);
               return;
           }
@@ -1358,6 +1377,11 @@ v8::TryCatch::~TryCatch() {
           if (next_->exception_ != NULL) {
               delete reinterpret_cast<JerryValue*>(next_->exception_);
               next_->exception_ = NULL;
+          }
+
+          if (next_->message_obj_ != NULL) {
+              delete reinterpret_cast<JerryValue*>(next_->message_obj_);
+              next_->message_obj_ = NULL;
           }
           return;
       }
@@ -1370,8 +1394,12 @@ v8::TryCatch::~TryCatch() {
 
   if (next_ == NULL) {
       isolate->RestoreError(isolate->TakeGlobalError());
+      isolate->RestoreMessage(isolate->TakeGlobalMessage());
   } else {
       isolate->RestoreError(reinterpret_cast<JerryValue*>(next_->exception_));
+      isolate->RestoreMessage(reinterpret_cast<JerryValue*>(next_->message_obj_));
+      next_->exception_ = NULL;
+      next_->message_obj_ = NULL;
   }
 }
 
@@ -1429,8 +1457,24 @@ v8::Local<Value> v8::TryCatch::Exception() const {
 
 v8::Local<v8::Message> v8::TryCatch::Message() const {
   V8_CALL_TRACE();
-  // TODO: return the current error message
-  return Local<v8::Message>();
+
+  JerryIsolate* isolate = JerryIsolate::fromV8(isolate_);
+  jerry_value_t message;
+
+  if (isolate->GetLastTryCatch() != this) {
+      if (message_obj_ == NULL ) {
+          return Local<v8::Message>();
+      }
+
+      message = reinterpret_cast<JerryValue*>(message_obj_)->value();
+  } else {
+      if (!isolate->HasMessage()) {
+          return Local<v8::Message>();
+      }
+      message = isolate->GetMessage();
+  }
+
+  RETURN_HANDLE(v8::Message, reinterpret_cast<v8::Isolate*>(isolate_), new JerryValue(jerry_acquire_value(message)));
 }
 
 void v8::TryCatch::SetVerbose(bool value) {
@@ -1483,7 +1527,10 @@ ScriptOrigin Message::GetScriptOrigin() const {
 
 v8::Local<Value> Message::GetScriptResourceName() const {
   V8_CALL_TRACE();
-  return v8::Local<Value>();
+
+  const JerryValue* message = reinterpret_cast<const JerryValue*>(this);
+  jerry_value_t result = JerryMessageGetScriptResourceName(message->value());
+  RETURN_HANDLE(Value, GetIsolate(), new JerryValue(result));
 }
 
 v8::Local<v8::StackTrace> Message::GetStackTrace() const {
@@ -1493,7 +1540,9 @@ v8::Local<v8::StackTrace> Message::GetStackTrace() const {
 
 Maybe<int> Message::GetLineNumber(Local<Context> context) const {
   V8_CALL_TRACE();
-  return Just(0);
+
+  const JerryValue* message = reinterpret_cast<const JerryValue*>(this);
+  return Just(JerryMessageGetLineNumber(message->value()));
 }
 
 int Message::ErrorLevel() const {
@@ -2799,10 +2848,15 @@ MaybeLocal<v8::Value> Function::Call(Local<Context> context,
   JerryIsolate* isolate = JerryIsolate::GetCurrent();
 
   bool has_error = isolate->HasError();
-  jerry_value_t error;
+  bool has_message = isolate->HasMessage();
+  jerry_value_t error, message;
 
   if (has_error) {
       error = isolate->TakeError();
+  }
+
+  if (has_message) {
+      message = isolate->TakeMessage();
   }
 
   isolate->IncTryDepth();
@@ -2814,14 +2868,33 @@ MaybeLocal<v8::Value> Function::Call(Local<Context> context,
           jerry_release_value(error);
       }
 
+      if (has_message) {
+          jerry_release_value(message);
+      }
+
       isolate->SetError(result);
+
+      if (!isolate->HasMessage()) {
+          JerryThrowCallback(result, reinterpret_cast<void*>(isolate));
+      }
+
       isolate->ProcessError(false);
       return MaybeLocal<v8::Value>();
-  } else if (has_error) {
-      if (isolate->HasError()) {
-          jerry_release_value(error);
-      } else {
-          isolate->RestoreError(error);
+  } else {
+      if (has_error) {
+          if (isolate->HasError()) {
+              jerry_release_value(error);
+          } else {
+              isolate->RestoreError(error);
+          }
+      }
+
+      if (has_message) {
+          if (isolate->HasMessage()) {
+              jerry_release_value(message);
+          } else {
+              isolate->RestoreMessage(message);
+          }
       }
   }
 
