@@ -163,6 +163,7 @@ public:
 
     JerryObjectTemplate* HiddenObjectTemplate(void);
     static jerry_value_t GetModuleException(jerry_value_t module);
+    static void ExternalStringFreeCallback(jerry_char_t *string_p, jerry_size_t string_size, void *user_p);
 
     static v8::Isolate* toV8(JerryIsolate* iso) { return reinterpret_cast<v8::Isolate*>(iso); }
     static JerryIsolate* fromV8(v8::Isolate* iso) { return reinterpret_cast<JerryIsolate*>(iso); }

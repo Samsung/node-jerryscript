@@ -418,18 +418,3 @@ JerryValue* JerryValue::ToInteger(v8::Isolate* isolate) const {
     jerry_release_value(number);
     return new JerryValue(jerry_create_number(integer));
 }
-
-namespace v8 {
-    namespace internal {
-        class Heap {
-        public:
-            static void DisposeExternalString(v8::String::ExternalStringResourceBase* external_string) {
-                external_string->Dispose();
-            }
-        };
-    }
-}
-
-JerryExternalString::~JerryExternalString() {
-    v8::internal::Heap::DisposeExternalString(m_resource);
-}

@@ -96,10 +96,6 @@ bool v8::Value::IsRegExp() const {
   return jerry_object_get_type (value) == JERRY_OBJECT_TYPE_REGEXP;
 }
 
-bool v8::Value::IsSharedArrayBuffer() const {
-  return false;
-}
-
 bool v8::Value::IsSet() const {
   jerry_value_t value = reinterpret_cast<const JerryValue*> (this)->value();
   return jerry_get_container_type (value) == JERRY_CONTAINER_TYPE_SET;

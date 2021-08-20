@@ -24,6 +24,21 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
     this->InitializeJerryIsolate(params);
 }
 
+namespace v8 {
+    namespace internal {
+        class Heap {
+        public:
+            static void DisposeExternalString(void *external_string) {
+                reinterpret_cast<v8::String::ExternalStringResourceBase*>(external_string)->Dispose();
+            }
+        };
+    }
+}
+
+void JerryIsolate::ExternalStringFreeCallback(jerry_char_t *string_p, jerry_size_t string_size, void *user_p) {
+    v8::internal::Heap::DisposeExternalString(user_p);
+}
+
 static void ErrorObjectCreatedCallback(const jerry_value_t error_object, void *user_p) {
     (void) user_p;
     CreateStackTrace(error_object, NULL);
@@ -162,6 +177,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     InjectGlobalFunctions();
 
     jerry_set_vm_throw_callback (JerryThrowCallback, reinterpret_cast<void*>(this));
+    jerry_string_set_external_free_callback (ExternalStringFreeCallback);
     jerry_set_error_object_created_callback (ErrorObjectCreatedCallback, NULL);
     jerry_module_set_state_changed_callback (ModuleStateChangedCallback, NULL);
     jerry_module_set_import_callback (ModuleImportCallback, reinterpret_cast<void*>(this));

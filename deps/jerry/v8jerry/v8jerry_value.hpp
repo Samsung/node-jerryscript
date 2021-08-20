@@ -188,7 +188,7 @@ public:
     bool IsArrayBuffer() const { return jerry_value_is_arraybuffer(m_value); }
     bool IsProxy() const { return jerry_value_is_proxy (m_value); }
     bool IsRegExp() const { return jerry_object_get_type(m_value) == JERRY_OBJECT_TYPE_REGEXP; }
-    bool IsSharedArrayBuffer() const { return false; }
+    bool IsSharedArrayBuffer() const { return jerry_value_is_shared_arraybuffer(m_value); }
     bool IsNativeError() const { return jerry_get_error_type(m_value) != JERRY_ERROR_NONE; }
     bool IsModuleNameSpaceObject() const { return jerry_object_get_type(m_value) == JERRY_OBJECT_TYPE_MODULE_NAMESPACE; }
     bool IsBigInt() const { return jerry_value_is_bigint(m_value); }
@@ -299,23 +299,5 @@ public:
         return static_cast<JerryStringType>(m_stringType);
     }
 };
-
-class JerryExternalString : public JerryString {
-public:
-    JerryExternalString(jerry_value_t value, v8::String::ExternalStringResourceBase* resource, JerryStringType type = JerryStringType::ONE_BYTE)
-        : JerryString(value, (JerryStringType) (JerryStringType::EXTERNAL | type))
-        , m_resource(resource)
-    {}
-
-    v8::String::ExternalStringResourceBase* resource () const {
-        return m_resource;
-    }
-
-    ~JerryExternalString();
-
-private:
-    v8::String::ExternalStringResourceBase* m_resource;
-};
-
 
 #endif /* V8JERRY_VALUE_HPP */

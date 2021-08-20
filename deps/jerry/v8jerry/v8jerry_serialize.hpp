@@ -124,7 +124,7 @@ class ValueDeserializer {
     jerry_value_t ReadJerryBigInt();
     jerry_value_t ReadJerryContainer(SerializationTag tag);
     jerry_value_t ReadJerryArray();
-    jerry_value_t ReadJerryArrayBuffer();
+    jerry_value_t ReadJerryArrayBuffer(bool isShared);
     jerry_value_t ReadJerryArrayBufferView(jerry_value_t array_buffer);
     jerry_value_t ReadJerryError();
     jerry_value_t ReadJerryObject();

@@ -1851,6 +1851,10 @@ bool Value::IsArrayBufferView() const {
   return reinterpret_cast<const JerryValue*> (this)->IsArrayBufferView();
 }
 
+bool Value::IsSharedArrayBuffer() const {
+  return reinterpret_cast<const JerryValue*> (this)->IsSharedArrayBuffer();
+}
+
 bool Value::IsDataView() const {
   V8_CALL_TRACE();
   return reinterpret_cast<const JerryValue*> (this)->IsDataView();
@@ -3076,15 +3080,17 @@ void v8::String::VerifyExternalStringResource(
 
 String::ExternalStringResource* String::GetExternalStringResourceSlow() const {
   V8_CALL_TRACE ();
-  const JerryExternalString *jstring = reinterpret_cast<const JerryExternalString*>(this);
-  return reinterpret_cast<ExternalStringResource*>(jstring->resource());
+  const JerryString *jstring = reinterpret_cast<const JerryString*>(this);
+  void *ptr = jerry_string_get_external_user_pointer (jstring->value(), NULL);
+  return reinterpret_cast<ExternalStringResource*>(ptr);
 }
 
 const v8::String::ExternalOneByteStringResource*
 v8::String::GetExternalOneByteStringResource() const {
   V8_CALL_TRACE ();
-  const JerryExternalString *jstring = reinterpret_cast<const JerryExternalString*>(this);
-  return reinterpret_cast<ExternalOneByteStringResource*>(jstring->resource());
+  const JerryString *jstring = reinterpret_cast<const JerryString*>(this);
+  void *ptr = jerry_string_get_external_user_pointer (jstring->value(), NULL);
+  return reinterpret_cast<ExternalOneByteStringResource*>(ptr);
 }
 
 Local<Value> Symbol::Description() const {
@@ -3606,8 +3612,9 @@ MaybeLocal<String> v8::String::NewExternalTwoByte(
   }
 
   jerry_value_t str = JerryNewFromTwoByte(resource->data(), (int)resource->length());
+  JerryIsolate::ExternalStringFreeCallback(NULL, 0, (void*)resource);
 
-  RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::TWO_BYTE));
+  RETURN_HANDLE(String, isolate, new JerryString(str, JerryStringType::TWO_BYTE));
 }
 
 MaybeLocal<String> v8::String::NewExternalOneByte(
@@ -3617,7 +3624,6 @@ MaybeLocal<String> v8::String::NewExternalOneByte(
   if (resource->length() >= String::kMaxLength) {
       return Local<String>();
   }
-
 
   const uint8_t* data = (const uint8_t*)resource->data();
   const uint8_t* data_ptr = data;
@@ -3634,12 +3640,13 @@ MaybeLocal<String> v8::String::NewExternalOneByte(
 
   if (data_ptr == data_end) {
       /* ASCII characters */
-      str = jerry_create_string_sz((const jerry_char_t*)resource->data(), (int)resource->length());
+      str = jerry_create_external_string_sz ((const jerry_char_t*)resource->data(), (int)resource->length(), (void*)resource);
   } else {
       str = JerryNewFromOneByte((const jerry_char_t*)resource->data(), (int)resource->length());
+      JerryIsolate::ExternalStringFreeCallback(NULL, 0, (void*)resource);
   }
 
-  RETURN_HANDLE(String, isolate, new JerryExternalString(str, reinterpret_cast<ExternalStringResourceBase*>(resource), JerryStringType::ONE_BYTE));
+  RETURN_HANDLE(String, isolate, new JerryString(str, JerryStringType::ONE_BYTE));
 }
 
 Isolate* v8::Object::GetIsolate() {
