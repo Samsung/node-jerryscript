@@ -111,6 +111,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 #endif
     jerry_init(flag);
 
+    m_array_buffer_allocator = params.array_buffer_allocator;
     m_fatalErrorCallback = NULL;
     m_messageCallback = NULL;
     m_prepareStackTraceCallback = NULL;
@@ -527,6 +528,8 @@ void JerryIsolate::EnqueueMicrotask(JerryValue *func) {
 }
 
 void JerryIsolate::RunMicrotasks(void) {
+    IncTryDepth();
+
     for (auto& task : m_micro_tasks) {
         jerry_release_value(jerry_call_function (task->value(), jerry_create_undefined(), NULL, 0));
         delete task;
@@ -544,6 +547,7 @@ void JerryIsolate::RunMicrotasks(void) {
         }
     }
 
+    DecTryDepth();
 }
 
 void JerryIsolate::SetEternal(JerryValue* value, int* index) {
@@ -557,22 +561,6 @@ void JerryIsolate::SetEternal(JerryValue* value, int* index) {
 
 bool JerryIsolate::IsEternal(JerryValue* value) {
     return std::find(m_eternals.begin(), m_eternals.end(), value) != m_eternals.end();
-}
-
-void JerryIsolate::AddUTF16String(std::u16string* str) {
-    uint16_t* buffer = (uint16_t*) str->c_str();
-    assert(m_utf16strs.find(buffer) == m_utf16strs.end());
-
-    m_utf16strs[buffer] = str;
-}
-
-void JerryIsolate::RemoveUTF16String(uint16_t* buffer) {
-    std::unordered_map<uint16_t*, std::u16string*>::iterator iter = m_utf16strs.find(buffer);
-
-    assert(iter != m_utf16strs.end());
-
-    delete iter->second;
-    m_utf16strs.erase(iter);
 }
 
 JerryObjectTemplate* JerryIsolate::HiddenObjectTemplate(void) {

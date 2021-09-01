@@ -5,6 +5,7 @@
 #include <v8.h>
 
 void JerryThrowCallback(const jerry_value_t error_value, void *user_p);
+void JerryThrowSyntaxError(jerry_value_t error_value, jerry_value_t resource_name, void *user_p);
 
 int JerryMessageGetLineNumber(jerry_value_t message_value);
 jerry_value_t JerryMessageGetScriptResourceName(jerry_value_t message_value);

@@ -52,11 +52,12 @@
         'JERRY_CPOINTER_32_BIT=1',
         'JERRY_GLOBAL_HEAP_SIZE=32768',
         'JERRY_STACK_LIMIT=4096',
+        'JERRY_ERROR_MESSAGES=1',
+        'JERRY_FUNCTION_TO_STRING=1',
         'JERRY_VM_EXEC_STOP=1',
         'JERRY_VM_THROW=1',
         'JERRY_PROMISE_CALLBACK=1',
         'JERRY_LINE_INFO=1',
-        'JERRY_ERROR_MESSAGES=1',
 
         # Optional flags
         'JERRY_MEM_STATS=0',

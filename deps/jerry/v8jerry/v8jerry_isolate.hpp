@@ -37,6 +37,7 @@ public:
     const JerryPolyfill& HelperGetOwnPropNames(void) const { return *m_fn_get_own_names; }
     const JerryPolyfill& HelperSetIntegrityLevel(void) const { return *m_fn_set_integrity; }
 
+    v8::ArrayBuffer::Allocator* GetArrayBufferAllocator() { return m_array_buffer_allocator; }
     JerryValue *MagicStringStack() { return m_magic_string_stack; }
     JerryValue *CallSitePrototype() { return m_call_site_prototype; }
 
@@ -148,9 +149,6 @@ public:
     void ClearEternal(JerryValue* value);
     bool IsEternal(JerryValue* value);
 
-    void AddUTF16String(std::u16string*);
-    void RemoveUTF16String(uint16_t*);
-
     JerryValue* Undefined() {
         int root_offset = v8::internal::Internals::kIsolateRootsOffset / v8::internal::kApiSystemPointerSize;
         return reinterpret_cast<JerryValue*>(m_slot[root_offset + v8::internal::Internals::kUndefinedValueRootIndex]);
@@ -196,9 +194,9 @@ private:
     std::vector<JerryValue*> m_eternals;
     std::vector<std::pair<jerry_value_t, jerry_value_t>> m_global_symbols;
     std::vector<JerryValue*> m_micro_tasks;
-    std::unordered_map<uint16_t*, std::u16string*> m_utf16strs;
 
     JerryObjectTemplate* m_hidden_object_template;
+    v8::ArrayBuffer::Allocator* m_array_buffer_allocator;
 
     JerryPolyfill* m_fn_object_assign;
     JerryPolyfill* m_fn_conversion_failer;

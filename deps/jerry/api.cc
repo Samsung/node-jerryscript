@@ -693,13 +693,13 @@ Local<Script> UnboundScript::BindToCurrentContext() {
 MaybeLocal<Value> Script::Run(Local<Context> context) {
   V8_CALL_TRACE();
   const JerryValue* script = reinterpret_cast<const JerryValue*>(this);
-  Isolate* v8_isolate = context->GetIsolate();
+  Isolate* isolate = context->GetIsolate();
 
-  JerryIsolate::fromV8(v8_isolate)->IncTryDepth();
+  JerryIsolate::fromV8(isolate)->IncTryDepth();
   jerry_value_t result = jerry_run(script->value());
-  JerryIsolate::fromV8(v8_isolate)->DecTryDepth();
+  JerryIsolate::fromV8(isolate)->DecTryDepth();
 
-  RETURN_HANDLE(Value, v8_isolate, new JerryValue(result));
+  RETURN_HANDLE(Value, isolate, JerryValue::TryCreateValue(isolate, result));
 }
 
 Local<PrimitiveArray> ScriptOrModule::GetHostDefinedOptions() {
@@ -1245,22 +1245,27 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
 
           scriptFunction = jerry_parse((const jerry_char_t*)source_raw_string, source_raw_length, &parse_options);
       }
+
+      if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
+          JerryThrowSyntaxError(scriptFunction, parse_options.resource_name, reinterpret_cast<void*>(isolate));
+      }
   }
 
   jerry_release_value(parse_options.argument_list);
   jerry_release_value(parse_options.resource_name);
+
   if (script_or_module_out != nullptr) {
-    jerry_value_t object;
+      jerry_value_t object;
 
-    if (!source->host_defined_options.IsEmpty()) {
-        /* We expect the node will not modify the object. */
-        object = jerry_acquire_value(parse_options.user_value);
-    } else {
-        object = jerry_create_object();
-    }
+      if (!source->host_defined_options.IsEmpty()) {
+          /* We expect the node will not modify the object. */
+          object = jerry_acquire_value(parse_options.user_value);
+      } else {
+          object = jerry_create_object();
+      }
 
-    JerryValue* script_or_module = JerryValue::TryCreateValue(isolate, object);
-    *script_or_module_out = script_or_module->NewLocal<ScriptOrModule>(isolate);
+      JerryValue* script_or_module = JerryValue::TryCreateValue(isolate, object);
+      *script_or_module_out = script_or_module->NewLocal<ScriptOrModule>(isolate);
   }
 
   JerryValue* result = JerryValue::TryCreateValue(isolate, scriptFunction);
@@ -4096,7 +4101,7 @@ void Isolate::SetIdle(bool is_idle) {
 
 ArrayBuffer::Allocator* Isolate::GetArrayBufferAllocator() {
   V8_CALL_TRACE();
-  return JerryAllocator::toV8(new JerryAllocator());
+  return JerryIsolate::fromV8(this)->GetArrayBufferAllocator();
 }
 
 bool Isolate::InContext() {
@@ -4381,42 +4386,69 @@ String::Value::Value(v8::Isolate* isolate, v8::Local<v8::Value> obj)
     : str_(nullptr), length_(0) {
   V8_CALL_TRACE();
   V8_CALL_TRACE();
-    JerryValue* jvalue = reinterpret_cast<JerryValue*>(*obj);
+  JerryValue* jvalue = reinterpret_cast<JerryValue*>(*obj);
 
-    if (jvalue == NULL || jvalue->value() == 0) {
-        return;
-    }
+  if (jvalue == NULL || jvalue->value() == 0) {
+      return;
+  }
 
-    jerry_value_t value;
-    if (!jvalue->IsString()) {
-        value = jerry_value_to_string(jvalue->value());
-    } else {
-        value = jvalue->value();
-    }
+  jerry_value_t value;
+  if (!jvalue->IsString()) {
+      value = jerry_value_to_string(jvalue->value());
+  } else {
+      value = jvalue->value();
+  }
 
-    uint32_t size = (uint32_t)jerry_get_utf8_string_size(value);
-    char* buffer = new char[size + 1];
-    jerry_string_to_utf8_char_buffer (value, (jerry_char_t *)buffer, size + 1);
-    buffer[size] = '\0';
+  uint32_t size = (uint32_t)jerry_get_string_size(value);
+  uint8_t* buffer = reinterpret_cast<uint8_t*>(malloc(size));
+  jerry_string_to_char_buffer (value, buffer, size);
 
-    // Possible todo: remove the UTF8->UTF16 conversion.
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-    std::u16string* wstring = new std::u16string(converter.from_bytes(buffer));
+  uint32_t result_size = 0;
+  uint8_t* src = buffer;
+  uint8_t* end = buffer + size;
 
-    str_ = (uint16_t*) wstring->c_str();
-    length_ = wstring->length();
+  while (src < end) {
+      if ((*src & 0xc0) != 0x80) {
+          result_size++;
+      }
 
-    reinterpret_cast<JerryIsolate*>(isolate)->AddUTF16String(wstring);
-    delete[] buffer;
+      src++;
+  }
 
-    if (!jvalue->IsString()) {
-        jerry_release_value(value);
-    }
+  length_ = static_cast<int>(result_size);
+  str_ = reinterpret_cast<uint16_t*>(malloc(result_size << 1));
+
+  src = buffer;
+  uint16_t* dst = str_;
+
+  while (src < end) {
+      if (*src < 0x80) {
+          *dst++ = *src++;
+          continue;
+      }
+
+      if (*src < 0xe0) {
+          *dst++ = static_cast<uint16_t>(((src[0] & 0x1f) << 6) | (src[1] & 0x3f));
+          src += 2;
+          continue;
+      }
+
+      *dst++ = static_cast<uint16_t>(((src[0] & 0xf) << 12) | ((src[1] & 0x3f) << 6) | (src[2] & 0x3f));
+      src += 3;
+  }
+
+  free(buffer);
+
+  if (!jvalue->IsString()) {
+      jerry_release_value(value);
+  }
 }
 
 String::Value::~Value() {
   V8_CALL_TRACE();
-  reinterpret_cast<JerryIsolate*>(Isolate::GetCurrent())->RemoveUTF16String(str_);
+  if (str_ != NULL) {
+      free(str_);
+  }
 }
 
 
