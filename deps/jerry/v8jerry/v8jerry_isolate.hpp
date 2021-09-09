@@ -144,6 +144,12 @@ public:
     void SetHostImportModuleDynamicallyCallback(v8::HostImportModuleDynamicallyCallback callback) {
         m_importModuleDynamicallyCallback = callback;
     }
+    v8::HostInitializeImportMetaObjectCallback HostInitializeImportMetaObjectCallback() {
+        return m_initializeImportMetaObjectCallback;
+    }
+    void SetHostInitializeImportMetaObjectCallback(v8::HostInitializeImportMetaObjectCallback callback) {
+        m_initializeImportMetaObjectCallback = callback;
+    }
 
     void SetEternal(JerryValue* value, int* index);
     void ClearEternal(JerryValue* value);
@@ -225,6 +231,7 @@ private:
     v8::MessageCallback m_messageCallback;
     v8::PrepareStackTraceCallback m_prepareStackTraceCallback;
     v8::HostImportModuleDynamicallyCallback m_importModuleDynamicallyCallback;
+    v8::HostInitializeImportMetaObjectCallback m_initializeImportMetaObjectCallback;
 
     bool m_terminated;
     bool m_autorun_tasks;

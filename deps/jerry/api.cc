@@ -751,6 +751,7 @@ Local<Primitive> PrimitiveArray::Get(Isolate* v8_isolate, int index) {
 }
 
 struct ModuleData {
+  jerry_value_t source_string;
   size_t requestsLength;
   jerry_value_t requests[];
 };
@@ -759,6 +760,8 @@ static void ModuleDataFree(void* native_p, jerry_object_native_info_t* info_p) {
   (void) info_p;
 
   ModuleData* data = reinterpret_cast<ModuleData*>(native_p);
+
+  jerry_release_value(data->source_string);
 
   size_t requestsLength = data->requestsLength;
 
@@ -842,7 +845,9 @@ Local<Value> Module::GetModuleNamespace() {
 
 Local<UnboundModuleScript> Module::GetUnboundModuleScript() {
   V8_CALL_TRACE();
-  RETURN_HANDLE(UnboundModuleScript, Isolate::GetCurrent(), new JerryValue(jerry_create_object()));
+
+  jerry_value_t module = reinterpret_cast<const JerryValue*>(this)->value();
+  RETURN_HANDLE(UnboundModuleScript, Isolate::GetCurrent(), new JerryValue(jerry_acquire_value(module)));
 }
 
 int Module::GetIdentityHash() const {
@@ -890,7 +895,7 @@ Maybe<bool> Module::InstantiateModule(Local<Context> context,
   const JerryValue* module = reinterpret_cast<const JerryValue*>(this);
   InstantiateModuleCallbackData callbackData;
   callbackData.callback = callback;
-  callbackData.isolate = Isolate::GetCurrent();
+  callbackData.isolate = context->GetIsolate();
   callbackData.context = reinterpret_cast<JerryValue*>(*context);
 
   jerry_value_t result = jerry_module_link(module->value(), InstantiateModuleCallback, reinterpret_cast<void*>(&callbackData));
@@ -901,7 +906,8 @@ Maybe<bool> Module::InstantiateModule(Local<Context> context,
       return Just(true);
   }
 
-  JerryIsolate::fromV8(context->GetIsolate())->SetError(result);
+  JerryIsolate::fromV8(callbackData.isolate)->SetError(result);
+  JerryThrowCallback(result, reinterpret_cast<void*>(callbackData.isolate));
   return Nothing<bool>();
 }
 
@@ -1136,7 +1142,7 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
       }
   }
 
-  String::Utf8Value text(isolate, source->source_string);
+  jerry_value_t source_string = reinterpret_cast<JerryValue*>(*source->source_string)->value();
 
   jerry_parse_options_t parse_options;
   parse_options.options = JERRY_PARSE_MODULE | JERRY_PARSE_HAS_RESOURCE | JERRY_PARSE_HAS_START;
@@ -1149,7 +1155,7 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
       parse_options.user_value = reinterpret_cast<JerryValue*>(*(source->host_defined_options))->value();
   }
 
-  jerry_value_t module = jerry_parse((const jerry_char_t*)*text, text.length(), &parse_options);
+  jerry_value_t module = jerry_parse_value(source_string, &parse_options);
 
   jerry_release_value(parse_options.resource_name);
 
@@ -1162,6 +1168,8 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
   size_t size = sizeof(ModuleData) + requestsLength * sizeof(jerry_value_t);
 
   ModuleData* data = reinterpret_cast<ModuleData*>(malloc(size));
+
+  data->source_string = jerry_acquire_value(source_string);
   data->requestsLength = requestsLength;
 
   for (size_t i = 0; i < requestsLength; i++) {
@@ -1288,6 +1296,7 @@ ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCache(
 
   size_t source_length = unboundScriptData->source_length;
   uint8_t* data = NULL;
+
   if (source_length > 0) {
       data = new jerry_char_t[source_length];
       memcpy(data, unboundScriptData->source, source_length);
@@ -1299,7 +1308,21 @@ ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCache(
 ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCache(
     Local<UnboundModuleScript> unbound_module_script) {
   V8_CALL_TRACE();
-  return new CachedData();
+
+  const JerryValue* module = reinterpret_cast<JerryValue*>(*unbound_module_script);
+
+  ModuleData* moduleData;
+  jerry_get_object_native_pointer(module->value(), reinterpret_cast<void**>(&moduleData), &ModuleInfo);
+
+  jerry_size_t source_length = jerry_get_string_size(moduleData->source_string);
+  uint8_t* data = NULL;
+
+  if (source_length > 0) {
+      data = new jerry_char_t[source_length];
+      jerry_string_to_char_buffer(moduleData->source_string, data, source_length);
+  }
+
+  return new CachedData(data, source_length, CachedData::BufferOwned);
 }
 
 ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCacheForFunction(
@@ -4222,6 +4245,7 @@ void Isolate::SetHostImportModuleDynamicallyCallback(
 void Isolate::SetHostInitializeImportMetaObjectCallback(
     HostInitializeImportMetaObjectCallback callback) {
   V8_CALL_TRACE();
+  JerryIsolate::fromV8(this)->SetHostInitializeImportMetaObjectCallback(callback);
 }
 
 void Isolate::SetPrepareStackTraceCallback(PrepareStackTraceCallback callback) {

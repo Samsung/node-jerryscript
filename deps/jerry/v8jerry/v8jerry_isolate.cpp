@@ -102,6 +102,24 @@ jerry_value_t ModuleImportCallback(const jerry_value_t jspecifier,
     return jerry_acquire_value(reinterpret_cast<JerryValue*>(*promise)->value());
 }
 
+void ModuleImportMetaCallback(const jerry_value_t jmodule, const jerry_value_t jmeta, void *user_p)
+{
+    JerryIsolate* isolate = reinterpret_cast<JerryIsolate*>(user_p);
+
+    v8::HandleScope handle_scope(JerryIsolate::toV8(isolate));
+
+    v8::HostInitializeImportMetaObjectCallback callback = isolate->HostInitializeImportMetaObjectCallback();
+
+    if (!callback) {
+        return;
+    }
+
+    JerryValueNoRelease module(jmodule);
+    JerryValueNoRelease meta(jmeta);
+
+    callback(isolate->CurrentContext()->AsLocal<v8::Context>(), module.AsLocal<v8::Module>(), meta.AsLocal<v8::Object>());
+}
+
 void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& params) {
     m_terminated = false;
     jerry_init_flag_t flag = (jerry_init_flag_t) JERRY_INIT_EMPTY;
@@ -116,6 +134,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_messageCallback = NULL;
     m_prepareStackTraceCallback = NULL;
     m_importModuleDynamicallyCallback = NULL;
+    m_initializeImportMetaObjectCallback = NULL;
 
     m_fn_object_assign = new JerryPolyfill("object_assign", "value", "return Object.assign(Array.isArray(value) ? [] : {}, value);");
     m_fn_conversion_failer =
@@ -177,15 +196,16 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 
     InjectGlobalFunctions();
 
-    jerry_set_vm_throw_callback (JerryThrowCallback, reinterpret_cast<void*>(this));
-    jerry_string_set_external_free_callback (ExternalStringFreeCallback);
-    jerry_set_error_object_created_callback (ErrorObjectCreatedCallback, NULL);
-    jerry_module_set_state_changed_callback (ModuleStateChangedCallback, NULL);
-    jerry_module_set_import_callback (ModuleImportCallback, reinterpret_cast<void*>(this));
+    jerry_set_vm_throw_callback(JerryThrowCallback, reinterpret_cast<void*>(this));
+    jerry_string_set_external_free_callback(ExternalStringFreeCallback);
+    jerry_set_error_object_created_callback(ErrorObjectCreatedCallback, NULL);
+    jerry_module_set_state_changed_callback(ModuleStateChangedCallback, NULL);
+    jerry_module_set_import_callback(ModuleImportCallback, reinterpret_cast<void*>(this));
+    jerry_module_set_import_meta_callback(ModuleImportMetaCallback, reinterpret_cast<void*>(this));
 
 #if (defined JERRY_DEBUGGER && JERRY_DEBUGGER)
-    bool protocol = jerryx_debugger_tcp_create (5001);
-    jerryx_debugger_after_connect (protocol && jerryx_debugger_ws_create ());
+    bool protocol = jerryx_debugger_tcp_create(5001);
+    jerryx_debugger_after_connect(protocol && jerryx_debugger_ws_create ());
 #endif
 }
 
@@ -276,8 +296,6 @@ void JerryIsolate::Dispose(void) {
     }
 
     m_micro_tasks.clear();
-
-    //JerryForceCleanup();
 
     jerry_cleanup();
 
