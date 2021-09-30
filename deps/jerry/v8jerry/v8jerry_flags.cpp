@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstring>
+#include <stdio.h>
+#include <stdlib.h>
 
 static Flag BuildFlag(const char* name, bool default_value) {
     Flag newFlag{ Flag::Type::BOOL, name };
@@ -53,7 +55,6 @@ const char* Flag::Update(const char* name, bool allow_multiple) {
     const size_t size = sizeof(flagsStore) / sizeof(flagsStore[0]);
 
     for (size_t idx = 0; idx < size; idx++) {
-
         const char* end = CompareFlag(flagsStore[idx].name, name, allow_multiple);
 
         if (end != NULL) {
@@ -103,4 +104,30 @@ Flag* Flag::Get(FlagID id) {
     }
 
     return &flagsStore[id];
+}
+
+void Flag::Help(void) {
+    const size_t size = sizeof(flagsStore) / sizeof(flagsStore[0]);
+
+    for (size_t idx = 0; idx < size; idx++) {
+        const char* name = flagsStore[idx].name;
+
+        printf("  --");
+        while (*name) {
+            char ch = *name++;
+            if (ch == '_') {
+                ch = '-';
+            }
+            printf("%c", ch);
+        }
+
+        if (flagsStore[idx].type == Flag::Type::BOOL) {
+            printf("\n        type: bool  default: %s\n", flagsStore[idx].u.bool_value ? "true" : "false");
+            continue;
+        }
+
+        printf("\n        type: int  default: %d\n", flagsStore[idx].u.int_value);
+    }
+
+    exit(0);
 }

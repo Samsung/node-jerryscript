@@ -2,6 +2,7 @@
 #define V8JERRY_FLAGS_HPP
 
 #define FLAGS(F) \
+    F(BOOL, help, false) \
     F(BOOL, expose_gc, false) \
     F(BOOL, use_strict, false) \
     F(BOOL, abort_on_uncaught_exception, false) \
@@ -9,6 +10,7 @@
     F(BOOL, harmony_weak_refs, false) \
     F(BOOL, debug_code, false) \
     F(BOOL, noconcurrent_recompilation, false) \
+    F(BOOL, untrusted_code_mitigations, false) \
     F(INT, stack_size, 4096) \
     F(INT, gc_interval, 0)
 
@@ -33,7 +35,8 @@ struct Flag {
     } u;
 
     static const char* Update(const char* name, bool allow_multiple);
-    static Flag* Get(FlagID);
+    static Flag* Get(FlagID id);
+    static void Help(void);
 };
 
 #endif /* V8JERRY_FLAGS_HPP */

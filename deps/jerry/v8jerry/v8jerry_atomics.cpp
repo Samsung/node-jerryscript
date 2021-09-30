@@ -65,8 +65,7 @@ static jerry_value_t atomics_load_handler(const jerry_call_info_t *call_info_p,
 }
 
 void Initialize() {
-    JerryxHandlerRegisterGlobal((const jerry_char_t*)"Atomics",
-                                    atomics_handler);
+    JerryxHandlerRegisterGlobal((const jerry_char_t*)"Atomics", atomics_handler);
     jerry_value_t global_obj_val = jerry_get_global_object();
     jerry_value_t name_val = jerry_create_string((const jerry_char_t*)"Atomics");
     jerry_value_t atomics_val = jerry_get_property(global_obj_val, name_val);

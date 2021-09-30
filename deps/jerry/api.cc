@@ -123,12 +123,17 @@ void V8::SetFlagsFromString(const char* str) {
           str++;
       }
   }
+
+  if (Flag::Get(Flag::help)->u.bool_value) {
+      Flag::Help();
+  }
 }
 
 void V8::SetFlagsFromString(const char* str, size_t length) {
   V8_CALL_TRACE();
 
   char* new_str = reinterpret_cast<char*>(malloc(length + 1));
+  memcpy(new_str, str, length);
   new_str[length] = '\0';
   SetFlagsFromString(new_str);
   free(new_str);
@@ -1161,6 +1166,7 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
 
   if (jerry_value_is_error(module)) {
       JerryIsolate::fromV8(isolate)->SetError(module);
+      JerryThrowSyntaxError(module, source_string, &parse_options, reinterpret_cast<void*>(isolate));
       return MaybeLocal<Module>();
   }
 
@@ -1233,15 +1239,15 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
 
   parse_options.argument_list = jerry_create_string ((const jerry_char_t*) args.c_str());
 
-  jerry_value_t scriptFunction = jerry_parse_value(reinterpret_cast<JerryValue*>(*source->source_string)->value(),
-                                                   &parse_options);
+  jerry_value_t source_string = reinterpret_cast<JerryValue*>(*source->source_string)->value();
+  jerry_value_t scriptFunction = jerry_parse_value(source_string, &parse_options);
 
   if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
       /* Support she-bang prefix. */
-      String::Utf8Value source_string(isolate, source->source_string);
+      String::Utf8Value source_string_utf8(isolate, source->source_string);
 
-      const char* source_raw_string = *source_string;
-      int source_raw_length = source_string.length();
+      const char* source_raw_string = *source_string_utf8;
+      int source_raw_length = source_string_utf8.length();
 
       if (source_raw_length >= 1 && *source_raw_string == '#') {
           jerry_release_value(scriptFunction);
@@ -1255,7 +1261,7 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
       }
 
       if (V8_UNLIKELY(jerry_value_is_error(scriptFunction))) {
-          JerryThrowSyntaxError(scriptFunction, parse_options.resource_name, reinterpret_cast<void*>(isolate));
+          JerryThrowSyntaxError(scriptFunction, source_string, &parse_options, reinterpret_cast<void*>(isolate));
       }
   }
 
@@ -1580,17 +1586,23 @@ int Message::ErrorLevel() const {
 
 Maybe<int> Message::GetStartColumn(Local<Context> context) const {
   V8_CALL_TRACE();
-  return Just(0);
+
+  const JerryValue* message = reinterpret_cast<const JerryValue*>(this);
+  return Just(JerryMessageGetColumnStartNumber(message->value()));
 }
 
 Maybe<int> Message::GetEndColumn(Local<Context> context) const {
   V8_CALL_TRACE();
-  return Just(0);
+
+  const JerryValue* message = reinterpret_cast<const JerryValue*>(this);
+  return Just(JerryMessageGetColumnEndNumber(message->value()));
 }
 
 MaybeLocal<String> Message::GetSourceLine(Local<Context> context) const {
   V8_CALL_TRACE();
-  return MaybeLocal<String>();
+
+  const JerryValue* message = reinterpret_cast<const JerryValue*>(this);
+  RETURN_HANDLE(String, Isolate::GetCurrent(), new JerryValue(JerryMessageGetSourceLine(message->value())));
 }
 
 Local<StackFrame> StackTrace::GetFrame(Isolate* v8_isolate,
