@@ -77,19 +77,6 @@ jerry_value_t JerryValue::GetObjectCreationContext(void) {
 }
 
 /* static */
-JerryValue* JerryValue::NewPromise(void) {
-    jerry_value_t promise = jerry_create_promise();
-
-    JerryValue* ctx = JerryIsolate::GetCurrent()->CurrentContext();
-
-    jerry_value_t name = jerry_create_string((const jerry_char_t*)"_CC_");
-    jerry_set_internal_property(promise, name, ctx->value());
-    jerry_release_value(name);
-
-    return new JerryValue(promise);
-}
-
-/* static */
 JerryValue* JerryValue::NewObject(void) {
     jerry_value_t object = jerry_create_object();
 

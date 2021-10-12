@@ -202,6 +202,7 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     jerry_module_set_state_changed_callback(ModuleStateChangedCallback, NULL);
     jerry_module_set_import_callback(ModuleImportCallback, reinterpret_cast<void*>(this));
     jerry_module_set_import_meta_callback(ModuleImportMetaCallback, reinterpret_cast<void*>(this));
+    UpdatePromiseFilters();
 
 #if (defined JERRY_DEBUGGER && JERRY_DEBUGGER)
     bool protocol = jerryx_debugger_tcp_create(5001);
@@ -620,13 +621,15 @@ static jerry_object_native_info_t PromiseDataTypeInfo = {
     .offset_of_references = 0,
 };
 
-#define PROMISE_HOOK_FILTERS (JERRY_PROMISE_EVENT_FILTER_MAIN \
+#define PROMISE_HOOK_FILTERS (JERRY_PROMISE_EVENT_FILTER_CREATE \
+                              | JERRY_PROMISE_EVENT_FILTER_RESOLVE \
+                              | JERRY_PROMISE_EVENT_FILTER_REJECT \
                               | JERRY_PROMISE_EVENT_FILTER_REACTION_JOB \
                               | JERRY_PROMISE_EVENT_FILTER_ASYNC_MAIN \
                               | JERRY_PROMISE_EVENT_FILTER_ASYNC_REACTION_JOB)
 
-static void promise_callback (jerry_promise_event_type_t event_type,
-                              const jerry_value_t object, const jerry_value_t value, void *user_p) {
+static void promise_callback(jerry_promise_event_type_t event_type,
+                             const jerry_value_t object, const jerry_value_t value, void *user_p) {
     JerryIsolate* isolate = reinterpret_cast<JerryIsolate*>(user_p);
 
     v8::HandleScope handle_scope(JerryIsolate::toV8(isolate));
@@ -636,11 +639,18 @@ static void promise_callback (jerry_promise_event_type_t event_type,
         /* All Promise has an internal field. */
         JerryValue::CreateInternalFields(object, 1);
 
-        JerryValueNoRelease promise(object);
-        JerryValueNoRelease parent(value);
+        JerryValue* ctx = isolate->CurrentContext();
+        jerry_value_t name = jerry_create_string((const jerry_char_t*)"_CC_");
+        jerry_set_internal_property(object, name, ctx->value());
+        jerry_release_value(name);
 
         v8::PromiseHook promise_hook = isolate->GetPromiseHook();
-        promise_hook(v8::PromiseHookType::kInit, promise.AsLocal<v8::Promise>(), parent.AsLocal<v8::Value>());
+        if (promise_hook != NULL) {
+            JerryValueNoRelease promise(object);
+            JerryValueNoRelease parent(value);
+
+            promise_hook(v8::PromiseHookType::kInit, promise.AsLocal<v8::Promise>(), parent.AsLocal<v8::Value>());
+        }
         break;
     }
     case JERRY_PROMISE_EVENT_RESOLVE:
@@ -685,19 +695,34 @@ static void promise_callback (jerry_promise_event_type_t event_type,
         reject_callback(message);
         break;
     }
-    case JERRY_PROMISE_EVENT_ASYNC_AWAIT: {
+    case JERRY_PROMISE_EVENT_ASYNC_BEFORE_RESOLVE:
+    case JERRY_PROMISE_EVENT_ASYNC_BEFORE_REJECT: {
         PromiseData *data;
 
-        if (!jerry_get_object_native_pointer (object, reinterpret_cast<void**>(&data), &PromiseDataTypeInfo)) {
-            data = new PromiseData;
+        if (jerry_get_object_native_pointer (object, reinterpret_cast<void**>(&data), &PromiseDataTypeInfo)
+                && !jerry_value_is_undefined (data->await_promise)) {
+            JerryValueNoRelease promise(data->await_promise);
 
-            data->job_promise = jerry_create_undefined();
+            data->job_promise = promise.value();
+            data->await_promise = jerry_create_undefined();
 
-            jerry_set_object_native_pointer(object, reinterpret_cast<void*>(data), &PromiseDataTypeInfo);
+            v8::PromiseHook promise_hook = isolate->GetPromiseHook();
+            promise_hook(v8::PromiseHookType::kBefore, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
+            break;
         }
-
+        /* FALLTHRU */
+    }
+    case JERRY_PROMISE_EVENT_ASYNC_AWAIT: {
         jerry_promise_set_callback (JERRY_PROMISE_EVENT_FILTER_DISABLE, NULL, NULL);
         JerryValueNoRelease promise(jerry_create_promise());
+
+        /* All Promise has an internal field. */
+        JerryValue::CreateInternalFields(promise.value(), 1);
+
+        JerryValue* ctx = isolate->CurrentContext();
+        jerry_value_t name = jerry_create_string((const jerry_char_t*)"_CC_");
+        jerry_set_internal_property(promise.value(), name, ctx->value());
+        jerry_release_value(name);
 
         int filters = PROMISE_HOOK_FILTERS;
 
@@ -707,27 +732,26 @@ static void promise_callback (jerry_promise_event_type_t event_type,
 
         jerry_promise_set_callback (static_cast<jerry_promise_event_filter_t>(filters), promise_callback, reinterpret_cast<void*>(isolate));
 
-        data->await_promise = promise.value();
-
-        JerryValueNoRelease parent(value);
-        v8::PromiseHook promise_hook = isolate->GetPromiseHook();
-        promise_hook(v8::PromiseHookType::kInit, promise.AsLocal<v8::Promise>(), parent.AsLocal<v8::Value>());
-        break;
-    }
-    case JERRY_PROMISE_EVENT_ASYNC_BEFORE_RESOLVE:
-    case JERRY_PROMISE_EVENT_ASYNC_BEFORE_REJECT: {
         PromiseData *data;
 
         if (!jerry_get_object_native_pointer (object, reinterpret_cast<void**>(&data), &PromiseDataTypeInfo)) {
-            return;
+            data = new PromiseData;
+            data->job_promise = jerry_create_undefined();
+            jerry_set_object_native_pointer(object, reinterpret_cast<void*>(data), &PromiseDataTypeInfo);
         }
 
-        JerryValueNoRelease promise(data->await_promise);
-
-        data->job_promise = promise.value();
-        data->await_promise = jerry_create_undefined();
 
         v8::PromiseHook promise_hook = isolate->GetPromiseHook();
+
+        if (event_type == JERRY_PROMISE_EVENT_ASYNC_AWAIT) {
+            JerryValueNoRelease parent(value);
+
+            data->await_promise = promise.value();
+            promise_hook(v8::PromiseHookType::kInit, promise.AsLocal<v8::Promise>(), parent.AsLocal<v8::Value>());
+            break;
+        }
+
+        data->job_promise = promise.value();
         promise_hook(v8::PromiseHookType::kBefore, promise.AsLocal<v8::Promise>(), isolate->Undefined()->AsLocal<v8::Value>());
         break;
     }
@@ -755,7 +779,7 @@ static void promise_callback (jerry_promise_event_type_t event_type,
 }
 
 void JerryIsolate::UpdatePromiseFilters(void) {
-    int filters = JERRY_PROMISE_EVENT_FILTER_DISABLE;
+    int filters = JERRY_PROMISE_EVENT_FILTER_CREATE;
 
     if (m_promise_hook != NULL) {
         filters |= PROMISE_HOOK_FILTERS;

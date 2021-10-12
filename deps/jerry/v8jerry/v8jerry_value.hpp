@@ -226,7 +226,6 @@ public:
 
     jerry_value_t GetObjectCreationContext(void);
 
-    static JerryValue* NewPromise(void);
     static JerryValue* NewObject(void);
     static JerryValue* NewArrayBuffer(JerryBackingStore *backingStore);
     static JerryValue* NewTypedArray(JerryValue* array_buffer,

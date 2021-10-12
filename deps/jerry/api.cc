@@ -3780,9 +3780,7 @@ MaybeLocal<Set> Set::Add(Local<Context> context, Local<Value> key) {
 
 MaybeLocal<Promise::Resolver> Promise::Resolver::New(Local<Context> context) {
   V8_CALL_TRACE();
-  JerryValue* jpromise = JerryValue::NewPromise();
-
-  RETURN_HANDLE(Promise::Resolver, context->GetIsolate(), jpromise);
+  RETURN_HANDLE(Promise::Resolver, context->GetIsolate(), new JerryValue(jerry_create_promise()));
 }
 
 Local<Promise> Promise::Resolver::GetPromise() {
