@@ -2532,7 +2532,7 @@ MaybeLocal<Array> v8::Object::GetPropertyNames(Local<Context> context) {
   V8_CALL_TRACE();
   JerryValue* jobject = reinterpret_cast<JerryValue*>(this);
 
-  int filter = JERRY_PROPERTY_FILTER_TRAVERSE_PROTOTYPE_CHAIN | JERRY_PROPERTY_FILTER_EXLCUDE_NON_ENUMERABLE;
+  int filter = JERRY_PROPERTY_FILTER_TRAVERSE_PROTOTYPE_CHAIN | JERRY_PROPERTY_FILTER_EXCLUDE_NON_ENUMERABLE;
   JerryValue* names = new JerryValue(jerry_object_get_property_names (jobject->value(), static_cast<jerry_property_filter_t>(filter)));
 
   RETURN_HANDLE(Array, context->GetIsolate(), names);
@@ -2552,23 +2552,23 @@ MaybeLocal<Array> v8::Object::GetPropertyNames(
   }
 
   if (property_filter & v8::ONLY_WRITABLE) {
-    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_NON_WRITABLE;
+    filter |= JERRY_PROPERTY_FILTER_EXCLUDE_NON_WRITABLE;
   }
   if (property_filter & v8::ONLY_ENUMERABLE) {
-    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_NON_ENUMERABLE;
+    filter |= JERRY_PROPERTY_FILTER_EXCLUDE_NON_ENUMERABLE;
   }
   if (property_filter & v8::ONLY_CONFIGURABLE) {
-    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_NON_CONFIGURABLE;
+    filter |= JERRY_PROPERTY_FILTER_EXCLUDE_NON_CONFIGURABLE;
   }
   if (property_filter & v8::SKIP_STRINGS) {
-    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_STRINGS;
+    filter |= JERRY_PROPERTY_FILTER_EXCLUDE_STRINGS;
   }
   if (property_filter & v8::SKIP_SYMBOLS) {
-    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_SYMBOLS;
+    filter |= JERRY_PROPERTY_FILTER_EXCLUDE_SYMBOLS;
   }
 
   if (index_filter == v8::IndexFilter::kSkipIndices) {
-    filter |= JERRY_PROPERTY_FILTER_EXLCUDE_INTEGER_INDICES;
+    filter |= JERRY_PROPERTY_FILTER_EXCLUDE_INTEGER_INDICES;
   }
 
   if (key_conversion == v8::KeyConversionMode::kKeepNumbers) {
@@ -3917,14 +3917,14 @@ std::unique_ptr<v8::BackingStore> v8::ArrayBuffer::NewBackingStore(
 
 Local<ArrayBuffer> v8::ArrayBufferView::Buffer() {
   V8_CALL_TRACE();
-  JerryValue* jarray = reinterpret_cast<JerryValue*> (this);
+  JerryValue* jarray = reinterpret_cast<JerryValue*>(this);
 
   jerry_value_t buffer;
 
   if (jarray->IsTypedArray()) {
-      buffer = jerry_get_typedarray_buffer (jarray->value(), NULL, NULL);
+      buffer = jerry_get_typedarray_buffer(jarray->value(), NULL, NULL);
   } else if (jarray->IsDataView()) {
-      buffer = jerry_get_dataview_buffer (jarray->value(), NULL, NULL);
+      buffer = jerry_get_dataview_buffer(jarray->value(), NULL, NULL);
   } else {
       abort();
   }
@@ -3934,14 +3934,14 @@ Local<ArrayBuffer> v8::ArrayBufferView::Buffer() {
 
 size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
   V8_CALL_TRACE();
-  const JerryValue* jarray = reinterpret_cast<const JerryValue*> (this);
+  const JerryValue* jarray = reinterpret_cast<const JerryValue*>(this);
   jerry_value_t buffer;
   jerry_length_t start;
 
   if (jarray->IsTypedArray()) {
-      buffer = jerry_get_typedarray_buffer (jarray->value(), &start, NULL);
+      buffer = jerry_get_typedarray_buffer(jarray->value(), &start, NULL);
   } else if (jarray->IsDataView()) {
-      buffer = jerry_get_dataview_buffer (jarray->value(), &start, NULL);
+      buffer = jerry_get_dataview_buffer(jarray->value(), &start, NULL);
   } else {
       abort();
   }
@@ -3953,21 +3953,21 @@ size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
 
 bool v8::ArrayBufferView::HasBuffer() const {
   V8_CALL_TRACE();
-  const JerryValue* jarray = reinterpret_cast<const JerryValue*> (this);
-  return jarray->IsTypedArray() || jarray->IsDataView();
+  const JerryValue* jarray = reinterpret_cast<const JerryValue*>(this);
+  return !jerry_arraybuffer_has_buffer (jarray->value());
 }
 
 size_t v8::ArrayBufferView::ByteOffset() {
   V8_CALL_TRACE();
-    JerryValue* jarray = reinterpret_cast<JerryValue*> (this);
+    JerryValue* jarray = reinterpret_cast<JerryValue*>(this);
 
     jerry_value_t buffer;
     jerry_length_t byteOffset = 0;
 
     if (jarray->IsTypedArray()) {
-        buffer = jerry_get_typedarray_buffer (jarray->value(), &byteOffset, NULL);
+        buffer = jerry_get_typedarray_buffer(jarray->value(), &byteOffset, NULL);
     } else if (jarray->IsDataView()) {
-        buffer = jerry_get_dataview_buffer (jarray->value(), &byteOffset, NULL);
+        buffer = jerry_get_dataview_buffer(jarray->value(), &byteOffset, NULL);
     } else {
         abort();
     }

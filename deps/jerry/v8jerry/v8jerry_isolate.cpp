@@ -28,20 +28,44 @@ namespace v8 {
     namespace internal {
         class Heap {
         public:
-            static void DisposeExternalString(void *external_string) {
+            static void DisposeExternalString(void* external_string) {
                 reinterpret_cast<v8::String::ExternalStringResourceBase*>(external_string)->Dispose();
             }
         };
     }
 }
 
-void JerryIsolate::ExternalStringFreeCallback(jerry_char_t *string_p, jerry_size_t string_size, void *user_p) {
+void JerryIsolate::ExternalStringFreeCallback(jerry_char_t* string_p, jerry_size_t string_size, void* user_p) {
     v8::internal::Heap::DisposeExternalString(user_p);
 }
 
 static void ErrorObjectCreatedCallback(const jerry_value_t error_object, void *user_p) {
     (void) user_p;
     CreateStackTrace(error_object, NULL);
+}
+
+uint8_t* ArraybufferAllocate(jerry_arraybuffer_type_t buffer_type, uint32_t buffer_size,
+                             void** arraybuffer_user_p, void* user_p) {
+    (void) buffer_type;
+    (void) arraybuffer_user_p;
+
+    JerryIsolate* isolate = reinterpret_cast<JerryIsolate*>(user_p);
+    v8::ArrayBuffer::Allocator* allocator = isolate->GetArrayBufferAllocator();
+    return reinterpret_cast<uint8_t*>(allocator->Allocate(buffer_size));
+}
+
+void ArraybufferFree(jerry_arraybuffer_type_t buffer_type, uint8_t *buffer_p,
+                     uint32_t buffer_size, void *arraybuffer_user_p, void *user_p)
+{
+    (void) buffer_type;
+
+    if (arraybuffer_user_p != NULL) {
+        return;
+    }
+
+    JerryIsolate* isolate = reinterpret_cast<JerryIsolate*>(user_p);
+    v8::ArrayBuffer::Allocator* allocator = isolate->GetArrayBufferAllocator();
+    allocator->Free(reinterpret_cast<void*>(buffer_p), buffer_size);
 }
 
 struct ModuleErrorData {
@@ -135,6 +159,28 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
     m_prepareStackTraceCallback = NULL;
     m_importModuleDynamicallyCallback = NULL;
     m_initializeImportMetaObjectCallback = NULL;
+    m_last_handle_scope = NULL;
+    m_last_try_catch = NULL;
+    m_has_current_error = false;
+    m_has_current_message = false;
+    m_current_error = jerry_create_undefined();
+    m_current_message = jerry_create_undefined();
+    m_global_error = NULL;
+    m_global_message = NULL;
+    m_try_depth = 0;
+    m_promise_hook = NULL;
+    m_promise_reject_callback = NULL;
+    m_hidden_object_template = NULL;
+
+    jerry_set_vm_throw_callback(JerryThrowCallback, reinterpret_cast<void*>(this));
+    jerry_string_set_external_free_callback(ExternalStringFreeCallback);
+    jerry_set_error_object_created_callback(ErrorObjectCreatedCallback, NULL);
+    jerry_arraybuffer_set_compact_allocation_limit (64);
+    jerry_arraybuffer_set_allocator_callbacks (ArraybufferAllocate, ArraybufferFree, reinterpret_cast<void*>(this));
+    jerry_module_set_state_changed_callback(ModuleStateChangedCallback, NULL);
+    jerry_module_set_import_callback(ModuleImportCallback, reinterpret_cast<void*>(this));
+    jerry_module_set_import_meta_callback(ModuleImportMetaCallback, reinterpret_cast<void*>(this));
+    UpdatePromiseFilters();
 
     m_fn_object_assign = new JerryPolyfill("object_assign", "value", "return Object.assign(Array.isArray(value) ? [] : {}, value);");
     m_fn_conversion_failer =
@@ -174,18 +220,6 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
                                 "})";
     m_call_site_prototype = new JerryValue(jerry_eval((jerry_char_t*)call_site_prototype, strlen(call_site_prototype), 0));
 
-    m_last_handle_scope = NULL;
-    m_last_try_catch = NULL;
-    m_has_current_error = false;
-    m_has_current_message = false;
-    m_current_error = jerry_create_undefined();
-    m_current_message = jerry_create_undefined();
-    m_global_error = NULL;
-    m_global_message = NULL;
-    m_try_depth = 0;
-    m_promise_hook = NULL;
-    m_promise_reject_callback = NULL;
-    m_hidden_object_template = NULL;
 
     // Initialize random for math functions
     srand((unsigned)time(NULL));
@@ -195,14 +229,6 @@ void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& param
 #endif
 
     InjectGlobalFunctions();
-
-    jerry_set_vm_throw_callback(JerryThrowCallback, reinterpret_cast<void*>(this));
-    jerry_string_set_external_free_callback(ExternalStringFreeCallback);
-    jerry_set_error_object_created_callback(ErrorObjectCreatedCallback, NULL);
-    jerry_module_set_state_changed_callback(ModuleStateChangedCallback, NULL);
-    jerry_module_set_import_callback(ModuleImportCallback, reinterpret_cast<void*>(this));
-    jerry_module_set_import_meta_callback(ModuleImportMetaCallback, reinterpret_cast<void*>(this));
-    UpdatePromiseFilters();
 
 #if (defined JERRY_DEBUGGER && JERRY_DEBUGGER)
     bool protocol = jerryx_debugger_tcp_create(5001);
