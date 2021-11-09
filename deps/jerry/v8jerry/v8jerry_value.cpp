@@ -101,6 +101,15 @@ JerryValue* JerryValue::NewArrayBuffer(JerryBackingStore *backingStore) {
 }
 
 /* static */
+JerryValue* JerryValue::NewSharedArrayBuffer(JerryBackingStore *backingStore) {
+    jerry_value_t buffer = jerry_create_shared_arraybuffer_external(backingStore->byteLength(), (uint8_t*)backingStore->data(), NULL);
+
+    jerry_set_object_native_pointer(buffer, backingStore, &JerryV8BackingStoreInfo);
+
+    return new JerryValue(buffer);
+}
+
+/* static */
 JerryValue* JerryValue::NewTypedArray(JerryValue* array_buffer,
                                       size_t byte_offset, size_t length, jerry_typedarray_type_t type) {
     return new JerryValue(jerry_create_typedarray_for_arraybuffer_sz(type, array_buffer->value(), (jerry_length_t) byte_offset, (jerry_length_t) length));

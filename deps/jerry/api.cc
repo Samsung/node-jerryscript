@@ -4027,13 +4027,8 @@ Local<DataView> DataView::New(Local<ArrayBuffer> array_buffer,
 Local<SharedArrayBuffer> v8::SharedArrayBuffer::New(
     Isolate* isolate, std::shared_ptr<BackingStore> backing_store) {
   V8_CALL_TRACE();
-  JerryBackingStore *backingStore = JerryBackingStore::fromV8(backing_store.get());
 
-  jerry_value_t arrayBuffer = jerry_create_arraybuffer_external (backingStore->byteLength(), (uint8_t*)backingStore->data(), NULL);
-  jerry_value_t dataview = jerry_create_dataview(arrayBuffer, 0, backingStore->byteLength());
-  jerry_release_value(arrayBuffer);
-
-  RETURN_HANDLE(SharedArrayBuffer, JerryIsolate::toV8(JerryIsolate::GetCurrent()), new JerryValue(dataview));
+  RETURN_HANDLE(SharedArrayBuffer, isolate, JerryValue::NewSharedArrayBuffer(JerryBackingStore::fromV8(backing_store.get())));
 }
 
 Local<Symbol> v8::Symbol::New(Isolate* isolate, Local<String> name) {
