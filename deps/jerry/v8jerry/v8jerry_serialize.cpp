@@ -231,8 +231,10 @@ bool ValueSerializer::WriteValueInternal(jerry_value_t value) {
         WriteJerryBigInt(value);
     } else if (jerry_value_is_string(value)) {
         WriteJerryString(value);
-    } else if (jerry_value_is_arraybuffer(value) || jerry_value_is_shared_arraybuffer(value)) {
+    } else if (jerry_value_is_arraybuffer(value)) {
         return WriteJerryArrayBuffer(value);
+    } else if(jerry_value_is_shared_arraybuffer(value)){
+        return WriteJerrySharedArrayBuffer(value);
     } else if (jerry_value_is_typedarray(value)) {
         jerry_value_t array_buffer =
             jerry_get_typedarray_buffer(value, NULL, NULL);
@@ -425,11 +427,21 @@ bool ValueSerializer::WriteJerryArrayBufferView(jerry_value_t value) {
 }
 
 bool ValueSerializer::WriteJerryArrayBuffer(jerry_value_t value) {
-    WriteTag(jerry_value_is_shared_arraybuffer(value) ? SerializationTag::kSharedArrayBuffer : SerializationTag::kArrayBuffer);
+    WriteTag(SerializationTag::kArrayBuffer);
     size_t length = jerry_get_arraybuffer_byte_length(value);
     uint8_t* bytes = jerry_get_arraybuffer_pointer(value);
     WriteVarint<uint32_t>(length);
     WriteRawBytes(bytes, length);
+    return true;
+}
+
+bool ValueSerializer::WriteJerrySharedArrayBuffer(jerry_value_t value) {
+    WriteTag(SerializationTag::kSharedArrayBuffer);
+
+    JerryValueNoRelease shared_array_buffer (value);
+    v8::Maybe<uint32_t> id = delegate_->GetSharedArrayBufferId(reinterpret_cast<v8::Isolate*>(isolate_), shared_array_buffer.AsLocal<v8::SharedArrayBuffer>());
+    WriteVarint<uint32_t>(id.FromJust());
+
     return true;
 }
 
@@ -627,14 +639,16 @@ jerry_value_t ValueDeserializer::ReadValueInternal() {
                 return jerry_create_string_sz((const jerry_char_t*)str, 0);
             }
         }
-        case SerializationTag::kArrayBuffer:
-        case SerializationTag::kSharedArrayBuffer: {
-            jerry_value_t array_buffer = ReadJerryArrayBuffer(tag == SerializationTag::kSharedArrayBuffer);
+        case SerializationTag::kArrayBuffer: {
+            jerry_value_t array_buffer = ReadJerryArrayBuffer();
             if (CheckTag(SerializationTag::kArrayBufferView)) {
                 ReadTag(&tag);
                 return ReadJerryArrayBufferView(array_buffer);
             }
             return array_buffer;
+        }
+        case SerializationTag::kSharedArrayBuffer: {
+            return ReadJerrySharedArrayBuffer();
         }
         case SerializationTag::kBeginDenseJSArray: {
             return ReadJerryArray();
@@ -785,16 +799,29 @@ jerry_value_t ValueDeserializer::ReadJerryArray() {
     return jerry_create_undefined();
 }
 
-jerry_value_t ValueDeserializer::ReadJerryArrayBuffer(bool isShared) {
+jerry_value_t ValueDeserializer::ReadJerryArrayBuffer() {
     uint32_t length;
     if (!ReadVarint<uint32_t>(&length)) {
         return jerry_create_undefined();
     }
     const void* bytes = nullptr;
     ReadRawBytes(length, &bytes);
-    jerry_value_t result = isShared ? jerry_create_shared_arraybuffer(length) : jerry_create_arraybuffer(length);
+    jerry_value_t result = jerry_create_arraybuffer(length);
     jerry_arraybuffer_write(result, 0, (const uint8_t*)bytes, length);
     return result;
+}
+
+jerry_value_t ValueDeserializer::ReadJerrySharedArrayBuffer() {
+    uint32_t clone_id;
+    ReadVarint<uint32_t>(&clone_id);
+
+    v8::MaybeLocal<v8::SharedArrayBuffer> shared_array_buffer = delegate_->GetSharedArrayBufferFromId(reinterpret_cast<v8::Isolate*>(isolate_), clone_id);
+    v8::Local<v8::SharedArrayBuffer> local_sab;
+
+    if (shared_array_buffer.ToLocal(&local_sab)) {
+        return jerry_acquire_value(reinterpret_cast<JerryValue *>(*local_sab)->value());
+    }
+    return jerry_create_undefined();
 }
 
 jerry_value_t ValueDeserializer::ReadJerryArrayBufferView(

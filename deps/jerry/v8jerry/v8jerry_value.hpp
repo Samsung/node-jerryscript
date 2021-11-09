@@ -228,6 +228,7 @@ public:
 
     static JerryValue* NewObject(void);
     static JerryValue* NewArrayBuffer(JerryBackingStore *backingStore);
+    static JerryValue* NewSharedArrayBuffer(JerryBackingStore *backingStore);
     static JerryValue* NewTypedArray(JerryValue* array_buffer,
                                      size_t byte_offset, size_t length, jerry_typedarray_type_t type);
     static JerryValue* NewExternal(void* ptr);
